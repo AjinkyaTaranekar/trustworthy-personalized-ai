@@ -1,0 +1,519 @@
+{
+    "interleaved": {
+        "system_prompt": "You are a helpful assistant that thinks step by step. Use <think> for reasoning, <tool> for tool calls, and <answer> for final responses.",
+        "templates": [
+            {
+                "user": "What is {math_problem}?",
+                "think": "The user is asking for a calculation: {math_problem}. I should use the calculator tool.",
+                "tool": "calculate(expression='{math_problem}')",
+                "tool_result": "{\"result\": {correct_answer}}",
+                "answer": "{math_problem} = {correct_answer}",
+                "variables": {
+                    "math_problem": [
+                        "15 + 27",
+                        "100 - 43",
+                        "8 * 7",
+                        "144 / 12"
+                    ],
+                    "correct_answer": [
+                        42,
+                        57,
+                        56,
+                        12
+                    ]
+                }
+            },
+            {
+                "user": "I'm feeling {emotion} about {topic}.",
+                "think": "The user is expressing {emotion} about {topic}. I should acknowledge their feelings and offer support.",
+                "answer": "I understand you're feeling {emotion} about {topic}. {empathetic_follow_up}",
+                "variables": {
+                    "emotion": [
+                        "excited",
+                        "worried",
+                        "frustrated",
+                        "hopeful"
+                    ],
+                    "topic": [
+                        "my new job",
+                        "an upcoming exam",
+                        "a relationship"
+                    ],
+                    "empathetic_follow_up": [
+                        "Would you like to talk about it?",
+                        "How can I support you?",
+                        "What's on your mind?"
+                    ]
+                }
+            },
+            {
+                "user": "I'm {age} and I enjoy {interests}.",
+                "think": "The user shared profile information: age={age}, interests={interests}. I should update their profile.",
+                "tool": "update_profile(age={age}, interests={interests_list})",
+                "tool_result": "{\"status\": \"success\"}",
+                "answer": "Great! I'll remember that you're {age} and enjoy {interests}.",
+                "variables": {
+                    "age": [
+                        25,
+                        30,
+                        35
+                    ],
+                    "interests": [
+                        "hiking and photography",
+                        "reading and cooking"
+                    ],
+                    "interests_list": [
+                        "['hiking', 'photography']",
+                        "['reading', 'cooking']"
+                    ]
+                }
+            }
+        ]
+    },
+    "interleaved_with_personalization": {
+        "system_prompt": "You are a helpful assistant with user modeling and emotional understanding. Think step by step, use tools, and personalize responses based on user profile and emotional state.",
+        "templates": [
+            {
+                "user": "Hi, I'm {name}. I'm {age} and I work as a {occupation}.",
+                "think": "New user introduction. I should capture their basic profile information.",
+                "tool": "update_profile(name='{name}', age={age}, occupation='{occupation}')",
+                "tool_result": "{\"status\": \"success\", \"user_id\": \"user_{user_num}\"}",
+                "answer": "Nice to meet you, {name}! I'll remember that you're {age} and work as a {occupation}. How can I help you today?",
+                "variables": {
+                    "name": [
+                        "Alex",
+                        "Jordan",
+                        "Taylor",
+                        "Morgan"
+                    ],
+                    "age": [
+                        25,
+                        28,
+                        30,
+                        32,
+                        35
+                    ],
+                    "occupation": [
+                        "software engineer",
+                        "teacher",
+                        "data scientist",
+                        "designer"
+                    ],
+                    "user_num": [
+                        "001",
+                        "002",
+                        "003",
+                        "004"
+                    ]
+                }
+            },
+            {
+                "user": "{emotion_expression}",
+                "think": "The user is expressing emotion. I should analyze this using appraisal theory to understand: pleasantness, certainty, control, and attention.",
+                "tool": "analyze_sentiment(text='{emotion_expression}')",
+                "tool_result": "{\"emotion\": \"{detected_emotion}\", \"appraisal\": {\"pleasantness\": \"{pleasantness}\", \"certainty\": \"{certainty}\", \"control\": \"{control}\", \"attention\": \"high\"}}",
+                "answer": "{empathetic_response}",
+                "scrutiny": {
+                    "appraisal_used": [
+                        "pleasantness: {pleasantness}",
+                        "certainty: {certainty}",
+                        "control: {control}"
+                    ],
+                    "emotion_inferred": "{detected_emotion}"
+                },
+                "variables": {
+                    "emotion_expression": [
+                        "I'm so excited about this new opportunity!",
+                        "I'm really worried about tomorrow's presentation.",
+                        "I feel completely stuck and don't know what to do.",
+                        "This is frustrating - nothing seems to be working!"
+                    ],
+                    "detected_emotion": [
+                        "joy",
+                        "anxiety",
+                        "helplessness",
+                        "frustration"
+                    ],
+                    "pleasantness": [
+                        "high",
+                        "low",
+                        "low",
+                        "low"
+                    ],
+                    "certainty": [
+                        "high",
+                        "low",
+                        "low",
+                        "medium"
+                    ],
+                    "control": [
+                        "medium",
+                        "low",
+                        "low",
+                        "low"
+                    ],
+                    "empathetic_response": [
+                        "That's wonderful! Exciting opportunities can really energize us.",
+                        "I understand - presentations can be nerve-wracking. What specifically are you worried about?",
+                        "Feeling stuck is really difficult. Let's break this down together.",
+                        "That sounds really frustrating. When things keep not working, it's exhausting."
+                    ]
+                }
+            },
+            {
+                "user": "I'm looking for {need}.",
+                "think": "User is asking for a recommendation. I should check their profile first to personalize my response.",
+                "tool": "get_user_profile(user_id='{user_id}')",
+                "tool_result": "{\"age\": {age}, \"interests\": {interests_list}, \"occupation\": \"{occupation}\"}",
+                "answer": "{personalized_recommendation}",
+                "scrutiny": {
+                    "profile_consulted": [
+                        "age: {age}",
+                        "interests: {interests_list}"
+                    ],
+                    "recommendation_logic": "{recommendation_logic}",
+                    "why_not_alternatives": "{why_not}"
+                },
+                "variables": {
+                    "need": [
+                        "weekend activities",
+                        "a new hobby",
+                        "ways to relax"
+                    ],
+                    "user_id": [
+                        "user_001",
+                        "user_002",
+                        "user_003"
+                    ],
+                    "age": [
+                        25,
+                        30,
+                        35
+                    ],
+                    "interests": [
+                        "hiking, photography",
+                        "reading, cooking",
+                        "gaming, tech"
+                    ],
+                    "interests_list": [
+                        "['hiking', 'photography']",
+                        "['reading', 'cooking']",
+                        "['gaming', 'tech']"
+                    ],
+                    "occupation": [
+                        "software engineer",
+                        "teacher",
+                        "data scientist"
+                    ],
+                    "personalized_recommendation": [
+                        "Based on your love of hiking and photography, I'd suggest: 1) A scenic trail guide, 2) A portable tripod for landscape shots, 3) A weather app for planning outdoor shoots.",
+                        "Since you enjoy reading and cooking, how about: 1) A cookbook from a new cuisine, 2) A novel set in that region, 3) An online cooking class?",
+                        "For a tech enthusiast, I'd recommend: 1) A new indie game, 2) A Raspberry Pi project, 3) A tech podcast."
+                    ],
+                    "recommendation_logic": [
+                        "User's interests directly inform activity recommendations. Age suggests physical capability.",
+                        "Complementary interests can be combined thematically. User enjoys immersive experiences.",
+                        "Tech-savvy user appreciates hands-on projects and staying current."
+                    ],
+                    "why_not": [
+                        "Didn't recommend indoor activities because user prefers outdoors.",
+                        "Didn't recommend fast-paced activities because reading suggests slower pace.",
+                        "Didn't recommend outdoor activities because tech interests suggest indoor preference."
+                    ]
+                }
+            },
+            {
+                "user": "Actually, I've been feeling {emotion} lately because {reason}.",
+                "think": "User is sharing deeper emotional context. Current emotion: {emotion}. Previous context: {previous_context}. I should respond empathetically while considering their profile.",
+                "tool": "analyze_sentiment(text='{emotion} {reason}')",
+                "tool_result": "{\"emotion\": \"{detected_emotion}\", \"appraisal\": {\"pleasantness\": \"{pleasantness}\", \"certainty\": \"{certainty}\", \"control\": \"{control}\"}}",
+                "answer": "{contextual_response}",
+                "scrutiny": {
+                    "context_considered": [
+                        "previous emotion",
+                        "user profile"
+                    ],
+                    "appraisal_dimensions": [
+                        "pleasantness",
+                        "certainty",
+                        "control"
+                    ],
+                    "personalization": "{personalization_note}"
+                },
+                "variables": {
+                    "emotion": [
+                        "stressed",
+                        "overwhelmed",
+                        "unmotivated",
+                        "anxious"
+                    ],
+                    "reason": [
+                        "work has been really demanding",
+                        "I feel like I'm in a rut",
+                        "I'm not sure what direction to take",
+                        "everything feels like too much"
+                    ],
+                    "previous_context": [
+                        "previously excited",
+                        "previously worried",
+                        "new user"
+                    ],
+                    "detected_emotion": [
+                        "stress",
+                        "stagnation",
+                        "confusion",
+                        "overwhelm"
+                    ],
+                    "pleasantness": [
+                        "low",
+                        "low",
+                        "low",
+                        "low"
+                    ],
+                    "certainty": [
+                        "low",
+                        "low",
+                        "low",
+                        "low"
+                    ],
+                    "control": [
+                        "low",
+                        "low",
+                        "low",
+                        "low"
+                    ],
+                    "contextual_response": [
+                        "I hear you - work stress can be really draining. Given your interest in hiking, would getting outdoors help clear your mind?",
+                        "Feeling stuck is tough, especially when things feel repetitive. As someone who enjoys learning, maybe a new skill would help?",
+                        "Uncertainty about direction can be unsettling. Your background in tech suggests you might benefit from structured goal-setting.",
+                        "When everything feels overwhelming, it's important to take things one step at a time. What would help most right now?"
+                    ],
+                    "personalization_note": [
+                        "Referenced hiking interest as potential coping mechanism.",
+                        "Connected to learning interest for solution pathway.",
+                        "Used tech background to suggest structured approach.",
+                        "General empathetic response with open-ended support."
+                    ]
+                }
+            }
+        ]
+    },
+    "rl_verifiable": {
+        "system_prompt": "You are a helpful assistant that solves problems step by step. Break down complex problems into smaller steps and verify each step.",
+        "templates": [
+            {
+                "question": "What is {a} + {b}?",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Identify the operation",
+                        "reasoning": "I need to add two numbers: {a} and {b}",
+                        "verification": "Addition operation identified correctly"
+                    },
+                    {
+                        "step_number": 2,
+                        "description": "Perform calculation",
+                        "reasoning": "{a} + {b} = {answer}",
+                        "verification": "Calculation is correct"
+                    }
+                ],
+                "tool_calls": [],
+                "answer": "{answer}",
+                "variables": {
+                    "a": [
+                        10,
+                        15,
+                        20,
+                        25,
+                        30
+                    ],
+                    "b": [
+                        5,
+                        10,
+                        15,
+                        20,
+                        25
+                    ],
+                    "answer": [
+                        15,
+                        25,
+                        35,
+                        45,
+                        55
+                    ]
+                }
+            },
+            {
+                "question": "If a user says '{utterance}', what is the appraisal dimension for pleasantness?",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Identify the emotion expressed",
+                        "reasoning": "The utterance '{utterance}' expresses {emotion}",
+                        "verification": "Emotion identification is correct"
+                    },
+                    {
+                        "step_number": 2,
+                        "description": "Map emotion to appraisal theory",
+                        "reasoning": "According to appraisal theory, {emotion} is associated with {pleasantness} pleasantness",
+                        "verification": "Appraisal mapping is correct"
+                    },
+                    {
+                        "step_number": 3,
+                        "description": "Provide the appraisal dimension value",
+                        "reasoning": "Therefore, pleasantness = {pleasantness}",
+                        "verification": "Final answer is correct"
+                    }
+                ],
+                "tool_calls": [],
+                "answer": "pleasantness: {pleasantness}",
+                "variables": {
+                    "utterance": [
+                        "I'm so happy!",
+                        "This is terrible!",
+                        "I feel content",
+                        "This makes me angry"
+                    ],
+                    "emotion": [
+                        "joy",
+                        "sadness",
+                        "contentment",
+                        "anger"
+                    ],
+                    "pleasantness": [
+                        "high",
+                        "low",
+                        "medium",
+                        "low"
+                    ]
+                }
+            },
+            {
+                "question": "Calculate the area of a rectangle with width {width} and height {height}",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Identify the formula",
+                        "reasoning": "Area of rectangle = width × height",
+                        "verification": "Correct formula identified"
+                    },
+                    {
+                        "step_number": 2,
+                        "description": "Identify the values",
+                        "reasoning": "width = {width}, height = {height}",
+                        "verification": "Values extracted correctly"
+                    },
+                    {
+                        "step_number": 3,
+                        "description": "Calculate the area",
+                        "reasoning": "{width} × {height} = {area}",
+                        "verification": "Calculation is correct"
+                    }
+                ],
+                "tool_calls": [
+                    {
+                        "tool_name": "calculate",
+                        "parameters": {
+                            "expression": "{width} * {height}"
+                        },
+                        "expected_result": "{area}",
+                        "verification": "Tool called with correct parameters"
+                    }
+                ],
+                "answer": "{area}",
+                "variables": {
+                    "width": [
+                        5,
+                        10,
+                        8,
+                        12
+                    ],
+                    "height": [
+                        3,
+                        6,
+                        4,
+                        5
+                    ],
+                    "area": [
+                        15,
+                        60,
+                        32,
+                        60
+                    ]
+                }
+            },
+            {
+                "question": "A user with profile {{age: {age}, interests: {interests}}} asks for {request_type} recommendations. What should I consider?",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Extract user profile information",
+                        "reasoning": "User is {age} years old and interested in {interests}",
+                        "verification": "Profile information extracted correctly"
+                    },
+                    {
+                        "step_number": 2,
+                        "description": "Retrieve personalized preferences",
+                        "reasoning": "I should call get_user_preferences to understand their specific tastes",
+                        "verification": "Correct tool identified for personalization"
+                    },
+                    {
+                        "step_number": 3,
+                        "description": "Generate personalized recommendations",
+                        "reasoning": "Based on age {age} and interests in {interests}, I should recommend {recommendation}",
+                        "verification": "Recommendations match user profile"
+                    }
+                ],
+                "tool_calls": [
+                    {
+                        "tool_name": "get_user_preferences",
+                        "parameters": {
+                            "category": "{request_type}"
+                        },
+                        "expected_result": "{preferences}",
+                        "verification": "Tool called with correct category"
+                    }
+                ],
+                "answer": "Consider {consideration}",
+                "variables": {
+                    "age": [
+                        25,
+                        30,
+                        35,
+                        40
+                    ],
+                    "interests": [
+                        "hiking",
+                        "reading",
+                        "technology",
+                        "cooking"
+                    ],
+                    "request_type": [
+                        "movie",
+                        "book",
+                        "restaurant",
+                        "hobby"
+                    ],
+                    "recommendation": [
+                        "active outdoor films",
+                        "contemporary fiction",
+                        "tech cafes",
+                        "fusion cuisine"
+                    ],
+                    "preferences": [
+                        "adventure",
+                        "literary",
+                        "modern",
+                        "experimental"
+                    ],
+                    "consideration": [
+                        "age-appropriate content and activity level",
+                        "reading complexity and themes",
+                        "tech-friendly atmosphere",
+                        "dietary preferences and cuisine style"
+                    ]
+                }
+            }
+        ]
+    }
+}
