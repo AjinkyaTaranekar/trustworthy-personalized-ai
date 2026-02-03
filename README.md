@@ -4,12 +4,32 @@ Building a Trustworthy Personalized LLM with Interleaved Thinking and First Prin
 
 ## Setup
 
-### Install Requirements
+### Create and Activate Virtual Environment
 
-Navigate to the `pipeline` directory and install dependencies:
+Navigate to the `pipeline` directory and create a virtual environment:
 
 ```bash
 cd pipeline
+python3 -m venv venv
+```
+
+Activate the virtual environment:
+
+**On Windows:**
+```bash
+venv\Scripts\activate
+```
+
+**On macOS/Linux:**
+```bash
+source venv/bin/activate
+```
+
+### Install Requirements
+
+Install dependencies in the virtual environment:
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -20,7 +40,7 @@ pip install -r requirements.txt
 Generate synthetic training data:
 
 ```bash
-python 1_dataset_generator.py --variant interleaved --train_size 5
+python3 1_dataset_generator.py --variant interleaved --train_size 5
 ```
 
 **Options:**
@@ -34,7 +54,7 @@ This will create a JSONL dataset in `data/train_interleaved.jsonl`
 Train the model on generated data:
 
 ```bash
-python 2_model_trainer.py --data_dir data --output_dir models
+python3 2_model_trainer.py --data_dir data --output_dir models
 ```
 
 **Options:**
