@@ -238,13 +238,18 @@
     </section>
 
     <div class="grid" id="outputGrid">
-      <section class="panel" id="basePanel">
-        <h2>Base Model Output</h2>
-        <div class="meta" id="baseMeta"></div>
-        <div class="conversation" id="baseConversation"></div>
+      <section class="panel" id="baseNoToolsPanel">
+        <h2>Base Model (No Tools)</h2>
+        <div class="meta" id="baseNoToolsMeta"></div>
+        <div class="conversation" id="baseNoToolsConversation"></div>
+      </section>
+      <section class="panel" id="baseWithToolsPanel">
+        <h2>Base Model (With Tools)</h2>
+        <div class="meta" id="baseWithToolsMeta"></div>
+        <div class="conversation" id="baseWithToolsConversation"></div>
       </section>
       <section class="panel" id="customPanel">
-        <h2>Custom Model Output</h2>
+        <h2>Custom Model</h2>
         <div class="meta" id="customMeta"></div>
         <div class="conversation" id="customConversation"></div>
       </section>
@@ -261,16 +266,19 @@
     const reportSelect = document.getElementById("reportSelect");
     const warning = document.getElementById("fileWarning");
     const outputGrid = document.getElementById("outputGrid");
-    const basePanel = document.getElementById("basePanel");
+    const baseNoToolsPanel = document.getElementById("baseNoToolsPanel");
+    const baseWithToolsPanel = document.getElementById("baseWithToolsPanel");
     const customPanel = document.getElementById("customPanel");
 
     const promptValue = document.getElementById("promptValue");
     const timestampValue = document.getElementById("timestampValue");
     const configValue = document.getElementById("configValue");
 
-    const baseMeta = document.getElementById("baseMeta");
+    const baseNoToolsMeta = document.getElementById("baseNoToolsMeta");
+    const baseWithToolsMeta = document.getElementById("baseWithToolsMeta");
     const customMeta = document.getElementById("customMeta");
-    const baseConversation = document.getElementById("baseConversation");
+    const baseNoToolsConversation = document.getElementById("baseNoToolsConversation");
+    const baseWithToolsConversation = document.getElementById("baseWithToolsConversation");
     const customConversation = document.getElementById("customConversation");
 
     function populateSelect(select) {
@@ -332,30 +340,39 @@
 
         // Update info panel
         promptValue.textContent = report.prompt || "No prompt";
-        timestampValue.textContent = report.timestamp || "No timestamp";
-        configValue.innerHTML = formatConfig(report.config);
+        const hasBaseNoTools = report.base_model_no_tools && report.base_model_no_tools.conversation;
+        const hasBaseWithTools = report.base_model_with_tools && report.base_model_with_tools.conversation;
+        const hasCustom = report.custom_model_output && report.custom_model_output.conversation;
 
-        // Check if base model output exists
-        const hasBase = report.base_model_output && report.base_model_output.conversation;
+        // Show/hide panels based on available data
+        baseNoToolsPanel.style.display = hasBaseNoTools ? "flex" : "none";
+        baseWithToolsPanel.style.display = hasBaseWithTools ? "flex" : "none";
+        customPanel.style.display = hasCustom ? "flex" : "none";
 
-        if (hasBase) {
-          // Show both panels side by side
-          outputGrid.classList.remove("single-column");
-          basePanel.style.display = "flex";
-
-          // Render base model
-          baseMeta.innerHTML = `Turns: ${report.base_model_output.num_turns ?? 0}`;
-          renderConversation(baseConversation, report.base_model_output.conversation || []);
-        } else {
-          // Hide base panel and show only custom in center
+        // Adjust grid layout based on number of panels
+        const visiblePanels = [hasBaseNoTools, hasBaseWithTools, hasCustom].filter(Boolean).length;
+        if (visiblePanels === 1) {
           outputGrid.classList.add("single-column");
-          basePanel.style.display = "none";
+        } else {
+          outputGrid.classList.remove("single-column");
         }
 
-        // Always render custom model
-        if (report.custom_model_output) {
+        // Render base model (no tools)
+        if (hasBaseNoTools) {
+          baseNoToolsMeta.innerHTML = `Turns: ${report.base_model_no_tools.num_turns ?? 0}`;
+          renderConversation(baseNoToolsConversation, report.base_model_no_tools.conversation || []);
+        }
+
+        // Render base model (with tools)
+        if (hasBaseWithTools) {
+          baseWithToolsMeta.innerHTML = `Turns: ${report.base_model_with_tools.num_turns ?? 0}`;
+          renderConversation(baseWithToolsConversation, report.base_model_with_tools.conversation || []);
+        }
+
+        // Render custom model
+        if (hasCustom) {
           customMeta.innerHTML = `Turns: ${report.custom_model_output.num_turns ?? 0}`;
-          renderConversation(customConversation, report.custom_model_output.conversation || []);
+          renderConversation(customConversation, report.custom_model_output.conversation || report.custom_model_output.conversation || []);
         } else {
           customMeta.innerHTML = "";
           renderConversation(customConversation, []);

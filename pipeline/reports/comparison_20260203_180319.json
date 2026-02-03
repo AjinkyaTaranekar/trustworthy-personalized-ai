@@ -8,7 +8,7 @@
     "max_iterations": 10,
     "temperature": 0.7
   },
-  "base_model_output": {
+  "base_model_no_tools": {
     "conversation": [
       {
         "role": "system",

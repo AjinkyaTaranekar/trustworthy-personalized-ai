@@ -107,13 +107,26 @@ def build_messages(conversation_history: list) -> str:
     return conversation_history
 
 
-def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterations: int, temperature: float, tools: Tools, model_name: str = "Model"):
+def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterations: int, temperature: float, tools: Tools, model_name: str = "Model", include_tools: bool = True):
     """Run inference with a given model and return the full conversation."""
-    system_prompt = (
-        "You are a helpful assistant that thinks step by step. Use <think> for reasoning "
-        "about what to do next, <tool> for tool calls, and <answer> for final responses. You may need "
-        "multiple iterations of thinking and tool calls to reach the final answer."
-    )
+    if include_tools:
+        system_prompt = (
+            "You are a helpful assistant that thinks step by step. Use <think> for reasoning "
+            "about what to do next, <tool> for tool calls, and <answer> for final responses. You may need "
+            "multiple iterations of thinking and tool calls to reach the final answer.\n\n"
+            "Available tools:\n"
+            "1. python_execute(code='...') - Execute Python code and return the output. Use for calculations, data processing, etc.\n"
+            "   Example: <tool>python_execute(code='print(15 + 27)')</tool>\n\n"
+            "2. get_exchange_rate(from='USD', to='EUR') - Get currency exchange rates between two currencies.\n"
+            "   Example: <tool>get_exchange_rate(from='USD', to='EUR')</tool>\n\n"
+            "To use a tool, wrap your call in <tool></tool> tags with the exact function syntax shown above."
+        )
+    else:
+        system_prompt = (
+            "You are a helpful assistant. Provide clear and accurate responses to user queries. Use <think> for reasoning "
+            "about what to do next, and <answer> for final responses. You may need "
+            "multiple iterations of thinking to reach the final answer."
+        )
     
     conversation = [
         {"role": "system", "content": system_prompt},
@@ -209,6 +222,11 @@ def main():
         default="./reports",
         help="Directory to save reports",
     )
+    parser.add_argument(
+        "--no_tools",
+        action="store_true",
+        help="Run base model without tool instructions (only for comparison mode)",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model_dir)
@@ -240,11 +258,18 @@ def main():
                 dtype=None,
             )
         
-        # Run inference on base model
-        base_conversation = run_inference(
+        # Run inference on base model WITHOUT tools (baseline)
+        base_no_tools_conversation = run_inference(
             base_model, base_tokenizer, args.prompt, 
             args.max_new_tokens, args.max_iterations, args.temperature, 
-            tools, model_name="BASE MODEL"
+            tools, model_name="BASE MODEL (No Tools)", include_tools=False
+        )
+        
+        # Run inference on base model WITH tool instructions
+        base_with_tools_conversation = run_inference(
+            base_model, base_tokenizer, args.prompt, 
+            args.max_new_tokens, args.max_iterations, args.temperature, 
+            tools, model_name="BASE MODEL (With Tools)", include_tools=True
         )
         
         # Run inference on custom model if loaded
@@ -253,7 +278,7 @@ def main():
             custom_conversation = run_inference(
                 custom_model, custom_tokenizer, args.prompt,
                 args.max_new_tokens, args.max_iterations, args.temperature,
-                tools, model_name="CUSTOM MODEL"
+                tools, model_name="CUSTOM MODEL", include_tools=True
             )
         
         # Create and save comparison report
@@ -262,14 +287,18 @@ def main():
             "prompt": args.prompt,
             "config": {
                 "base_model": args.base_model,
-                "custom_model": str(model_dir),
+                "custom_model": str(model_dir) if model_dir.exists() else "Not found",
                 "max_new_tokens": args.max_new_tokens,
                 "max_iterations": args.max_iterations,
                 "temperature": args.temperature,
             },
-            "base_model_output": {
-                "conversation": base_conversation,
-                "num_turns": len([m for m in base_conversation if m["role"] == "assistant"]),
+            "base_model_no_tools": {
+                "conversation": base_no_tools_conversation,
+                "num_turns": len([m for m in base_no_tools_conversation if m["role"] == "assistant"]),
+            },
+            "base_model_with_tools": {
+                "conversation": base_with_tools_conversation,
+                "num_turns": len([m for m in base_with_tools_conversation if m["role"] == "assistant"]),
             },
             "custom_model_output": {
                 "conversation": custom_conversation if custom_conversation else None,
@@ -296,7 +325,7 @@ def main():
         conversation = run_inference(
             model, tokenizer, args.prompt,
             args.max_new_tokens, args.max_iterations, args.temperature,
-            tools, model_name="CUSTOM MODEL"
+            tools, model_name="CUSTOM MODEL", include_tools=True
         )
         
         # Save single model report
