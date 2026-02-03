@@ -49,10 +49,11 @@ def messages_to_text(example, tokenizer):
 class ModelTrainer:
     """Trainer for interleaved thinking models using SFT."""
     
-    def __init__(self, data_dir: str, output_dir: str):
+    def __init__(self, data_dir: str, output_dir: str, output_name: str = "checkpoint_sft"):
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_name = output_name
         self.model = None
         self.tokenizer = None
     
@@ -128,13 +129,14 @@ class ModelTrainer:
         self.apply_lora()
         
         dataset_path = self.data_dir / "train_interleaved.jsonl"
-        self.train_sft(str(dataset_path))
+        self.train_sft(str(dataset_path), self.output_name)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train interleaved thinking models")
     parser.add_argument("--data_dir", default="./data", help="Data directory")
     parser.add_argument("--output_dir", default="./models", help="Output directory")
+    parser.add_argument("--output_name", default="checkpoint_sft", help="Output model checkpoint directory name")
     parser.add_argument("--skip_if_exists", action="store_true",
                         help="Skip training if model already exists")
     
@@ -150,7 +152,7 @@ def main():
         print(f"Skipping training - model already exists at {model_path}")
         return
     
-    trainer = ModelTrainer(args.data_dir, args.output_dir)
+    trainer = ModelTrainer(args.data_dir, args.output_dir, args.output_name)
     trainer.train()
 
 

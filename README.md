@@ -54,11 +54,13 @@ This will create a JSONL dataset in `data/train_interleaved.jsonl`
 Train the model on generated data:
 
 ```bash
-python3 2_model_trainer.py --data_dir data --output_dir models
+python3 2_model_trainer.py --data_dir data --output_dir models --output_name qwen3-0.6b
 ```
 
 **Options:**
 - `--data_dir`: Directory containing training data
 - `--output_dir`: Directory to save trained models
+- `--output_name`: Name of the output checkpoint directory (default: `checkpoint_sft`)
+- `--skip_if_exists`: Skip training if model already exists
 
-The trainer uses **Qwen3-4B** as the base model with LoRA fine-tuning.
+The trainer uses **Qwen3-0.6B** as the base model with LoRA fine-tuning.
