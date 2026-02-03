@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Report Comparison Viewer</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1115;
+      --panel: #161a22;
+      --text: #e6e6e6;
+      --muted: #a0a6b2;
+      --accent: #7aa2f7;
+      --border: #2a2f3a;
+      --role-system: #9ece6a;
+      --role-user: #7dcfff;
+      --role-assistant: #bb9af7;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --text: #1a1f2a;
+        --muted: #5c6675;
+        --accent: #3b82f6;
+        --border: #e5e7eb;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(122,162,247,0.08), transparent 60%);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .container {
+      padding: 16px 24px 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    select, button {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .grid.single-column {
+      grid-template-columns: 1fr;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 300px;
+    }
+
+    #infoPanel {
+      min-height: auto;
+      gap: 16px;
+    }
+
+    .info-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
+    .info-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .info-value {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: grid;
+      gap: 4px;
+    }
+
+    .badge {
+      display: inline-flex;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      background: rgba(122,162,247,0.08);
+      color: var(--accent);
+      align-self: flex-start;
+    }
+
+    #infoPanel .info-value code {
+      background: rgba(122,162,247,0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .conversation {
+      display: grid;
+      gap: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .turn {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .turn .role {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .role.system { color: var(--role-system); }
+    .role.user { color: var(--role-user); }
+    .role.assistant { color: var(--role-assistant); }
+
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: #f59e0b;
+      border: 1px dashed #f59e0b;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(245, 158, 11, 0.08);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Report Comparison Viewer</h1>
+    <p class="subtitle">Compare base vs custom model outputs side by side.</p>
+  </header>
+
+  <div class="container">
+    <div class="controls">
+      <label>
+        Select report:
+        <select id="reportSelect"></select>
+      </label>
+    </div>
+
+    <div class="warning" id="fileWarning" hidden>
+      Reports could not be loaded. If you opened this file directly, run a local server from the reports folder (for example: <strong>python3 -m http.server</strong>) and open the served URL.
+    </div>
+
+    <section class="panel" id="infoPanel">
+      <h2>Report Information</h2>
+      <div class="info-grid">
+        <div>
+          <div class="info-label">Prompt</div>
+          <div class="info-value" id="promptValue"></div>
+        </div>
+        <div>
+          <div class="info-label">Timestamp</div>
+          <div class="info-value" id="timestampValue"></div>
+        </div>
+        <div>
+          <div class="info-label">Configuration</div>
+          <div class="info-value" id="configValue"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid" id="outputGrid">
+      <section class="panel" id="basePanel">
+        <h2>Base Model Output</h2>
+        <div class="meta" id="baseMeta"></div>
+        <div class="conversation" id="baseConversation"></div>
+      </section>
+      <section class="panel" id="customPanel">
+        <h2>Custom Model Output</h2>
+        <div class="meta" id="customMeta"></div>
+        <div class="conversation" id="customConversation"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const reportFiles = [
+      "comparison_20260203_173259.json",
+      "comparison_20260203_174410.json",
+      "comparison_20260203_175333.json"
+    ];
+
+    const reportSelect = document.getElementById("reportSelect");
+    const warning = document.getElementById("fileWarning");
+    const outputGrid = document.getElementById("outputGrid");
+    const basePanel = document.getElementById("basePanel");
+    const customPanel = document.getElementById("customPanel");
+
+    const promptValue = document.getElementById("promptValue");
+    const timestampValue = document.getElementById("timestampValue");
+    const configValue = document.getElementById("configValue");
+
+    const baseMeta = document.getElementById("baseMeta");
+    const customMeta = document.getElementById("customMeta");
+    const baseConversation = document.getElementById("baseConversation");
+    const customConversation = document.getElementById("customConversation");
+
+    function populateSelect(select) {
+      reportFiles.forEach((file) => {
+        const option = document.createElement("option");
+        option.value = file;
+        option.textContent = file;
+        select.appendChild(option);
+      });
+    }
+
+    function formatConfig(config) {
+      if (!config) return "No config data";
+      return Object.entries(config)
+        .map(([key, value]) => `<code>${key}:</code> ${value}`)
+        .join(" | ");
+    }
+
+    function renderConversation(container, conversation = []) {
+      container.innerHTML = "";
+      if (!conversation.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No conversation data.";
+        container.appendChild(empty);
+        return;
+      }
+
+      conversation.forEach((turn) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "turn";
+
+        const role = document.createElement("div");
+        role.className = `role ${turn.role || ""}`;
+        role.textContent = turn.role || "unknown";
+
+        const content = document.createElement("div");
+        content.textContent = turn.content || "";
+
+        wrapper.appendChild(role);
+        wrapper.appendChild(content);
+        container.appendChild(wrapper);
+      });
+    }
+
+    async function loadReport(fileName) {
+      const response = await fetch(fileName);
+      if (!response.ok) {
+        throw new Error(`Failed to load ${fileName}`);
+      }
+      return response.json();
+    }
+
+    async function refresh() {
+      try {
+        warning.hidden = true;
+        const file = reportSelect.value;
+        const report = await loadReport(file);
+
+        // Update info panel
+        promptValue.textContent = report.prompt || "No prompt";
+        timestampValue.textContent = report.timestamp || "No timestamp";
+        configValue.innerHTML = formatConfig(report.config);
+
+        // Check if base model output exists
+        const hasBase = report.base_model_output && report.base_model_output.conversation;
+
+        if (hasBase) {
+          // Show both panels side by side
+          outputGrid.classList.remove("single-column");
+          basePanel.style.display = "flex";
+
+          // Render base model
+          baseMeta.innerHTML = `Turns: ${report.base_model_output.num_turns ?? 0}`;
+          renderConversation(baseConversation, report.base_model_output.conversation || []);
+        } else {
+          // Hide base panel and show only custom in center
+          outputGrid.classList.add("single-column");
+          basePanel.style.display = "none";
+        }
+
+        // Always render custom model
+        if (report.custom_model_output) {
+          customMeta.innerHTML = `Turns: ${report.custom_model_output.num_turns ?? 0}`;
+          renderConversation(customConversation, report.custom_model_output.conversation || []);
+        } else {
+          customMeta.innerHTML = "";
+          renderConversation(customConversation, []);
+        }
+
+      } catch (error) {
+        console.error(error);
+        warning.hidden = false;
+      }
+    }
+
+    populateSelect(reportSelect);
+    reportSelect.addEventListener("change", refresh);
+    refresh();
+  </script>
+</body>
+</html>
