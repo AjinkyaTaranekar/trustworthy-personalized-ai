@@ -257,11 +257,7 @@
   </div>
 
   <script>
-    const reportFiles = [
-      "comparison_20260203_173259.json",
-      "comparison_20260203_174410.json",
-      "comparison_20260203_175333.json"
-    ];
+    let reportFiles = [];
 
     const reportSelect = document.getElementById("reportSelect");
     const warning = document.getElementById("fileWarning");
@@ -281,12 +277,48 @@
     const baseWithToolsConversation = document.getElementById("baseWithToolsConversation");
     const customConversation = document.getElementById("customConversation");
 
-    function populateSelect(select) {
-      reportFiles.forEach((file) => {
+    async function fetchReportFiles() {
+      try {
+        const response = await fetch("http://localhost:8000/reports");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch report list`);
+        }
+        const data = await response.json();
+        reportFiles = data.files || [];
+        return reportFiles;
+      } catch (error) {
+        console.error("Error fetching report files:", error);
+        warning.hidden = false;
+        return [];
+      }
+    }
+
+    function populateSelect(select, files) {
+      select.innerHTML = "";
+      files.forEach((file) => {
         const option = document.createElement("option");
         option.value = file;
         option.textContent = file;
         select.appendChild(option);
+      });
+    }
+
+    function formatTimestamp(timestamp) {
+      if (!timestamp) return "No timestamp";
+      // Parse format: YYYYMMdd_HHmmss
+      const match = timestamp.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+      if (!match) return timestamp;
+      
+      const [, year, month, day, hour, minute, second] = match;
+      const date = new Date(year, month - 1, day, hour, minute, second);
+      
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
       });
     }
 
@@ -340,6 +372,8 @@
 
         // Update info panel
         promptValue.textContent = report.prompt || "No prompt";
+        timestampValue.textContent = formatTimestamp(report.timestamp);
+        configValue.innerHTML = formatConfig(report.config);
         const hasBaseNoTools = report.base_model_no_tools && report.base_model_no_tools.conversation;
         const hasBaseWithTools = report.base_model_with_tools && report.base_model_with_tools.conversation;
         const hasCustom = report.custom_model_output && report.custom_model_output.conversation;
@@ -384,9 +418,16 @@
       }
     }
 
-    populateSelect(reportSelect);
+    async function init() {
+      const files = await fetchReportFiles();
+      if (files.length > 0) {
+        populateSelect(reportSelect, files);
+        await refresh();
+      }
+    }
+
     reportSelect.addEventListener("change", refresh);
-    refresh();
+    init();
   </script>
 </body>
 </html>
