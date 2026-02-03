@@ -15,8 +15,8 @@ except ImportError:
 
 
 MODEL_CONFIG = {
-    "base_model": "unsloth/Qwen3-4B",
-    "max_seq_length": 4096,
+    "base_model": "unsloth/Qwen3-0.6B",
+    "max_seq_length": 2048,
     "load_in_4bit": True,
     "lora_r": 64,
     "lora_alpha": 64,
@@ -34,6 +34,16 @@ SFT_CONFIG = {
     "optim": "adamw_8bit",
     "weight_decay": 0.01,
 }
+
+
+def messages_to_text(example, tokenizer):
+    return {
+        "text": tokenizer.apply_chat_template(
+            example["messages"],
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+    }
 
 
 class ModelTrainer:
@@ -74,6 +84,12 @@ class ModelTrainer:
     def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft"):
         """Run supervised fine-tuning on the provided dataset."""
         dataset = load_dataset("json", data_files=dataset_path)
+        train_dataset = dataset["train"]
+        if "text" not in train_dataset.column_names and "messages" in train_dataset.column_names:
+            train_dataset = train_dataset.map(
+                messages_to_text,
+                fn_kwargs={"tokenizer": self.tokenizer},
+            )
         
         training_args = TrainingArguments(
             output_dir=str(self.output_dir / output_name),
@@ -93,8 +109,8 @@ class ModelTrainer:
         trainer = SFTTrainer(
             model=self.model,
             tokenizer=self.tokenizer,
-            train_dataset=dataset["train"],
-            dataset_text_field="text" if "text" in dataset["train"].column_names else None,
+            train_dataset=train_dataset,
+            dataset_text_field="text",
             max_seq_length=MODEL_CONFIG["max_seq_length"],
             args=training_args,
         )

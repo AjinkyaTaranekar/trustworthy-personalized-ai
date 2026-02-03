@@ -136,3 +136,4 @@ Thumbs.db
 # Project-specific
 pipeline/data/
 pipeline/models/
+pipeline/unsloth_compiled_cache/
