@@ -32,46 +32,109 @@ class DatasetGenerator:
         return result
     
     def sample_variables(self, variables: Dict) -> Dict:
-        """Sample one value for each variable."""
-        return {k: random.choice(v) for k, v in variables.items()}
+        """Sample one value for each variable.
+        
+        For aligned variables (same length arrays that should be sampled together),
+        we pick a random index and use that index for all variables of that length.
+        This ensures e.g., country_a and search_result_a always come from the same index.
+        """
+        if not variables:
+            return {}
+        
+        # Group variables by their array length
+        length_groups = {}
+        for k, v in variables.items():
+            length = len(v)
+            if length not in length_groups:
+                length_groups[length] = []
+            length_groups[length].append(k)
+        
+        result = {}
+        # For each group of same-length arrays, pick one random index
+        for length, keys in length_groups.items():
+            idx = random.randint(0, length - 1)
+            for k in keys:
+                result[k] = variables[k][idx]
+        
+        return result
     
     def generate_interleaved_example(self, template_config: Dict) -> Dict:
-        """Generate example for interleaved thinking model."""
+        """Generate example for interleaved thinking model with multi-turn tool calls."""
         template = random.choice(template_config["templates"])
         variables = self.sample_variables(template["variables"])
         
-        assistant_parts = []
-        
-        if "think" in template:
-            think = self.render_template(template["think"], variables)
-            assistant_parts.append(f"<think>{think}</think>")
-        
-        if "tool" in template:
-            tool = self.render_template(template["tool"], variables)
-            assistant_parts.append(f"<tool>{tool}</tool>")
-        
         conversation = [
             {"role": "system", "content": template_config["system_prompt"]},
-            {"role": "user", "content": self.render_template(template["user"], variables)},
-            {"role": "assistant", "content": "\n".join(assistant_parts)}
+            {"role": "user", "content": self.render_template(template["user"], variables)}
         ]
         
-        if "tool" in template and "tool_result" in template:
-            tool_result = self.render_template(template["tool_result"], variables)
-            conversation.append({"role": "tool", "content": tool_result})
+        # Handle new multi-turn format with "turns" array
+        if "turns" in template:
+            for turn in template["turns"]:
+                assistant_parts = []
+                
+                # Add thinking
+                if "think" in turn and turn["think"]:
+                    think = self.render_template(turn["think"], variables)
+                    assistant_parts.append(f"<think>{think}</think>")
+                
+                # Add tool call if present
+                if "tool" in turn and turn["tool"]:
+                    tool = self.render_template(turn["tool"], variables)
+                    assistant_parts.append(f"<tool>{tool}</tool>")
+                
+                if assistant_parts:
+                    conversation.append({"role": "assistant", "content": "\n".join(assistant_parts)})
+                
+                # Add tool result if present
+                if "tool_result" in turn and turn["tool_result"]:
+                    tool_result = self.render_template(turn["tool_result"], variables)
+                    conversation.append({"role": "tool", "content": tool_result})
             
-            answer = self.render_template(template["answer"], variables)
-            conversation.append({"role": "assistant", "content": f"<answer>{answer}</answer>"})
-        elif "answer" in template:
-            answer = self.render_template(template["answer"], variables)
-            conversation[-1]["content"] += f"\n<answer>{answer}</answer>"
+            # Add final answer
+            if "answer" in template:
+                answer = self.render_template(template["answer"], variables)
+                conversation.append({"role": "assistant", "content": f"<answer>{answer}</answer>"})
+        
+        # Handle legacy single-turn format for backwards compatibility
+        else:
+            assistant_parts = []
+            
+            if "think" in template:
+                think = self.render_template(template["think"], variables)
+                assistant_parts.append(f"<think>{think}</think>")
+            
+            if "tool" in template:
+                tool = self.render_template(template["tool"], variables)
+                assistant_parts.append(f"<tool>{tool}</tool>")
+            
+            conversation.append({"role": "assistant", "content": "\n".join(assistant_parts)})
+            
+            if "tool" in template and "tool_result" in template:
+                tool_result = self.render_template(template["tool_result"], variables)
+                conversation.append({"role": "tool", "content": tool_result})
+                
+                answer = self.render_template(template["answer"], variables)
+                conversation.append({"role": "assistant", "content": f"<answer>{answer}</answer>"})
+            elif "answer" in template:
+                answer = self.render_template(template["answer"], variables)
+                conversation[-1]["content"] += f"\n<answer>{answer}</answer>"
+        
+        # Count tool calls for metadata
+        num_tool_calls = 0
+        if "turns" in template:
+            num_tool_calls = sum(1 for t in template["turns"] if t.get("tool"))
+        elif "tool" in template:
+            num_tool_calls = 1
         
         return {
             "messages": conversation,
             "metadata": {
                 "model_variant": "interleaved",
                 "has_thinking": True,
-                "has_tools": "tool" in template
+                "has_tools": num_tool_calls > 0,
+                "num_tool_calls": num_tool_calls,
+                "is_multi_turn": "turns" in template and len(template.get("turns", [])) > 1
             }
         }
     
