@@ -32,13 +32,13 @@
       background: var(--bg); color: var(--text);
     }
     header {
-      padding: 16px 24px;
+      padding: 12px 16px;
       border-bottom: 1px solid var(--border);
       background: linear-gradient(180deg, rgba(122,162,247,0.08), transparent 60%);
     }
     h1 { font-size: 20px; font-weight: 600; }
     .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .container { padding: 16px 24px 28px; display: grid; gap: 16px; }
+    .container { padding: 12px 16px 20px; display: grid; gap: 16px; max-width: 100%; }
 
     /* Controls */
     .controls {
@@ -95,9 +95,8 @@
       display: flex; justify-content: space-between; align-items: center;
       padding: 8px 12px; border-radius: 8px 8px 0 0;
       background: rgba(122,162,247,0.06); border: 1px solid var(--border);
-      cursor: pointer; user-select: none; font-size: 13px;
+      user-select: none; font-size: 13px;
     }
-    .turn-header:hover { background: rgba(122,162,247,0.12); }
     .turn-header .q { font-weight: 600; flex: 1; }
     .turn-header .badges { display: flex; gap: 6px; }
     .badge {
@@ -107,18 +106,33 @@
     .badge.tools { color: var(--green); background: rgba(158,206,106,0.08); }
     .badge.answer { color: var(--accent); background: rgba(122,162,247,0.08); }
     .badge.ctx { color: var(--orange); background: rgba(255,158,100,0.08); }
-    .turn-body {
-      display: none; padding: 12px; border: 1px solid var(--border);
-      border-top: none; border-radius: 0 0 8px 8px;
-      font-size: 13px; line-height: 1.6; white-space: pre-wrap;
-      max-height: 500px; overflow-y: auto;
-    }
-    .turn-body.open { display: block; }
+    .badge.error { color: var(--red); background: rgba(247,118,142,0.08); }
 
-    .msg { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--border); }
+    /* Tool call detail blocks */
+    .tool-call-block { margin: 2px 0; border: 1px solid rgba(158,206,106,0.3); border-radius: 6px; overflow: hidden; }
+    .tool-call-header { display: flex; align-items: center; gap: 6px; padding: 3px 8px; background: rgba(158,206,106,0.1); font-size: 12px; font-weight: 600; color: var(--green); }
+    .tool-call-header .tool-icon { font-size: 14px; }
+    .tool-call-header .tool-name { font-family: ui-monospace, monospace; }
+    .tool-call-header .tool-status { margin-left: auto; font-size: 11px; font-weight: 400; }
+    .tool-call-header .tool-status.error { color: var(--red); }
+    .tool-call-body { padding: 4px 8px 6px; font-size: 12px; }
+    .tool-call-body .tool-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); opacity: 0.7; font-weight: 600; margin-bottom: 2px; margin-top: 3px; }
+    .tool-call-body .tool-label:first-child { margin-top: 0; }
+    .tool-call-body pre { margin: 1px 0 2px; padding: 4px 8px; background: rgba(0,0,0,0.4); border-radius: 4px; font-size: 12px; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08); color: #e6e6e6; }
+    .tool-call-body .tool-result-output { color: #b4f0a7; }
+    .tool-call-body .tool-result-error { color: #ff9999; }
+
+    .turn-body {
+      display: block; padding: 8px; border: 1px solid var(--border);
+      border-top: none; border-radius: 0 0 8px 8px;
+      font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+      max-height: none; overflow-y: auto;
+    }
+
+    .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; border: 1px solid var(--border); }
     .msg .role {
       display: inline-block; font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.02em; margin-bottom: 4px; font-weight: 600;
+      letter-spacing: 0.02em; margin-bottom: 3px; font-weight: 700;
     }
     .role.system    { color: var(--green); }
     .role.user      { color: var(--cyan); }
@@ -200,7 +214,8 @@
               <th class="num">Context</th>
               <th class="num">Time (s)</th>
               <th class="num">Tok/s</th>
-              <th class="num">Tools</th>
+              <th class="num">Tool Calls</th>
+              <th>Tools Used</th>
               <th>Answer?</th>
             </tr>
           </thead>
@@ -379,6 +394,10 @@
     tb.innerHTML = '';
     turns.forEach(t => {
       const m = t.metrics;
+      const toolNames = (m.tool_results || []).map(tr => {
+        const isErr = (tr.result || '').toLowerCase().startsWith('error');
+        return `<span style="font-size:11px;font-family:monospace;color:${isErr ? 'var(--red)' : 'var(--green)'}" title="${escHtml(tr.result || '')}">${escHtml(tr.tool || '?')}${isErr ? ' ✗' : ' ✓'}</span>`;
+      }).join(', ') || '<span style="color:var(--muted);font-size:11px">—</span>';
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${t.turn_number}</td>
@@ -389,19 +408,58 @@
         <td class="num">${m.total_generation_time_s.toFixed(2)}</td>
         <td class="num">${m.overall_tokens_per_sec.toFixed(1)}</td>
         <td class="num">${m.tool_calls}</td>
+        <td>${toolNames}</td>
         <td>${m.has_answer ? '✅' : '—'}</td>`;
       tb.appendChild(tr);
     });
   }
 
+  /* ── tool call detail renderer ── */
+  function renderToolCallBlock(tr, idx) {
+    const isError = (tr.result || '').toLowerCase().startsWith('error');
+    const statusClass = isError ? ' error' : '';
+    const statusText = isError ? '✗ Error' : '✓ Success';
+    const resultClass = isError ? 'tool-result-error' : 'tool-result-output';
+
+    // Build kwargs display
+    let kwargsHtml = '';
+    if (tr.kwargs && Object.keys(tr.kwargs).length) {
+      const entries = Object.entries(tr.kwargs);
+      if (tr.tool === 'python_execute' && tr.kwargs.code) {
+        // Show code nicely
+        kwargsHtml = `<div class="tool-label">Code Executed</div><pre>${escHtml(tr.kwargs.code)}</pre>`;
+      } else {
+        const argsStr = entries.map(([k,v]) => `${k} = ${JSON.stringify(v)}`).join('\n');
+        kwargsHtml = `<div class="tool-label">Arguments</div><pre>${escHtml(argsStr)}</pre>`;
+      }
+    }
+
+    return `
+      <div class="tool-call-block">
+        <div class="tool-call-header">
+          <span class="tool-icon">🔧</span>
+          <span class="tool-name">${escHtml(tr.tool || 'unknown')}()</span>
+          <span class="tool-status${statusClass}">${statusText}</span>
+        </div>
+        <div class="tool-call-body">
+          ${kwargsHtml}
+          <div class="tool-label">Result</div>
+          <pre class="${resultClass}">${escHtml(tr.result || '(no output)')}</pre>
+        </div>
+      </div>`;
+  }
+
   /* ── conversation viewer ── */
   function renderConversation(turns) {
     const el = $('convSection');
-    el.innerHTML = '<h2 style="margin:12px 0 8px">Conversation History</h2><p style="font-size:12px;color:var(--muted);margin-bottom:8px">Click a turn to expand the full exchange.</p>';
+    el.innerHTML = '<h2 style="margin:12px 0 8px">Conversation History</h2><p style="font-size:12px;color:var(--muted);margin-bottom:8px">Full conversation with all tool calls and responses.</p>';
     turns.forEach(t => {
       const m = t.metrics;
       const block = document.createElement('div');
       block.className = 'turn-block';
+
+      // Count errors in tool results
+      const errorCount = (m.tool_results || []).filter(tr => (tr.result || '').toLowerCase().startsWith('error')).length;
 
       const hdr = document.createElement('div');
       hdr.className = 'turn-header';
@@ -409,24 +467,30 @@
         <span class="q">Turn ${t.turn_number}: ${t.question.length > 70 ? t.question.slice(0,70)+'…' : t.question}</span>
         <span class="badges">
           <span class="badge ctx">${comma(m.total_context_tokens)} ctx</span>
-          <span class="badge tools">${m.tool_calls} tools</span>
+          <span class="badge tools">${m.tool_calls} tool${m.tool_calls !== 1 ? 's' : ''}</span>
+          ${errorCount > 0 ? `<span class="badge error">${errorCount} error${errorCount !== 1 ? 's' : ''}</span>` : ''}
           ${m.has_answer ? '<span class="badge answer">answer</span>' : ''}
         </span>`;
 
       const body = document.createElement('div');
       body.className = 'turn-body';
 
-      // Show just the user question + assistant response for this turn
-      body.innerHTML = `<div class="msg"><div class="role user">user</div><div>${escHtml(t.question)}</div></div>`;
-      body.innerHTML += `<div class="msg"><div class="role assistant">assistant</div><div>${escHtml(t.response)}</div></div>`;
+      // User question
+      let bodyHtml = `<div class="msg"><div class="role user">user</div><div>${escHtml(t.question)}</div></div>`;
+
+      // Tool calls — show each one with details
       if (m.tool_results && m.tool_results.length) {
-        m.tool_results.forEach(tr => {
-          body.innerHTML += `<div class="msg" style="border-color:var(--green)"><div class="role system">tool: ${tr.tool}</div><div>${escHtml(tr.result)}</div></div>`;
+        bodyHtml += '<div style="margin: 4px 0 4px 0">';
+        m.tool_results.forEach((tr, idx) => {
+          bodyHtml += renderToolCallBlock(tr, idx);
         });
+        bodyHtml += '</div>';
       }
 
-      hdr.onclick = () => body.classList.toggle('open');
+      // Assistant final response
+      bodyHtml += `<div class="msg"><div class="role assistant">assistant</div><div>${escHtml(t.response)}</div></div>`;
 
+      body.innerHTML = bodyHtml;
       block.appendChild(hdr);
       block.appendChild(body);
       el.appendChild(block);
