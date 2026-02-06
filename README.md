@@ -105,3 +105,46 @@ Each report includes:
 - Complete conversation history
 - Number of turns for each model (in comparison mode)
 
+### 4. Run Benchmark
+
+Run a comprehensive benchmark with multiple questions to evaluate model performance:
+
+```bash
+python3 4_benchmark.py --compare --model_dir ./models/trustworthy-qwen3-0.6b/
+```
+
+Run benchmark on a single model:
+```bash
+python3 4_benchmark.py --model_dir ./models/trustworthy-qwen3-0.6b/
+```
+
+**Options:**
+- `--model_dir`: Path to the fine-tuned model checkpoint (default: `./models/checkpoint_sft`)
+- `--base_model`: Base model name on HF Hub (default: `unsloth/Qwen3-0.6B`)
+- `--compare`: Run both base and custom models for comparison
+- `--questions`: Comma-separated list of custom questions (overrides default benchmark questions)
+- `--max_new_tokens`: Max tokens to generate per turn (default: 2048)
+- `--max_tool_iters`: Max tool-call iterations per question (default: 10)
+- `--temperature`: Sampling temperature (default: 0.7)
+- `--output_dir`: Directory to save benchmark reports (default: `./reports`)
+
+**Benchmark Reports:**
+
+Results are saved as JSON in the `reports/` directory with filename `benchmark_YYYYMMDD_HHMMSS.json`. Each report includes:
+- Configuration details
+- Per-turn metrics (tokens, generation time, tool calls)
+- Context growth analysis
+- Summary statistics across all turns
+- Full conversation history
+
+**Viewing Results:**
+
+To view benchmark results in a web interface:
+
+```bash
+cd reports
+python3 server.py
+```
+
+Then open `view_benchmark.html` in your browser at `http://localhost:8000/view_benchmark.html`
+
