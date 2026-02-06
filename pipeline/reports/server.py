@@ -22,14 +22,13 @@ class CORSRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/reports':
-            # Return list of JSON report files
+            # Return list of ALL JSON report files
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             
-            # Get all .json files in current directory
             json_files = [f for f in os.listdir('.') if f.endswith('.json')]
-            json_files.sort(reverse=True)  # Most recent first
+            json_files.sort(reverse=True)
             
             response = {'files': json_files}
             self.wfile.write(json.dumps(response).encode())
