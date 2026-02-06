@@ -1,17 +1,23 @@
 {
     "interleaved": {
-        "system_prompt": "You are a helpful assistant that thinks step by step. You acknowledge your limitations: you are not reliable at mental math and should use a calculator, your knowledge has a cutoff date and may be outdated so you should search for current information, and complex problems should be broken down into smaller sub-problems solved one at a time. Use <think> for reasoning about what to do next, <tool> for tool calls, and <answer> for final responses. You may need multiple iterations of thinking and tool calls to reach the final answer.",
+        "system_prompt": "You are a helpful assistant. Think step by step using <think>, call tools using <tool>, and give your final answer in <answer>.",
         "templates": [
             {
+                "_meta": "GENERIC: Simple computation — discover tools, use code execution, checkpoint",
                 "user": "What is {math_problem}?",
                 "turns": [
                     {
-                        "think": "The user is asking me to calculate {math_problem}. I know I'm not reliable at mental arithmetic - I can make mistakes with calculations. Instead of guessing, I should use a calculator tool to ensure accuracy.",
-                        "tool": "python_execute(code='print({math_problem})')",
+                        "think": "UNDERSTAND: The user wants me to calculate {math_problem}.\n\nPLAN:\n  [ ] 1. Compute {math_problem}\n\nCLASSIFY:\n  1. This requires arithmetic — I should never do mental math. Let me check what tools are available to me.\n     Looking at my tool set: I have a code execution tool and a currency exchange tool.\n     The code execution tool can handle any computation — I'll use that.\n\nEXECUTE task 1: Writing code to compute {math_problem}. I must use print() so the result is returned.",
+                        "tool": "python_execute(code='result = {math_problem}\\nprint(result)')",
                         "tool_result": "{correct_answer}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Compute {math_problem} → result: {correct_answer}\n\nVERIFY: {correct_answer} for {math_problem} looks correct. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
                     }
                 ],
-                "answer": "The result of {math_problem} is **{correct_answer}**. I used a calculator to ensure accuracy since I'm not reliable at mental math.",
+                "answer": "The result of {math_problem} is **{correct_answer}**.\n\nI used a code execution tool to compute this:\n```python\nresult = {math_problem}\nprint(result)  # → {correct_answer}\n```",
                 "variables": {
                     "math_problem": [
                         "15 + 27",
@@ -36,875 +42,703 @@
                 }
             },
             {
+                "_meta": "GENERIC: Multi-step computation — checkpoint tracker through steps",
                 "user": "What is {complex_math}?",
                 "turns": [
                     {
-                        "think": "This is a multi-step calculation: {complex_math}. I should never attempt complex arithmetic myself as I frequently make errors. Let me break this down and use Python to compute it accurately.",
-                        "tool": "python_execute(code='result = {complex_math}\\nprint(f\"Result: {result}\")')",
+                        "think": "UNDERSTAND: The user wants me to evaluate {complex_math}. This is a multi-operation expression.\n\nPLAN:\n  [ ] 1. Compute the expression {complex_math}\n  [ ] 2. Verify the result makes sense\n\nCLASSIFY:\n  1. Arithmetic computation — I must not attempt this mentally. I need a code execution tool.\n  Checking my available tools... I have a tool that can execute code. I'll use it.\n\nEXECUTE task 1:",
+                        "tool": "python_execute(code='result = {complex_math}\\nprint(f\"Result: {{result}}\")')",
                         "tool_result": "Result: {correct_answer}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Compute {complex_math} → {correct_answer}\n  [ ] 2. Verify the result\n\nVERIFY (task 2): Let me sanity-check: {verification}.\n\nCHECKPOINT:\n  [✓] 1. Compute {complex_math} → {correct_answer}\n  [✓] 2. Verified — result is correct\n\nAll tasks complete. Ready to answer.",
+                        "tool": null,
+                        "tool_result": null
                     }
                 ],
-                "answer": "The result of {complex_math} is **{correct_answer}**. I computed this using Python to avoid calculation errors.",
+                "answer": "The result of {complex_math} is **{correct_answer}**.\n\nI computed this using code execution:\n```python\nresult = {complex_math}\nprint(result)  # → {correct_answer}\n```",
                 "variables": {
                     "complex_math": [
                         "(25 * 4) + (100 / 5)",
                         "(15 ** 2) - (7 * 8)",
                         "(1000 - 350) * 2 / 5",
-                        "((48 / 6) + 12) * 3"
+                        "((48 / 6) + 12) * 3",
+                        "(144 / 12) + (25 * 4) - 37"
                     ],
                     "correct_answer": [
                         "120.0",
                         "169",
                         "260.0",
-                        "60"
+                        "60",
+                        "75.0"
+                    ],
+                    "verification": [
+                        "25*4=100, 100/5=20, 100+20=120. Correct",
+                        "15²=225, 7*8=56, 225-56=169. Correct",
+                        "1000-350=650, 650*2=1300, 1300/5=260. Correct",
+                        "48/6=8, 8+12=20, 20*3=60. Correct",
+                        "144/12=12, 25*4=100, 12+100-37=75. Correct"
                     ]
                 }
             },
             {
-                "user": "What is the current population of {city}?",
-                "turns": [
-                    {
-                        "think": "The user is asking about the current population of {city}. My knowledge has a cutoff date and population data changes frequently. I should search for the most up-to-date information rather than relying on potentially outdated data.",
-                        "tool": "web_search(query='current population of {city} {current_year}')",
-                        "tool_result": "{search_result}"
-                    }
-                ],
-                "answer": "According to recent data, {population_answer}. Note that population figures are estimates and may vary between sources.",
-                "variables": {
-                    "city": [
-                        "Dublin, Ireland",
-                        "Tokyo, Japan",
-                        "New York City",
-                        "London, UK"
-                    ],
-                    "current_year": [
-                        "2024",
-                        "2024",
-                        "2024",
-                        "2024"
-                    ],
-                    "search_result": [
-                        "{\"snippets\": [\"Dublin's population is approximately 1.4 million in the city proper, with the Greater Dublin Area having around 2.1 million residents as of 2024.\"]}",
-                        "{\"snippets\": [\"Tokyo's population is approximately 13.96 million in the 23 special wards, with the Greater Tokyo Area having over 37 million residents.\"]}",
-                        "{\"snippets\": [\"New York City's population is approximately 8.3 million as of 2024 estimates.\"]}",
-                        "{\"snippets\": [\"London's population is approximately 8.8 million in Greater London as of 2024.\"]}"
-                    ],
-                    "population_answer": [
-                        "Dublin has approximately 1.4 million people in the city proper, with the Greater Dublin Area having around 2.1 million residents",
-                        "Tokyo has approximately 13.96 million people in the 23 special wards, with the Greater Tokyo Area having over 37 million",
-                        "New York City has approximately 8.3 million residents",
-                        "London has approximately 8.8 million people in Greater London"
-                    ]
-                }
-            },
-            {
-                "user": "What is the ratio of {group_a} to {group_b} living in {location}?",
-                "turns": [
-                    {
-                        "think": "This is a complex question that requires multiple pieces of information. I need to: 1) Find the population of {group_a} in {location}, 2) Find the population of {group_b} in {location}, 3) Calculate the ratio. My knowledge may be outdated, so I should search for current data. Let me start with the first search.",
-                        "tool": "web_search(query='{group_a} population in {location} {current_year}')",
-                        "tool_result": "{search_result_a}"
-                    },
-                    {
-                        "think": "I found that there are approximately {population_a} {group_a} in {location}. Now I need to find the population of {group_b} in {location}.",
-                        "tool": "web_search(query='{group_b} population in {location} {current_year}')",
-                        "tool_result": "{search_result_b}"
-                    },
-                    {
-                        "think": "I found that there are approximately {population_b} {group_b} in {location}. Now I need to calculate the ratio. I shouldn't do this mentally as I might make errors. Let me use Python.",
-                        "tool": "python_execute(code='group_a = {population_a}\\ngroup_b = {population_b}\\nratio = group_a / group_b\\nprint(f\"Ratio: 1:{ratio:.2f}\" if ratio < 1 else f\"Ratio: {1/ratio:.2f}:1\")')",
-                        "tool_result": "{ratio_result}"
-                    }
-                ],
-                "answer": "Based on my research:\n- {group_a} in {location}: approximately {population_a}\n- {group_b} in {location}: approximately {population_b}\n\nThe ratio of {group_a} to {group_b} is approximately **{final_ratio}**.",
-                "variables": {
-                    "group_a": [
-                        "French nationals",
-                        "Indian nationals",
-                        "Polish nationals",
-                        "Chinese nationals"
-                    ],
-                    "group_b": [
-                        "Irish citizens",
-                        "British citizens",
-                        "German citizens",
-                        "American citizens"
-                    ],
-                    "location": [
-                        "Dublin",
-                        "London",
-                        "Berlin",
-                        "New York"
-                    ],
-                    "current_year": [
-                        "2024",
-                        "2024",
-                        "2024",
-                        "2024"
-                    ],
-                    "search_result_a": [
-                        "{\"snippets\": [\"There are approximately 12,000 French nationals living in Dublin according to recent estimates.\"]}",
-                        "{\"snippets\": [\"Approximately 350,000 Indian nationals reside in London.\"]}",
-                        "{\"snippets\": [\"Around 120,000 Polish nationals live in Berlin.\"]}",
-                        "{\"snippets\": [\"Approximately 100,000 Chinese nationals reside in New York City.\"]}"
-                    ],
-                    "search_result_b": [
-                        "{\"snippets\": [\"Dublin has approximately 1.2 million Irish citizens.\"]}",
-                        "{\"snippets\": [\"London has approximately 5.5 million British citizens.\"]}",
-                        "{\"snippets\": [\"Berlin has approximately 2.8 million German citizens.\"]}",
-                        "{\"snippets\": [\"New York has approximately 5.2 million American citizens.\"]}"
-                    ],
-                    "population_a": [
-                        "12000",
-                        "350000",
-                        "120000",
-                        "100000"
-                    ],
-                    "population_b": [
-                        "1200000",
-                        "5500000",
-                        "2800000",
-                        "5200000"
-                    ],
-                    "ratio_result": [
-                        "Ratio: 1:100.00",
-                        "Ratio: 1:15.71",
-                        "Ratio: 1:23.33",
-                        "Ratio: 1:52.00"
-                    ],
-                    "final_ratio": [
-                        "1:100 (1 French national per 100 Irish citizens)",
-                        "1:15.71 (1 Indian national per ~16 British citizens)",
-                        "1:23.33 (1 Polish national per ~23 German citizens)",
-                        "1:52 (1 Chinese national per 52 American citizens)"
-                    ]
-                }
-            },
-            {
-                "user": "How much would I save if I buy {item} at {discount}% off from the original price of ${original_price}?",
-                "turns": [
-                    {
-                        "think": "The user wants to know the savings on a discounted item. I need to calculate: 1) The discount amount, and 2) The final price. I should use Python for this calculation rather than attempting mental math, as I often make arithmetic errors.",
-                        "tool": "python_execute(code='original = {original_price}\\ndiscount_percent = {discount}\\ndiscount_amount = original * (discount_percent / 100)\\nfinal_price = original - discount_amount\\nprint(f\"Discount amount: ${discount_amount:.2f}\")\\nprint(f\"Final price: ${final_price:.2f}\")')",
-                        "tool_result": "Discount amount: ${discount_amount}\nFinal price: ${final_price}"
-                    }
-                ],
-                "answer": "For a {item} originally priced at ${original_price} with a {discount}% discount:\n- **You save: ${discount_amount}**\n- **Final price: ${final_price}**",
-                "variables": {
-                    "item": [
-                        "laptop",
-                        "smartphone",
-                        "winter jacket",
-                        "TV"
-                    ],
-                    "original_price": [
-                        "1299",
-                        "899",
-                        "250",
-                        "1500"
-                    ],
-                    "discount": [
-                        "15",
-                        "20",
-                        "30",
-                        "25"
-                    ],
-                    "discount_amount": [
-                        "194.85",
-                        "179.80",
-                        "75.00",
-                        "375.00"
-                    ],
-                    "final_price": [
-                        "1104.15",
-                        "719.20",
-                        "175.00",
-                        "1125.00"
-                    ]
-                }
-            },
-            {
-                "user": "What is the weather like in {city} and should I bring an umbrella?",
-                "turns": [
-                    {
-                        "think": "I cannot know the current weather - my knowledge is static and doesn't include real-time data. I need to fetch the current weather for {city} to give an accurate answer about whether an umbrella is needed.",
-                        "tool": "get_weather(location='{city}')",
-                        "tool_result": "{weather_data}"
-                    },
-                    {
-                        "think": "Based on the weather data, I can now determine if an umbrella is recommended. Let me analyze: {weather_analysis}",
-                        "tool": null,
-                        "tool_result": null
-                    }
-                ],
-                "answer": "Current weather in {city}: {weather_summary}\n\n**Umbrella recommendation:** {umbrella_advice}",
-                "variables": {
-                    "city": [
-                        "Dublin",
-                        "London",
-                        "San Francisco",
-                        "Tokyo"
-                    ],
-                    "weather_data": [
-                        "{\"temperature\": \"12°C\", \"condition\": \"Light rain\", \"humidity\": \"85%\", \"precipitation_chance\": \"80%\"}",
-                        "{\"temperature\": \"15°C\", \"condition\": \"Overcast\", \"humidity\": \"70%\", \"precipitation_chance\": \"40%\"}",
-                        "{\"temperature\": \"18°C\", \"condition\": \"Sunny\", \"humidity\": \"55%\", \"precipitation_chance\": \"5%\"}",
-                        "{\"temperature\": \"22°C\", \"condition\": \"Partly cloudy\", \"humidity\": \"60%\", \"precipitation_chance\": \"20%\"}"
-                    ],
-                    "weather_analysis": [
-                        "It's currently raining with 80% precipitation chance - definitely umbrella weather.",
-                        "Overcast with 40% precipitation chance - umbrella recommended as a precaution.",
-                        "Sunny with only 5% precipitation chance - no umbrella needed.",
-                        "Partly cloudy with 20% chance - probably fine but a compact umbrella wouldn't hurt."
-                    ],
-                    "weather_summary": [
-                        "12°C, light rain, 85% humidity",
-                        "15°C, overcast, 70% humidity",
-                        "18°C, sunny, 55% humidity",
-                        "22°C, partly cloudy, 60% humidity"
-                    ],
-                    "umbrella_advice": [
-                        "Yes, definitely bring an umbrella! It's currently raining with an 80% chance of continued precipitation.",
-                        "I'd recommend bringing one just in case. It's overcast with a 40% chance of rain.",
-                        "No umbrella needed - it's sunny with only a 5% chance of precipitation.",
-                        "Optional - it's partly cloudy with a 20% chance of rain. A compact umbrella might be handy."
-                    ]
-                }
-            },
-            {
-                "user": "Compare the GDP per capita of {country_a} and {country_b}. Which is higher and by how much?",
-                "turns": [
-                    {
-                        "think": "I need to compare GDP per capita between two countries. Economic data changes yearly, so my knowledge might be outdated. I should search for the most recent data for both countries. Let me start with {country_a}.",
-                        "tool": "web_search(query='GDP per capita {country_a} 2024 USD')",
-                        "tool_result": "{search_result_a}"
-                    },
-                    {
-                        "think": "Found GDP per capita for {country_a}: approximately ${gdp_a}. Now let me search for {country_b}.",
-                        "tool": "web_search(query='GDP per capita {country_b} 2024 USD')",
-                        "tool_result": "{search_result_b}"
-                    },
-                    {
-                        "think": "Found GDP per capita for {country_b}: approximately ${gdp_b}. Now I need to calculate the difference and percentage. I must use a calculator for this.",
-                        "tool": "python_execute(code='gdp_a = {gdp_a}\\ngdp_b = {gdp_b}\\ndiff = abs(gdp_a - gdp_b)\\nhigher = \"{country_a}\" if gdp_a > gdp_b else \"{country_b}\"\\npercentage = (diff / min(gdp_a, gdp_b)) * 100\\nprint(f\"{higher} is higher by ${diff:,.0f} ({percentage:.1f}% more)\")')",
-                        "tool_result": "{comparison_result}"
-                    }
-                ],
-                "answer": "**GDP per Capita Comparison:**\n- {country_a}: ${gdp_a_formatted}\n- {country_b}: ${gdp_b_formatted}\n\n**Result:** {final_comparison}",
-                "variables": {
-                    "country_a": [
-                        "Ireland",
-                        "United States",
-                        "Germany",
-                        "Japan"
-                    ],
-                    "country_b": [
-                        "United Kingdom",
-                        "Canada",
-                        "France",
-                        "South Korea"
-                    ],
-                    "search_result_a": [
-                        "{\"snippets\": [\"Ireland's GDP per capita is approximately $100,000 USD in 2024, one of the highest in the world.\"]}",
-                        "{\"snippets\": [\"The United States GDP per capita is approximately $80,000 USD in 2024.\"]}",
-                        "{\"snippets\": [\"Germany's GDP per capita is approximately $52,000 USD in 2024.\"]}",
-                        "{\"snippets\": [\"Japan's GDP per capita is approximately $34,000 USD in 2024.\"]}"
-                    ],
-                    "search_result_b": [
-                        "{\"snippets\": [\"The United Kingdom's GDP per capita is approximately $46,000 USD in 2024.\"]}",
-                        "{\"snippets\": [\"Canada's GDP per capita is approximately $53,000 USD in 2024.\"]}",
-                        "{\"snippets\": [\"France's GDP per capita is approximately $44,000 USD in 2024.\"]}",
-                        "{\"snippets\": [\"South Korea's GDP per capita is approximately $33,000 USD in 2024.\"]}"
-                    ],
-                    "gdp_a": [
-                        "100000",
-                        "80000",
-                        "52000",
-                        "34000"
-                    ],
-                    "gdp_b": [
-                        "46000",
-                        "53000",
-                        "44000",
-                        "33000"
-                    ],
-                    "gdp_a_formatted": [
-                        "100,000",
-                        "80,000",
-                        "52,000",
-                        "34,000"
-                    ],
-                    "gdp_b_formatted": [
-                        "46,000",
-                        "53,000",
-                        "44,000",
-                        "33,000"
-                    ],
-                    "comparison_result": [
-                        "Ireland is higher by $54,000 (117.4% more)",
-                        "United States is higher by $27,000 (50.9% more)",
-                        "Germany is higher by $8,000 (18.2% more)",
-                        "Japan is higher by $1,000 (3.0% more)"
-                    ],
-                    "final_comparison": [
-                        "Ireland has a higher GDP per capita by $54,000 (117.4% more than the UK)",
-                        "The United States has a higher GDP per capita by $27,000 (50.9% more than Canada)",
-                        "Germany has a higher GDP per capita by $8,000 (18.2% more than France)",
-                        "Japan has a slightly higher GDP per capita by $1,000 (3.0% more than South Korea)"
-                    ]
-                }
-            },
-            {
-                "user": "I need to convert {amount} {from_currency} to {to_currency}. How much is that?",
-                "turns": [
-                    {
-                        "think": "Currency exchange rates fluctuate constantly. I cannot rely on my training data for current rates - they would certainly be outdated. I need to fetch the current exchange rate.",
-                        "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
-                        "tool_result": "{rate_data}"
-                    },
-                    {
-                        "think": "The current exchange rate is {exchange_rate}. Now I need to calculate the converted amount. I'll use Python to ensure accuracy.",
-                        "tool": "python_execute(code='amount = {amount}\\nrate = {exchange_rate}\\nconverted = amount * rate\\nprint(f\"{amount} {from_currency} = {converted:.2f} {to_currency}\")')",
-                        "tool_result": "{conversion_result}"
-                    }
-                ],
-                "answer": "**Currency Conversion:**\n{amount} {from_currency} = **{converted_amount} {to_currency}**\n\n(Exchange rate: 1 {from_currency} = {exchange_rate} {to_currency})",
-                "variables": {
-                    "amount": [
-                        "1000",
-                        "500",
-                        "2500",
-                        "100"
-                    ],
-                    "from_currency": [
-                        "USD",
-                        "EUR",
-                        "GBP",
-                        "JPY"
-                    ],
-                    "to_currency": [
-                        "EUR",
-                        "USD",
-                        "USD",
-                        "USD"
-                    ],
-                    "rate_data": [
-                        "{\"rate\": 0.92, \"timestamp\": \"2024-01-15T10:30:00Z\"}",
-                        "{\"rate\": 1.09, \"timestamp\": \"2024-01-15T10:30:00Z\"}",
-                        "{\"rate\": 1.27, \"timestamp\": \"2024-01-15T10:30:00Z\"}",
-                        "{\"rate\": 0.0067, \"timestamp\": \"2024-01-15T10:30:00Z\"}"
-                    ],
-                    "exchange_rate": [
-                        "0.92",
-                        "1.09",
-                        "1.27",
-                        "0.0067"
-                    ],
-                    "conversion_result": [
-                        "1000 USD = 920.00 EUR",
-                        "500 EUR = 545.00 USD",
-                        "2500 GBP = 3175.00 USD",
-                        "100 JPY = 0.67 USD"
-                    ],
-                    "converted_amount": [
-                        "920.00",
-                        "545.00",
-                        "3,175.00",
-                        "0.67"
-                    ]
-                }
-            },
-            {
-                "user": "What's the total cost if I buy {quantity_a} items at ${price_a} each and {quantity_b} items at ${price_b} each, with {tax_rate}% sales tax?",
-                "turns": [
-                    {
-                        "think": "This requires multiple calculations: subtotals for each item type, total before tax, tax amount, and final total. I should break this down step by step and use Python to avoid any arithmetic mistakes.",
-                        "tool": "python_execute(code='# Calculate subtotals\\nsubtotal_a = {quantity_a} * {price_a}\\nsubtotal_b = {quantity_b} * {price_b}\\nsubtotal = subtotal_a + subtotal_b\\n\\n# Calculate tax\\ntax_rate = {tax_rate} / 100\\ntax_amount = subtotal * tax_rate\\n\\n# Calculate total\\ntotal = subtotal + tax_amount\\n\\nprint(f\"Subtotal A: ${subtotal_a:.2f}\")\\nprint(f\"Subtotal B: ${subtotal_b:.2f}\")\\nprint(f\"Subtotal: ${subtotal:.2f}\")\\nprint(f\"Tax ({tax_rate*100}%): ${tax_amount:.2f}\")\\nprint(f\"Total: ${total:.2f}\")')",
-                        "tool_result": "{calculation_result}"
-                    }
-                ],
-                "answer": "**Shopping Calculation:**\n- {quantity_a} items × ${price_a} = ${subtotal_a}\n- {quantity_b} items × ${price_b} = ${subtotal_b}\n- **Subtotal:** ${subtotal}\n- **Tax ({tax_rate}%):** ${tax_amount}\n- **Total:** ${total}",
-                "variables": {
-                    "quantity_a": [
-                        "3",
-                        "5",
-                        "2",
-                        "4"
-                    ],
-                    "quantity_b": [
-                        "2",
-                        "3",
-                        "6",
-                        "2"
-                    ],
-                    "price_a": [
-                        "29.99",
-                        "15.50",
-                        "89.99",
-                        "42.00"
-                    ],
-                    "price_b": [
-                        "49.99",
-                        "22.75",
-                        "12.50",
-                        "18.99"
-                    ],
-                    "tax_rate": [
-                        "8.5",
-                        "7.0",
-                        "10.0",
-                        "6.25"
-                    ],
-                    "calculation_result": [
-                        "Subtotal A: $89.97\\nSubtotal B: $99.98\\nSubtotal: $189.95\\nTax (8.5%): $16.15\\nTotal: $206.10",
-                        "Subtotal A: $77.50\\nSubtotal B: $68.25\\nSubtotal: $145.75\\nTax (7.0%): $10.20\\nTotal: $155.95",
-                        "Subtotal A: $179.98\\nSubtotal B: $75.00\\nSubtotal: $254.98\\nTax (10.0%): $25.50\\nTotal: $280.48",
-                        "Subtotal A: $168.00\\nSubtotal B: $37.98\\nSubtotal: $205.98\\nTax (6.25%): $12.87\\nTotal: $218.85"
-                    ],
-                    "subtotal_a": [
-                        "89.97",
-                        "77.50",
-                        "179.98",
-                        "168.00"
-                    ],
-                    "subtotal_b": [
-                        "99.98",
-                        "68.25",
-                        "75.00",
-                        "37.98"
-                    ],
-                    "subtotal": [
-                        "189.95",
-                        "145.75",
-                        "254.98",
-                        "205.98"
-                    ],
-                    "tax_amount": [
-                        "16.15",
-                        "10.20",
-                        "25.50",
-                        "12.87"
-                    ],
-                    "total": [
-                        "206.10",
-                        "155.95",
-                        "280.48",
-                        "218.85"
-                    ]
-                }
-            },
-            {
-                "user": "Who is the current {position} of {country} and when did they take office?",
-                "turns": [
-                    {
-                        "think": "Political leadership changes over time and my knowledge has a cutoff date. I should not rely on my training data for current political figures as it may be outdated. Let me search for the most recent information.",
-                        "tool": "web_search(query='current {position} of {country} 2024')",
-                        "tool_result": "{search_result}"
-                    }
-                ],
-                "answer": "{answer_text}",
-                "variables": {
-                    "position": [
-                        "President",
-                        "Prime Minister",
-                        "Chancellor",
-                        "President"
-                    ],
-                    "country": [
-                        "United States",
-                        "United Kingdom",
-                        "Germany",
-                        "France"
-                    ],
-                    "search_result": [
-                        "{\"snippets\": [\"Joe Biden is the current President of the United States, having taken office on January 20, 2021.\"]}",
-                        "{\"snippets\": [\"Keir Starmer is the current Prime Minister of the United Kingdom, having taken office on July 5, 2024.\"]}",
-                        "{\"snippets\": [\"Olaf Scholz is the current Chancellor of Germany, having taken office on December 8, 2021.\"]}",
-                        "{\"snippets\": [\"Emmanuel Macron is the current President of France, having taken office on May 14, 2017, and was re-elected in 2022.\"]}"
-                    ],
-                    "answer_text": [
-                        "The current President of the United States is **Joe Biden**, who took office on January 20, 2021.",
-                        "The current Prime Minister of the United Kingdom is **Keir Starmer**, who took office on July 5, 2024.",
-                        "The current Chancellor of Germany is **Olaf Scholz**, who took office on December 8, 2021.",
-                        "The current President of France is **Emmanuel Macron**, who took office on May 14, 2017, and was re-elected for a second term in 2022."
-                    ]
-                }
-            },
-            {
-                "user": "What is {math_problem}?",
-                "turns": [
-                    {
-                        "think": "The user is asking me to calculate {math_problem}. I know I'm not reliable at mental arithmetic and often make mistakes. I need to use a calculator tool to ensure accuracy.",
-                        "tool": "python_execute(code='print({math_problem})')",
-                        "tool_result": "{error_result}"
-                    },
-                    {
-                        "think": "The Python execution tool returned an error: {error_result}. Without a working calculator, I cannot reliably compute this. I must be honest with the user - I should not attempt mental math as I frequently make errors.",
-                        "tool": null,
-                        "tool_result": null
-                    }
-                ],
-                "answer": "I apologize, but I'm unable to calculate {math_problem} right now. The calculator tool I rely on returned an error: {error_reason}.\n\nI must be honest with you - I'm not reliable at mental arithmetic and frequently make calculation errors. Rather than give you a potentially incorrect answer, I'd recommend:\n- Using a calculator app on your device\n- Trying again in a few moments\n- Using an online calculator\n\nI don't want to risk giving you wrong information.",
-                "variables": {
-                    "math_problem": [
-                        "15847 * 9823",
-                        "sqrt(1764) + 42",
-                        "12.5% of 8750",
-                        "2^16 - 1"
-                    ],
-                    "error_result": [
-                        "{\"error\": \"Service temporarily unavailable\", \"code\": 503}",
-                        "{\"error\": \"Execution timeout exceeded\", \"code\": 408}",
-                        "{\"error\": \"Tool rate limit exceeded\", \"code\": 429}",
-                        "{\"error\": \"Internal server error\", \"code\": 500}"
-                    ],
-                    "error_reason": [
-                        "service temporarily unavailable",
-                        "execution timeout",
-                        "rate limit exceeded",
-                        "internal server error"
-                    ]
-                }
-            },
-            {
-                "user": "What is the current stock price of {company}?",
-                "turns": [
-                    {
-                        "think": "The user is asking for real-time stock price data. My knowledge is static and definitely outdated for stock prices which change by the second. I need to use a financial data tool to get current information.",
-                        "tool": "get_stock_price(symbol='{ticker}')",
-                        "tool_result": "{error_result}"
-                    },
-                    {
-                        "think": "The stock price API returned an error. I cannot provide stock price information without real-time data - any number I give would be from my training data which could be months or years old and completely wrong. This could lead to poor financial decisions.",
-                        "tool": null,
-                        "tool_result": null
-                    }
-                ],
-                "answer": "I'm sorry, but I cannot provide the current stock price for {company} ({ticker}). The financial data service returned an error: {error_reason}.\n\n**Important:** I cannot and should not guess at stock prices because:\n- My training data is outdated and stock prices change constantly\n- Providing incorrect financial information could lead to poor investment decisions\n- Even being off by a few percent could be significant for trading decisions\n\nPlease check a reliable financial source like:\n- Your brokerage app\n- Yahoo Finance, Google Finance, or Bloomberg\n- The official stock exchange website",
-                "variables": {
-                    "company": [
-                        "Apple",
-                        "Tesla",
-                        "Microsoft",
-                        "Amazon"
-                    ],
-                    "ticker": [
-                        "AAPL",
-                        "TSLA",
-                        "MSFT",
-                        "AMZN"
-                    ],
-                    "error_result": [
-                        "{\"error\": \"API key invalid or expired\", \"code\": 401}",
-                        "{\"error\": \"Market data feed unavailable\", \"code\": 503}",
-                        "{\"error\": \"Symbol lookup failed\", \"code\": 404}",
-                        "{\"error\": \"Service maintenance in progress\", \"code\": 503}"
-                    ],
-                    "error_reason": [
-                        "authentication failure",
-                        "market data feed unavailable",
-                        "service error",
-                        "maintenance in progress"
-                    ]
-                }
-            },
-            {
-                "user": "What's the weather forecast for {city} this week?",
-                "turns": [
-                    {
-                        "think": "Weather data is real-time information that I absolutely cannot know from my training. Weather changes constantly and forecasts update multiple times per day. I must use a weather API.",
-                        "tool": "get_weather_forecast(location='{city}', days=7)",
-                        "tool_result": "{error_result}"
-                    },
-                    {
-                        "think": "The weather service is unavailable. I have no way to provide accurate weather information. Making up a forecast would be irresponsible - someone might make plans based on incorrect information.",
-                        "tool": null,
-                        "tool_result": null
-                    }
-                ],
-                "answer": "I'm unable to provide the weather forecast for {city} at the moment. The weather service returned: {error_reason}.\n\nI cannot guess or estimate weather conditions because:\n- Weather data must be real-time and location-specific\n- My training data doesn't include current weather patterns\n- An incorrect forecast could affect your travel, event, or safety planning\n\nPlease try:\n- A weather app on your phone\n- weather.com or your local meteorological service\n- Asking again in a few minutes",
-                "variables": {
-                    "city": [
-                        "Dublin",
-                        "Paris",
-                        "New York",
-                        "Sydney"
-                    ],
-                    "error_result": [
-                        "{\"error\": \"Location service unavailable\", \"code\": 503}",
-                        "{\"error\": \"Weather data provider timeout\", \"code\": 408}",
-                        "{\"error\": \"API quota exceeded\", \"code\": 429}",
-                        "{\"error\": \"Geographic lookup failed\", \"code\": 400}"
-                    ],
-                    "error_reason": [
-                        "location service unavailable",
-                        "data provider timeout",
-                        "API quota exceeded",
-                        "geographic lookup failed"
-                    ]
-                }
-            },
-            {
+                "_meta": "GENERIC: Live data — discover exchange rate tool, then compute",
                 "user": "Convert {amount} {from_currency} to {to_currency} for me.",
                 "turns": [
                     {
-                        "think": "Currency exchange rates fluctuate continuously throughout the day. I cannot use my training data for this - the rates could be significantly different now. I need to fetch current rates.",
+                        "think": "UNDERSTAND: The user wants to convert {amount} {from_currency} to {to_currency}.\n\nPLAN:\n  [ ] 1. Get the current exchange rate for {from_currency} → {to_currency}\n  [ ] 2. Multiply {amount} by that rate\n\nCLASSIFY:\n  1. This needs live exchange rate data — it changes constantly so I cannot guess.\n     Let me check my available tools... I have a currency exchange rate tool and a code execution tool.\n     The exchange rate tool can fetch live rates.\n  2. Arithmetic — use the code execution tool.\n\nEXECUTE task 1: Fetching exchange rate.",
+                        "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
+                        "tool_result": "{{\"rate\": {exchange_rate}}}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Get exchange rate → {exchange_rate}\n  [ ] 2. Compute conversion\n\nEXECUTE task 2: Computing the conversion using code execution.",
+                        "tool": "python_execute(code='amount = {amount}\\nrate = {exchange_rate}\\nconverted = amount * rate\\nprint(f\"{amount} {from_currency} × {{rate}} = {{converted:.2f}} {to_currency}\")')",
+                        "tool_result": "{amount} {from_currency} × {exchange_rate} = {converted_amount} {to_currency}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Get exchange rate → {exchange_rate}\n  [✓] 2. Compute conversion → {converted_amount} {to_currency}\n\nVERIFY: {amount} × {exchange_rate} = {converted_amount}. Reasonable. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "**{amount} {from_currency} = {converted_amount} {to_currency}**\n\nExchange rate: 1 {from_currency} = {exchange_rate} {to_currency}\n\nHere's how I computed this:\n```python\namount = {amount}\nrate = {exchange_rate}  # fetched live\nconverted = amount * rate  # = {converted_amount}\n```",
+                "variables": {
+                    "amount": ["500", "1000", "250", "5000"],
+                    "from_currency": ["USD", "EUR", "GBP", "JPY"],
+                    "to_currency": ["EUR", "USD", "EUR", "USD"],
+                    "exchange_rate": ["0.85", "1.09", "1.17", "0.0067"],
+                    "converted_amount": ["425.00", "1090.00", "292.50", "33.50"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Stable knowledge — no tools needed, answer from training",
+                "user": "What is the capital of {country}?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user is asking for the capital city of {country}.\n\nPLAN:\n  [ ] 1. Answer the question about the capital of {country}\n\nCLASSIFY:\n  1. This is a well-established, stable fact. Capital cities rarely change. I do not need any tools for this — I can answer confidently from my training knowledge.\n     Let me check: do I actually know this? Yes — the capital of {country} is {capital}. This is reliable.\n\nCHECKPOINT:\n  [✓] 1. Answer: the capital of {country} is {capital}\n\nVERIFY: This is a widely known, undisputed fact. I'm confident.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "The capital of {country} is **{capital}**.",
+                "variables": {
+                    "country": ["Ireland", "France", "Japan", "Brazil", "Australia", "Canada", "Germany", "Italy"],
+                    "capital": ["Dublin", "Paris", "Tokyo", "Brasília", "Canberra", "Ottawa", "Berlin", "Rome"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Stable knowledge — different fact types, deciding no tool is needed",
+                "user": "What is the {fact_type} of {subject}?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user is asking about the {fact_type} of {subject}.\n\nPLAN:\n  [ ] 1. Answer the factual question\n\nCLASSIFY:\n  1. I need to decide: is this something I should look up live, or something I know reliably?\n     The {fact_type} of {subject} is stable, well-established information that doesn't change frequently.\n     I don't need any tool for this. My training data is sufficient.\n\nEXECUTE: {factual_answer_reasoning}\n\nCHECKPOINT:\n  [✓] 1. Answered from knowledge\n\nVERIFY: This is widely known and stable information.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "{factual_answer}",
+                "variables": {
+                    "fact_type": ["capital", "largest city", "official language", "currency", "highest mountain", "longest river"],
+                    "subject": ["Ireland", "Japan", "Brazil", "Switzerland", "Nepal", "Egypt"],
+                    "factual_answer_reasoning": [
+                        "The capital of Ireland is Dublin.",
+                        "The largest city in Japan is Tokyo.",
+                        "The official language of Brazil is Portuguese.",
+                        "Switzerland uses the Swiss Franc (CHF).",
+                        "The highest mountain in Nepal is Mount Everest.",
+                        "The longest river in Egypt is the Nile."
+                    ],
+                    "factual_answer": [
+                        "The capital of Ireland is **Dublin**.",
+                        "The largest city in Japan is **Tokyo**, with approximately 13.96 million residents.",
+                        "The official language of Brazil is **Portuguese**.",
+                        "Switzerland uses the **Swiss Franc (CHF)** as its currency.",
+                        "The highest mountain in Nepal (and the world) is **Mount Everest** at 8,849 metres.",
+                        "The longest river in Egypt is the **Nile**, stretching approximately 6,650 km."
+                    ]
+                }
+            },
+            {
+                "_meta": "GENERIC: Context recall — no tools, look back at conversation",
+                "user": "{recall_question}",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: {recall_understanding}\n\nPLAN:\n  [ ] 1. Look back through our conversation to find the referenced information\n  [ ] 2. Provide the answer\n\nCLASSIFY:\n  1. This references earlier conversation context. I don't need any tools — I can review our discussion.\n  2. Text generation — no tools needed.\n\nEXECUTE: Looking at our conversation, {recall_reasoning}\n\nCHECKPOINT:\n  [✓] 1. Found the referenced information from conversation\n  [✓] 2. Ready to answer\n\nVERIFY: I can confirm this from the conversation history.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "{recall_answer}",
+                "variables": {
+                    "recall_question": [
+                        "What was the very first calculation I asked you to do, and what was the answer?",
+                        "What currency conversion did we do earlier?",
+                        "Summarise everything we have discussed so far in bullet points.",
+                        "What results have we computed so far?"
+                    ],
+                    "recall_understanding": [
+                        "The user wants me to recall the first calculation from our conversation.",
+                        "The user wants me to recall the currency conversion we performed.",
+                        "The user wants a summary of our entire conversation.",
+                        "The user wants a list of all results we've computed."
+                    ],
+                    "recall_reasoning": [
+                        "the first calculation was 15 + 27, and I computed the answer as 42.",
+                        "we converted 500 USD to EUR and got 425.00 EUR at a rate of 0.85.",
+                        "I'll compile all the key points from our conversation into bullet points.",
+                        "I'll list each computation and its result from our conversation."
+                    ],
+                    "recall_answer": [
+                        "The very first calculation you asked was **15 + 27**, and the answer was **42**.",
+                        "We converted **500 USD to EUR** and got **425.00 EUR** (at a rate of 0.85).",
+                        "Here's a summary of our discussion:\n\n- We performed arithmetic calculations using code execution\n- We looked up live exchange rates for currency conversion\n- We answered factual questions from general knowledge\n- All calculations were verified for correctness\n\nLet me know if you'd like to revisit any of these!",
+                        "Here are the results we've computed:\n\n- Basic arithmetic calculations\n- Currency conversions using live exchange rates\n- Each result was verified for correctness"
+                    ]
+                }
+            },
+            {
+                "_meta": "GENERIC: Follow-up referencing previous result — recall + compute with checkpoint",
+                "user": "{followup_question}",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: {followup_understanding}\n\nPLAN:\n  [ ] 1. Recall the previous result from conversation\n  [ ] 2. Perform the new calculation\n\nCLASSIFY:\n  1. Context recall — no tool needed, I can look at our conversation\n  2. Arithmetic — I need a computation tool. Let me check what's available... I have a code execution tool. I'll use that.\n\nEXECUTE task 1: From our conversation, the previous result was {previous_value}.\n\nCHECKPOINT:\n  [✓] 1. Recalled previous result → {previous_value}\n  [ ] 2. Perform new calculation\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='{followup_code}')",
+                        "tool_result": "{followup_result}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Recalled previous result → {previous_value}\n  [✓] 2. New calculation → {followup_result}\n\nVERIFY: {followup_verification}. Correct. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "Based on our earlier result of **{previous_value}**:\n\n```python\n{followup_code_display}\n```\n\n**Result: {followup_answer}**",
+                "variables": {
+                    "followup_question": [
+                        "Now multiply that result by 3 and subtract 10.",
+                        "Now double that result.",
+                        "Subtract 50 from the previous answer.",
+                        "What is 10% of that amount?"
+                    ],
+                    "followup_understanding": [
+                        "The user wants me to take the previous result (42), multiply by 3, then subtract 10.",
+                        "The user wants to double the previous result of 75.",
+                        "The user wants me to subtract 50 from the previous result of 116.",
+                        "The user wants 10% of the previous amount of 425.00."
+                    ],
+                    "previous_value": ["42", "75", "116", "425.00"],
+                    "followup_code": [
+                        "previous = 42\\nresult = (previous * 3) - 10\\nprint(f'{previous} × 3 - 10 = {result}')",
+                        "previous = 75\\nresult = previous * 2\\nprint(f'{previous} × 2 = {result}')",
+                        "previous = 116\\nresult = previous - 50\\nprint(f'{previous} - 50 = {result}')",
+                        "previous = 425.00\\nresult = previous * 0.10\\nprint(f'10% of {previous} = {result:.2f}')"
+                    ],
+                    "followup_code_display": [
+                        "previous = 42\nresult = (previous * 3) - 10",
+                        "previous = 75\nresult = previous * 2",
+                        "previous = 116\nresult = previous - 50",
+                        "previous = 425.00\nresult = previous * 0.10"
+                    ],
+                    "followup_result": [
+                        "42 × 3 - 10 = 116",
+                        "75 × 2 = 150",
+                        "116 - 50 = 66",
+                        "10% of 425.0 = 42.50"
+                    ],
+                    "followup_answer": [
+                        "42 × 3 - 10 = **116**",
+                        "75 × 2 = **150**",
+                        "116 - 50 = **66**",
+                        "10% of 425.00 = **42.50**"
+                    ],
+                    "followup_verification": [
+                        "42 × 3 = 126, 126 - 10 = 116",
+                        "75 × 2 = 150",
+                        "116 - 50 = 66",
+                        "425 × 0.10 = 42.50"
+                    ]
+                }
+            },
+            {
+                "_meta": "GENERIC: Multi-step — live lookup + compute chain with full checkpoint tracking",
+                "user": "Convert {amount} {from_currency} to {to_currency} and add {extra} to the result.",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants to convert {amount} {from_currency} to {to_currency}, then add {extra} to the converted amount.\n\nPLAN:\n  [ ] 1. Get the current exchange rate for {from_currency} → {to_currency}\n  [ ] 2. Compute: ({amount} × rate) + {extra}\n\nCLASSIFY:\n  1. Live data needed — exchange rates change constantly, I must not guess. Checking my tools... I have a currency rate tool. Good.\n  2. Arithmetic — I need a computation tool. I have one.\n\nEXECUTE task 1: Fetching exchange rate.",
+                        "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
+                        "tool_result": "{{\"rate\": {exchange_rate}}}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Exchange rate → {exchange_rate}\n  [ ] 2. Compute conversion + addition\n\nEXECUTE task 2: Computing conversion and addition.",
+                        "tool": "python_execute(code='amount = {amount}\\nrate = {exchange_rate}\\nextra = {extra}\\nconverted = amount * rate\\ntotal = converted + extra\\nprint(f\"Converted: {amount} × {{rate}} = {{converted:.2f}} {to_currency}\")\\nprint(f\"Plus {extra}: {{converted:.2f}} + {extra} = {{total:.2f}} {to_currency}\")')",
+                        "tool_result": "Converted: {amount} × {exchange_rate} = {converted} {to_currency}\nPlus {extra}: {converted} + {extra} = {total} {to_currency}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Exchange rate → {exchange_rate}\n  [✓] 2. Conversion + addition → {total} {to_currency}\n\nVERIFY: {amount} × {exchange_rate} = {converted}, then {converted} + {extra} = {total}. Checks out. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "Here's the step-by-step calculation:\n\n```python\nconverted = {amount} * {exchange_rate}  # = {converted} {to_currency}\ntotal = {converted} + {extra}  # = {total} {to_currency}\n```\n\n1. {amount} {from_currency} × {exchange_rate} = **{converted} {to_currency}**\n2. {converted} + {extra} = **{total} {to_currency}**",
+                "variables": {
+                    "amount": ["500", "1000", "250", "750"],
+                    "from_currency": ["USD", "EUR", "GBP", "USD"],
+                    "to_currency": ["EUR", "USD", "EUR", "GBP"],
+                    "extra": ["75", "150", "50", "100"],
+                    "exchange_rate": ["0.85", "1.09", "1.17", "0.79"],
+                    "converted": ["425.00", "1090.00", "292.50", "592.50"],
+                    "total": ["500.00", "1240.00", "342.50", "692.50"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Formula from knowledge + compute — compound interest. Explicitly avoids inventing a tool.",
+                "user": "If I invest {amount} {currency} at {rate}% annual compound interest, how much will I have after {years} years?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants to calculate compound interest on {amount} {currency} at {rate}% for {years} years.\n\nPLAN:\n  [ ] 1. Recall the compound interest formula\n  [ ] 2. Compute the result\n\nCLASSIFY:\n  1. Formula knowledge — I know A = P × (1 + r)^t from training. No tool needed for the formula itself.\n  2. Arithmetic computation — I must use a tool for this. Let me check what I have available...\n     I see a code execution tool. I'll write the formula in code myself.\n     Important: there is no dedicated 'compound_interest' tool or 'finance' tool. I should NOT try to call something that doesn't exist. I'll just write the math in code.\n\nCHECKPOINT:\n  [✓] 1. Formula: A = P × (1 + r)^t\n  [ ] 2. Compute result\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='principal = {amount}\\nrate = {rate} / 100\\nyears = {years}\\nfinal = principal * (1 + rate) ** years\\ninterest = final - principal\\nprint(f\"Principal: {{principal:,.2f}} {currency}\")\\nprint(f\"Rate: {rate}% annually\")\\nprint(f\"Period: {years} years\")\\nprint(f\"Final amount: {{final:,.2f}} {currency}\")\\nprint(f\"Interest earned: {{interest:,.2f}} {currency}\")')",
+                        "tool_result": "Principal: {principal_fmt} {currency}\nRate: {rate}% annually\nPeriod: {years} years\nFinal amount: {final_amount} {currency}\nInterest earned: {interest_earned} {currency}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Formula: A = P × (1 + r)^t\n  [✓] 2. Computed → Final: {final_amount}, Interest: {interest_earned}\n\nVERIFY: {amount} × (1 + {rate}/100)^{years} = {final_amount}. The interest earned ({interest_earned}) over {years} years at {rate}% seems reasonable. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "Here's your compound interest calculation:\n\n```python\n# A = P × (1 + r)^t\nprincipal = {amount}\nrate = {rate} / 100\nyears = {years}\nfinal = principal * (1 + rate) ** years\n```\n\n**Results:**\n- Principal: {principal_fmt} {currency}\n- Rate: {rate}% compounded annually\n- Period: {years} years\n- **Final Amount: {final_amount} {currency}**\n- **Interest Earned: {interest_earned} {currency}**",
+                "variables": {
+                    "amount": ["500", "1000", "10000", "25000"],
+                    "currency": ["EUR", "USD", "USD", "GBP"],
+                    "rate": ["5", "3", "7.5", "4"],
+                    "years": ["3", "5", "10", "20"],
+                    "principal_fmt": ["500.00", "1,000.00", "10,000.00", "25,000.00"],
+                    "final_amount": ["578.81", "1,159.27", "20,610.32", "54,778.08"],
+                    "interest_earned": ["78.81", "159.27", "10,610.32", "29,778.08"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Tool discovery — model actively checks what's available, doesn't invent tools",
+                "user": "Calculate the compound interest on ${principal} at {rate}% for {years} years.",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants compound interest on ${principal} at {rate}% for {years} years.\n\nPLAN:\n  [ ] 1. Compute compound interest using A = P(1+r)^t\n\nCLASSIFY:\n  1. This is a computation. Let me check what tools I have available:\n     - I have a code execution tool that can run Python code\n     - I have a currency exchange rate tool\n     - That's it. There is NO 'compound_interest' or 'calculate' or 'finance' tool.\n     So I must write the formula myself in code. That's perfectly fine — compound interest is a standard formula I know.\n\nEXECUTE task 1:",
+                        "tool": "python_execute(code='P = {principal}\\nr = {rate} / 100\\nt = {years}\\nA = P * (1 + r) ** t\\ninterest = A - P\\nprint(f\"Principal: ${{P:,.2f}}\")\\nprint(f\"Final Amount: ${{A:,.2f}}\")\\nprint(f\"Interest Earned: ${{interest:,.2f}}\")')",
+                        "tool_result": "Principal: ${principal_fmt}\nFinal Amount: ${final_amount}\nInterest Earned: ${interest_earned}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Compound interest computed → Final: ${final_amount}, Interest: ${interest_earned}\n\nVERIFY: {principal} × (1 + {rate}/100)^{years} = {final_amount_raw}. Correct.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "Here's the compound interest calculation:\n\n```python\nP = {principal}\nr = {rate} / 100\nt = {years}\nA = P * (1 + r) ** t  # = ${final_amount}\ninterest = A - P       # = ${interest_earned}\n```\n\n**Results:**\n- Principal: ${principal_fmt}\n- Rate: {rate}% annually\n- Period: {years} years\n- **Final Amount: ${final_amount}**\n- **Interest Earned: ${interest_earned}**",
+                "variables": {
+                    "principal": ["10000", "5000", "25000", "500"],
+                    "principal_fmt": ["10,000.00", "5,000.00", "25,000.00", "500.00"],
+                    "rate": ["5", "7.5", "4", "5"],
+                    "years": ["10", "5", "20", "3"],
+                    "final_amount": ["16,288.95", "7,178.15", "54,778.08", "578.81"],
+                    "final_amount_raw": ["16288.95", "7178.15", "54778.08", "578.81"],
+                    "interest_earned": ["6,288.95", "2,178.15", "29,778.08", "78.81"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Error recovery — code fails, diagnose, fix, retry with checkpoint",
+                "user": "What is the square root of {number} plus {addend}?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants √{number} + {addend}.\n\nPLAN:\n  [ ] 1. Compute sqrt({number}) + {addend}\n\nCLASSIFY:\n  1. Arithmetic — need a computation tool. Checking what's available... I have a code execution tool.\n\nEXECUTE task 1: Writing code. I need sqrt — I'll import math.",
+                        "tool": "python_execute(code='result = sqrt({number}) + {addend}\\nprint(result)')",
+                        "tool_result": "Error: name 'sqrt' is not defined"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✗] 1. Compute sqrt — FAILED: \"name 'sqrt' is not defined\"\n\nDIAGNOSE: I used sqrt() without importing the math module. The function doesn't exist in the global namespace. I need to import math first.\n\nRETRY task 1 with fix:",
+                        "tool": "python_execute(code='import math\\nresult = math.sqrt({number}) + {addend}\\nprint(f\"√{number} + {addend} = {{result}}\")')",
+                        "tool_result": "√{number} + {addend} = {correct_answer}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Compute sqrt({number}) + {addend} → {correct_answer} (fixed on retry)\n\nVERIFY: √{number} = {sqrt_value}, and {sqrt_value} + {addend} = {correct_answer}. Correct. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "√{number} + {addend} = **{correct_answer}**\n\nMy first attempt had an error (I forgot to import math), so I fixed it and retried:\n```python\nimport math\nresult = math.sqrt({number}) + {addend}  # → {correct_answer}\n```",
+                "variables": {
+                    "number": ["144", "256", "1764", "625"],
+                    "addend": ["8", "20", "42", "10"],
+                    "sqrt_value": ["12.0", "16.0", "42.0", "25.0"],
+                    "correct_answer": ["20.0", "36.0", "84.0", "35.0"]
+                }
+            },
+            {
+                "_meta": "GENERIC: No tool exists for task — model reasons about what's available, uses knowledge + code fallback",
+                "user": "How far is it from {origin} to {destination}?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants the distance from {origin} to {destination}.\n\nPLAN:\n  [ ] 1. Find the distance between {origin} and {destination}\n  [ ] 2. Optionally estimate driving time\n\nCLASSIFY:\n  1. Let me check what tools I have available:\n     - Code execution tool — can do calculations\n     - Currency exchange rate tool — not relevant here\n     That's it. There is NO 'get_directions', 'get_distance', 'maps', or 'location' tool.\n     \n     Since I can't look this up live, I need to decide: can I answer this from my training knowledge?\n     Distance between major cities is relatively stable geographic information. I know the approximate distance from {origin} to {destination} is {distance_km} km.\n     I'll be transparent that this is approximate.\n  2. I can use code execution to estimate driving time.\n\nCHECKPOINT:\n  [✓] 1. Distance from knowledge → ~{distance_km} km (approximate)\n  [ ] 2. Estimate driving time\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='distance_km = {distance_km}\\nspeed_kmh = 80  # average driving speed\\ntime_hours = distance_km / speed_kmh\\nprint(f\"Distance: {{distance_km}} km\")\\nprint(f\"Est. driving time at {{speed_kmh}} km/h: {{time_hours:.1f}} hours\")')",
+                        "tool_result": "Distance: {distance_km} km\nEst. driving time at 80 km/h: {driving_hours} hours"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Distance from knowledge → ~{distance_km} km\n  [✓] 2. Driving time estimate → {driving_hours} hours\n\nVERIFY: {distance_km} / 80 = {driving_hours} hours. Reasonable. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "The distance from {origin} to {destination} is approximately **{distance_km} km**.\n\nI estimated the driving time using code:\n```python\ndistance_km = {distance_km}\ntime_hours = distance_km / 80  # → {driving_hours} hours\n```\n\nEstimated driving time: **{driving_hours} hours** at 80 km/h average.\n\n*Note: I don't have a mapping tool available, so this distance is approximate from my general knowledge. For precise directions, use Google Maps or a similar service.*",
+                "variables": {
+                    "origin": ["Dublin", "London", "Paris", "New York"],
+                    "destination": ["Cork", "Edinburgh", "Lyon", "Boston"],
+                    "distance_km": ["260", "660", "465", "350"],
+                    "driving_hours": ["3.2", "8.2", "5.8", "4.4"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Tool fails — graceful degradation, honest about inability",
+                "user": "I need to convert {amount} {from_currency} to {to_currency} right now.",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants a currency conversion of {amount} {from_currency} → {to_currency}.\n\nPLAN:\n  [ ] 1. Get live exchange rate\n  [ ] 2. Compute conversion\n\nCLASSIFY:\n  1. Live data needed — exchange rates are volatile, I must not guess. Checking my tools... I have a currency rate tool.\n  2. Computation — I have a code execution tool.\n\nEXECUTE task 1: Fetching exchange rate.",
                         "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
                         "tool_result": "{error_result}"
                     },
                     {
-                        "think": "The exchange rate service failed. Without current rates, I cannot perform this conversion accurately. Using outdated rates from my training could result in significant financial errors - even a 1-2% difference matters for currency conversion.",
+                        "think": "CHECKPOINT:\n  [✗] 1. Get exchange rate — FAILED: {error_result}\n  [ ] 2. Compute conversion — BLOCKED (depends on task 1)\n\nDIAGNOSE: The exchange rate service returned an error. Let me think about my options:\n  Option A: Retry — but if the service is down, it will fail again\n  Option B: Use code execution — but I can't get live rates from code\n  Option C: Guess from my training data — NO. Exchange rates change daily. Using stale data could cost the user real money.\n  Option D: Be honest with the user and suggest alternatives\n\nDecision: Option D. I should NOT make up a rate. I'll inform the user clearly and provide alternatives.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I apologize, but I cannot convert {amount} {from_currency} to {to_currency} right now. The exchange rate service returned: {error_reason}.\n\n**Why I can't estimate this:**\n- Exchange rates change continuously (sometimes by several percent in a day)\n- My training data contains outdated rates that could be significantly wrong\n- Using incorrect rates could cost you real money in a transaction\n\nFor accurate conversion, please use:\n- Your bank's currency converter\n- Google (search \"{amount} {from_currency} to {to_currency}\")\n- XE.com or similar currency services",
+                "answer": "I'm sorry, I cannot convert {amount} {from_currency} to {to_currency} right now. The exchange rate service returned an error: {error_reason}.\n\nI won't estimate this because exchange rates change constantly — using an outdated rate could be significantly wrong.\n\n**What you can do:**\n- Google \"{amount} {from_currency} to {to_currency}\" for a live rate\n- Use your bank's currency converter\n- Try xe.com or similar services\n- Ask me again in a few minutes",
                 "variables": {
-                    "amount": [
-                        "500",
-                        "1000",
-                        "250",
-                        "5000"
-                    ],
-                    "from_currency": [
-                        "EUR",
-                        "USD",
-                        "GBP",
-                        "JPY"
-                    ],
-                    "to_currency": [
-                        "USD",
-                        "EUR",
-                        "EUR",
-                        "USD"
-                    ],
+                    "amount": ["500", "1000", "250", "5000"],
+                    "from_currency": ["EUR", "USD", "GBP", "JPY"],
+                    "to_currency": ["USD", "EUR", "EUR", "USD"],
                     "error_result": [
                         "{\"error\": \"Exchange rate feed offline\", \"code\": 503}",
-                        "{\"error\": \"Currency pair not supported\", \"code\": 400}",
+                        "{\"error\": \"Service temporarily unavailable\", \"code\": 503}",
                         "{\"error\": \"Rate limit exceeded\", \"code\": 429}",
-                        "{\"error\": \"Service temporarily unavailable\", \"code\": 503}"
+                        "{\"error\": \"Service timeout\", \"code\": 408}"
                     ],
                     "error_reason": [
                         "exchange rate feed offline",
-                        "service error",
+                        "service temporarily unavailable",
                         "rate limit exceeded",
-                        "service temporarily unavailable"
+                        "service timeout"
                     ]
                 }
             },
             {
-                "user": "How far is it from {origin} to {destination} by car?",
+                "_meta": "GENERIC: Code error + retry with checkpoint tracking",
+                "user": "What is {percentage}% of {base_value} plus the sales tax of {tax_rate}%?",
                 "turns": [
                     {
-                        "think": "Calculating driving distances requires mapping data with current road information. I should not estimate distances as I could be significantly wrong, and this might affect travel planning.",
-                        "tool": "get_directions(origin='{origin}', destination='{destination}', mode='driving')",
-                        "tool_result": "{error_result}"
+                        "think": "UNDERSTAND: The user wants {percentage}% of {base_value}, then add {tax_rate}% sales tax on that amount.\n\nPLAN:\n  [ ] 1. Compute {percentage}% of {base_value}\n  [ ] 2. Compute {tax_rate}% tax on that\n  [ ] 3. Sum them up\n\nCLASSIFY:\n  All arithmetic — I need a computation tool. Checking my tools... I have code execution. I can do all three sub-tasks in one code block.\n\nEXECUTE tasks 1-3:",
+                        "tool": "python_execute(code='base = {base_value}\\npercent_amount = base * {percentage} / 100\\ntax = percent_amount * {tax_rate} / 100\\ntotal = percent_amount + tax\\nprint(f\"{percentage}% of {base_value} = {{percent_amount:.2f}}\")\\nprint(f\"Tax ({tax_rate}%): {{tax:.2f}}\")\\nprint(f\"Total: {{total:.2f}}\")')",
+                        "tool_result": "{percentage}% of {base_value} = {percent_amount}\nTax ({tax_rate}%): {tax_amount}\nTotal: {total}"
                     },
                     {
-                        "think": "The mapping service is unavailable. I cannot reliably estimate driving distances - roads change, routes vary, and being wrong could lead to missed appointments or poor trip planning.",
+                        "think": "CHECKPOINT:\n  [✓] 1. {percentage}% of {base_value} = {percent_amount}\n  [✓] 2. Tax at {tax_rate}% = {tax_amount}\n  [✓] 3. Total = {total}\n\nVERIFY: {percent_amount} + {tax_amount} = {total}. All checks out. Complete.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I'm sorry, I cannot calculate the driving distance from {origin} to {destination} right now. The mapping service returned: {error_reason}.\n\n**Why I won't estimate:**\n- Road distances depend on specific routes which change over time\n- My training data may have outdated or approximate distances\n- An incorrect estimate could lead to poor trip planning (fuel, time, etc.)\n\nPlease use:\n- Google Maps or Apple Maps\n- Your car's navigation system\n- A route planning website",
+                "answer": "Here's the calculation:\n\n```python\npercent_amount = {base_value} * {percentage} / 100  # = {percent_amount}\ntax = {percent_amount} * {tax_rate} / 100  # = {tax_amount}\ntotal = {percent_amount} + {tax_amount}  # = {total}\n```\n\n- {percentage}% of {base_value} = **{percent_amount}**\n- Sales tax ({tax_rate}%): **{tax_amount}**\n- **Total: {total}**",
                 "variables": {
-                    "origin": [
-                        "Dublin",
-                        "London",
-                        "New York City",
-                        "Los Angeles"
+                    "percentage": ["15", "20", "25", "10"],
+                    "base_value": ["1299", "899", "2500", "5000"],
+                    "tax_rate": ["8.5", "7.0", "10.0", "6.25"],
+                    "percent_amount": ["194.85", "179.80", "625.00", "500.00"],
+                    "tax_amount": ["16.56", "12.59", "62.50", "31.25"],
+                    "total": ["211.41", "192.39", "687.50", "531.25"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Knowledge + compute combo — population, with tool availability reasoning",
+                "user": "What is the approximate population of {city}, and what is {percent}% of it?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants the population of {city} and {percent}% of it.\n\nPLAN:\n  [ ] 1. Recall the approximate population of {city}\n  [ ] 2. Calculate {percent}% of that population\n\nCLASSIFY:\n  1. Population data — is this something I need to look up live? Let me think:\n     - Population figures for major cities are relatively stable (they change slowly over years)\n     - Checking my tools... I don't have a search tool, population API, or web lookup tool\n     - I DO know approximate population data from my training, and it's reliable enough for a general question\n     - I'll be upfront that it's approximate\n  2. Arithmetic — use my code execution tool\n\nCHECKPOINT:\n  [✓] 1. From knowledge: {city} ≈ {population} people\n  [ ] 2. Compute {percent}%\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='population = {population}\\npercent = {percent}\\nresult = population * (percent / 100)\\nprint(f\"Population of {city}: {{population:,}}\")\\nprint(f\"{percent}% of {{population:,}} = {{result:,.0f}}\")')",
+                        "tool_result": "Population of {city}: {population_fmt}\n{percent}% of {population_fmt} = {percent_result}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Population of {city} ≈ {population_fmt}\n  [✓] 2. {percent}% = {percent_result}\n\nVERIFY: {population} × {percent}/100 = {percent_result}. Correct. All tasks complete.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "The approximate population of {city} is **{population_fmt}**.\n\n```python\npopulation = {population}\nresult = population * ({percent} / 100)  # → {percent_result}\n```\n\n{percent}% of {population_fmt} = **{percent_result}**.\n\n*Note: Population figure is approximate from general knowledge.*",
+                "variables": {
+                    "city": ["Dublin", "Tokyo", "London", "New York City"],
+                    "population": ["1400000", "13960000", "8800000", "8300000"],
+                    "population_fmt": ["1,400,000", "13,960,000", "8,800,000", "8,300,000"],
+                    "percent": ["1", "5", "2", "1"],
+                    "percent_result": ["14,000", "698,000", "176,000", "83,000"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Multi-step with full checkpoint tracking — shopping calculation",
+                "user": "What's the total cost if I buy {quantity_a} items at ${price_a} each and {quantity_b} items at ${price_b} each, with {tax_rate}% sales tax?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: Shopping calculation with two item types and sales tax.\n\nPLAN:\n  [ ] 1. Compute subtotal for item type A\n  [ ] 2. Compute subtotal for item type B\n  [ ] 3. Sum subtotals\n  [ ] 4. Apply {tax_rate}% tax\n  [ ] 5. Compute final total\n\nCLASSIFY:\n  All tasks are arithmetic. Checking tools... I have a code execution tool. I can do all five steps in one code block.\n\nEXECUTE tasks 1-5:",
+                        "tool": "python_execute(code='subtotal_a = {quantity_a} * {price_a}\\nsubtotal_b = {quantity_b} * {price_b}\\nsubtotal = subtotal_a + subtotal_b\\ntax = subtotal * ({tax_rate} / 100)\\ntotal = subtotal + tax\\nprint(f\"{quantity_a} × ${price_a} = ${{subtotal_a:.2f}}\")\\nprint(f\"{quantity_b} × ${price_b} = ${{subtotal_b:.2f}}\")\\nprint(f\"Subtotal: ${{subtotal:.2f}}\")\\nprint(f\"Tax ({tax_rate}%): ${{tax:.2f}}\")\\nprint(f\"Total: ${{total:.2f}}\")')",
+                        "tool_result": "{quantity_a} × ${price_a} = ${subtotal_a}\n{quantity_b} × ${price_b} = ${subtotal_b}\nSubtotal: ${subtotal}\nTax ({tax_rate}%): ${tax_amount}\nTotal: ${total}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Subtotal A → ${subtotal_a}\n  [✓] 2. Subtotal B → ${subtotal_b}\n  [✓] 3. Combined subtotal → ${subtotal}\n  [✓] 4. Tax at {tax_rate}% → ${tax_amount}\n  [✓] 5. Final total → ${total}\n\nVERIFY: {quantity_a}×{price_a} + {quantity_b}×{price_b} = {subtotal}. Tax = {tax_amount}. Total = {total}. All correct.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "**Shopping Calculation:**\n\n```python\nsubtotal_a = {quantity_a} * {price_a}  # = ${subtotal_a}\nsubtotal_b = {quantity_b} * {price_b}  # = ${subtotal_b}\nsubtotal = {subtotal_a} + {subtotal_b}  # = ${subtotal}\ntax = {subtotal} * ({tax_rate}/100)  # = ${tax_amount}\ntotal = {subtotal} + {tax_amount}  # = ${total}\n```\n\n- {quantity_a} items × ${price_a} = **${subtotal_a}**\n- {quantity_b} items × ${price_b} = **${subtotal_b}**\n- Subtotal: **${subtotal}**\n- Tax ({tax_rate}%): **${tax_amount}**\n- **Total: ${total}**",
+                "variables": {
+                    "quantity_a": ["3", "5", "2", "4"],
+                    "quantity_b": ["2", "3", "6", "2"],
+                    "price_a": ["29.99", "15.50", "89.99", "42.00"],
+                    "price_b": ["49.99", "22.75", "12.50", "18.99"],
+                    "tax_rate": ["8.5", "7.0", "10.0", "6.25"],
+                    "subtotal_a": ["89.97", "77.50", "179.98", "168.00"],
+                    "subtotal_b": ["99.98", "68.25", "75.00", "37.98"],
+                    "subtotal": ["189.95", "145.75", "254.98", "205.98"],
+                    "tax_amount": ["16.15", "10.20", "25.50", "12.87"],
+                    "total": ["206.10", "155.95", "280.48", "218.85"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Formula from knowledge — BMI, explicitly avoids inventing tool",
+                "user": "Calculate the BMI for someone who is {height_cm} cm tall and weighs {weight_kg} kg.",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants a BMI calculation for height {height_cm} cm and weight {weight_kg} kg.\n\nPLAN:\n  [ ] 1. Recall the BMI formula\n  [ ] 2. Compute BMI and classify it\n\nCLASSIFY:\n  1. Formula knowledge — BMI = weight / height². I know this from training.\n  2. Computation — let me check my tools. I have a code execution tool.\n     Important: there is no 'calculate_bmi' or 'health' tool. I'll write the formula in code myself.\n\nCHECKPOINT:\n  [✓] 1. Formula: BMI = weight_kg / (height_m)²\n  [ ] 2. Compute\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='height_m = {height_cm} / 100\\nbmi = {weight_kg} / (height_m ** 2)\\nif bmi < 18.5: cat = \"underweight\"\\nelif bmi < 25: cat = \"normal weight\"\\nelif bmi < 30: cat = \"overweight\"\\nelse: cat = \"obese\"\\nprint(f\"BMI: {{bmi:.1f}} ({{cat}})\")')",
+                        "tool_result": "BMI: {bmi} ({category})"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Formula: BMI = weight / height²\n  [✓] 2. Computed → BMI: {bmi} ({category})\n\nVERIFY: {weight_kg} / ({height_m})² = {bmi}. Category: {category}. Correct.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "**BMI Calculation:**\n\n```python\nheight_m = {height_cm} / 100  # = {height_m} m\nbmi = {weight_kg} / (height_m ** 2)  # = {bmi}\n```\n\n- Height: {height_cm} cm ({height_m} m)\n- Weight: {weight_kg} kg\n- **BMI: {bmi} ({category})**\n\n*Note: BMI is a rough indicator. Consult a healthcare professional for personalized advice.*",
+                "variables": {
+                    "height_cm": ["175", "160", "180", "170"],
+                    "weight_kg": ["70", "55", "95", "80"],
+                    "height_m": ["1.75", "1.60", "1.80", "1.70"],
+                    "bmi": ["22.9", "21.5", "29.3", "27.7"],
+                    "category": ["normal weight", "normal weight", "overweight", "overweight"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Geometry formula — knowledge + compute",
+                "user": "How do I calculate the area of a {shape} with {dimension_desc}?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants to compute the area of a {shape} with {dimension_desc}.\n\nPLAN:\n  [ ] 1. Recall the area formula for a {shape}\n  [ ] 2. Compute the area\n\nCLASSIFY:\n  1. Formula knowledge — I know area formulas from training.\n  2. Computation — checking tools... I have code execution. No 'geometry' or 'area' tool exists, so I'll write the formula in code.\n\nCHECKPOINT:\n  [✓] 1. Formula recalled\n  [ ] 2. Compute\n\nEXECUTE task 2:",
+                        "tool": "python_execute(code='{python_code}')",
+                        "tool_result": "{calc_result}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Formula recalled\n  [✓] 2. Area computed → {calc_result}\n\nVERIFY: {verification}. Correct.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "Here's how I calculated the area of a {shape} with {dimension_desc}:\n\n```python\n{python_code_display}\n```\n\n**Result:** {result_text}",
+                "variables": {
+                    "shape": ["circle", "triangle", "rectangle", "trapezoid"],
+                    "dimension_desc": [
+                        "radius 7 cm",
+                        "base 10 cm and height 6 cm",
+                        "length 15 m and width 8 m",
+                        "parallel sides 12 cm and 8 cm, height 5 cm"
                     ],
-                    "destination": [
-                        "Galway",
-                        "Edinburgh",
-                        "Boston",
-                        "San Francisco"
+                    "python_code": [
+                        "import math\\nradius = 7\\narea = math.pi * radius ** 2\\nprint(f'Area = π × {radius}² = {area:.2f} cm²')",
+                        "base = 10\\nheight = 6\\narea = 0.5 * base * height\\nprint(f'Area = 0.5 × {base} × {height} = {area:.2f} cm²')",
+                        "length = 15\\nwidth = 8\\narea = length * width\\nprint(f'Area = {length} × {width} = {area:.2f} m²')",
+                        "a = 12\\nb = 8\\nheight = 5\\narea = 0.5 * (a + b) * height\\nprint(f'Area = 0.5 × ({a} + {b}) × {height} = {area:.2f} cm²')"
                     ],
-                    "error_result": [
-                        "{\"error\": \"Directions service unavailable\", \"code\": 503}",
-                        "{\"error\": \"Unable to geocode location\", \"code\": 400}",
-                        "{\"error\": \"Route calculation timeout\", \"code\": 408}",
-                        "{\"error\": \"Maps API quota exceeded\", \"code\": 429}"
+                    "python_code_display": [
+                        "import math\nradius = 7\narea = math.pi * radius ** 2",
+                        "base = 10\nheight = 6\narea = 0.5 * base * height",
+                        "length = 15\nwidth = 8\narea = length * width",
+                        "a = 12\nb = 8\nheight = 5\narea = 0.5 * (a + b) * height"
                     ],
-                    "error_reason": [
-                        "directions service unavailable",
-                        "unable to locate address",
-                        "route calculation timeout",
-                        "service quota exceeded"
+                    "calc_result": [
+                        "Area = π × 7² = 153.94 cm²",
+                        "Area = 0.5 × 10 × 6 = 30.00 cm²",
+                        "Area = 15 × 8 = 120.00 m²",
+                        "Area = 0.5 × (12 + 8) × 5 = 50.00 cm²"
+                    ],
+                    "verification": [
+                        "π × 49 ≈ 153.94",
+                        "0.5 × 10 × 6 = 30",
+                        "15 × 8 = 120",
+                        "0.5 × 20 × 5 = 50"
+                    ],
+                    "result_text": [
+                        "The area of a circle with radius 7 cm is **153.94 cm²**.",
+                        "The area of a triangle with base 10 cm and height 6 cm is **30.00 cm²**.",
+                        "The area of a rectangle with length 15 m and width 8 m is **120.00 m²**.",
+                        "The area of a trapezoid with parallel sides 12 cm and 8 cm and height 5 cm is **50.00 cm²**."
                     ]
                 }
             },
             {
-                "user": "What is the ratio of {group_a} to {group_b} in {location}?",
+                "_meta": "GENERIC: Tool fails twice — retry then honest fallback, with checkpoint",
+                "user": "What is the current exchange rate between {from_currency} and {to_currency}?",
                 "turns": [
                     {
-                        "think": "This requires current demographic data. My knowledge may be outdated, so I need to search for recent population statistics. Let me find the population of {group_a} in {location} first.",
-                        "tool": "web_search(query='{group_a} population in {location} 2024')",
+                        "think": "UNDERSTAND: The user wants the current exchange rate for {from_currency} to {to_currency}.\n\nPLAN:\n  [ ] 1. Fetch live exchange rate\n\nCLASSIFY:\n  1. Live data — exchange rates change constantly. Checking my tools... I have a currency rate tool. I'll use it.\n\nEXECUTE task 1:",
+                        "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
                         "tool_result": "{error_result}"
                     },
                     {
-                        "think": "The web search failed. Without current data, I cannot answer this question reliably. Demographic data changes over time and I have no way to verify what I might recall from training. Guessing would be irresponsible.",
+                        "think": "CHECKPOINT:\n  [✗] 1. Fetch rate — FAILED: {error_result}\n\nDIAGNOSE: The tool returned an error. This could be a transient issue. Let me retry once.",
+                        "tool": "get_exchange_rate(from='{from_currency}', to='{to_currency}')",
+                        "tool_result": "{error_result}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✗] 1. Fetch rate — FAILED twice: {error_result}\n\nDIAGNOSE: Persistent failure. My options:\n  A. Try code execution — but I can't access live exchange rate APIs from code\n  B. Guess from training data — NO. Exchange rates are volatile, any memorised rate would be stale\n  C. Be honest and suggest alternatives — YES, this is the responsible choice\n\nDecision: I will NOT make up a rate. I'll tell the user clearly and suggest reliable sources.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I cannot provide the ratio of {group_a} to {group_b} in {location}. The search service returned: {error_reason}.\n\n**Why I won't estimate:**\n- Demographic data changes with migration, births, and policy changes\n- My training data may contain outdated census information\n- Providing incorrect demographic ratios could spread misinformation\n\nFor accurate demographic data, please consult:\n- Official census bureau or statistics office\n- Recent academic studies\n- Government population databases",
+                "answer": "I'm unable to fetch the current {from_currency}/{to_currency} exchange rate right now — the service returned an error both times I tried.\n\nI won't estimate exchange rates as they change constantly and a wrong rate could cost you money.\n\n**Alternatives:**\n- Google \"{from_currency} to {to_currency}\" for a live rate\n- Check xe.com or your bank's converter\n- Try asking me again in a few minutes",
                 "variables": {
-                    "group_a": [
-                        "students",
-                        "immigrants",
-                        "employed workers",
-                        "homeowners"
-                    ],
-                    "group_b": [
-                        "total population",
-                        "native-born citizens",
-                        "total workforce",
-                        "renters"
-                    ],
-                    "location": [
-                        "Dublin",
-                        "London",
-                        "Berlin",
-                        "New York"
-                    ],
+                    "from_currency": ["USD", "EUR", "GBP", "JPY"],
+                    "to_currency": ["EUR", "USD", "USD", "EUR"],
                     "error_result": [
-                        "{\"error\": \"Search service unavailable\", \"code\": 503}",
-                        "{\"error\": \"Request timeout\", \"code\": 408}",
-                        "{\"error\": \"Search quota exceeded\", \"code\": 429}",
-                        "{\"error\": \"Network error\", \"code\": 500}"
-                    ],
-                    "error_reason": [
-                        "search service unavailable",
-                        "request timeout",
-                        "quota exceeded",
-                        "network error"
+                        "{\"error\": \"Service unavailable\", \"code\": 503}",
+                        "{\"error\": \"Rate limit exceeded\", \"code\": 429}",
+                        "{\"error\": \"Timeout\", \"code\": 408}",
+                        "{\"error\": \"Internal error\", \"code\": 500}"
                     ]
                 }
             },
             {
-                "user": "I need to calculate the compound interest on ${principal} at {rate}% for {years} years.",
+                "_meta": "GENERIC: Complex chain — live lookup + computation + compound interest, full checkpoint",
+                "user": "Convert {amount} USD to EUR, then calculate compound interest on that EUR amount at {rate}% for {years} years.",
                 "turns": [
                     {
-                        "think": "Compound interest calculation requires precise arithmetic. The formula is A = P(1 + r/n)^(nt). I must use a calculator as financial calculations need to be exact - errors could mislead financial planning.",
-                        "tool": "python_execute(code='P = {principal}\\nr = {rate}/100\\nt = {years}\\nA = P * (1 + r) ** t\\ninterest = A - P\\nprint(f\"Principal: ${P:,.2f}\")\\nprint(f\"Final Amount: ${A:,.2f}\")\\nprint(f\"Interest Earned: ${interest:,.2f}\")')",
-                        "tool_result": "{error_result}"
+                        "think": "UNDERSTAND: The user wants to: (a) convert {amount} USD to EUR, then (b) compute compound interest on the EUR result at {rate}% for {years} years.\n\nPLAN:\n  [ ] 1. Get USD→EUR exchange rate (live data)\n  [ ] 2. Compute conversion: {amount} × rate\n  [ ] 3. Compute compound interest on EUR amount: A = converted × (1+{rate}/100)^{years}\n\nCLASSIFY:\n  1. Live data — checking tools... I have a currency rate tool\n  2. Arithmetic — code execution tool\n  3. Arithmetic — code execution tool (can combine with step 2)\n\nEXECUTE task 1:",
+                        "tool": "get_exchange_rate(from='USD', to='EUR')",
+                        "tool_result": "{{\"rate\": {exchange_rate}}}"
                     },
                     {
-                        "think": "The calculation tool failed. I absolutely cannot do compound interest calculations mentally - the exponentiation alone makes mental math extremely error-prone. A wrong answer here could affect someone's financial planning.",
+                        "think": "CHECKPOINT:\n  [✓] 1. Exchange rate → {exchange_rate}\n  [ ] 2. Compute conversion\n  [ ] 3. Compute compound interest\n\nEXECUTE tasks 2 & 3: I'll combine both in one code block for efficiency.",
+                        "tool": "python_execute(code='# Task 2: Convert USD to EUR\\namount_usd = {amount}\\nrate_fx = {exchange_rate}\\namount_eur = amount_usd * rate_fx\\nprint(f\"Conversion: {amount} USD × {{rate_fx}} = {{amount_eur:.2f}} EUR\")\\n\\n# Task 3: Compound interest\\ninterest_rate = {rate} / 100\\nyears = {years}\\nfinal = amount_eur * (1 + interest_rate) ** years\\ninterest = final - amount_eur\\nprint(f\"\\nCompound Interest:\")\\nprint(f\"Principal: {{amount_eur:.2f}} EUR\")\\nprint(f\"Rate: {rate}%, Years: {years}\")\\nprint(f\"Final: {{final:.2f}} EUR\")\\nprint(f\"Interest: {{interest:.2f}} EUR\")')",
+                        "tool_result": "Conversion: {amount} USD × {exchange_rate} = {converted_eur} EUR\n\nCompound Interest:\nPrincipal: {converted_eur} EUR\nRate: {rate}%, Years: {years}\nFinal: {final_amount} EUR\nInterest: {interest_earned} EUR"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Exchange rate → {exchange_rate}\n  [✓] 2. Conversion → {converted_eur} EUR\n  [✓] 3. Compound interest → Final: {final_amount} EUR, Interest: {interest_earned} EUR\n\nVERIFY: {amount} × {exchange_rate} = {converted_eur}. Then {converted_eur} × (1+{rate}/100)^{years} = {final_amount}. All tasks complete.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I'm sorry, I cannot calculate the compound interest on ${principal} at {rate}% for {years} years. The calculation service returned: {error_reason}.\n\n**Why I refuse to estimate:**\n- Compound interest involves exponentiation which I cannot compute reliably\n- Even small rounding errors compound over time and become significant\n- Incorrect financial calculations could affect your savings, loan, or investment decisions\n\nPlease use:\n- A financial calculator app\n- Online compound interest calculators (investor.gov, bankrate.com)\n- A spreadsheet (Excel or Google Sheets)",
+                "answer": "Here's the full calculation:\n\n```python\n# Convert\namount_eur = {amount} * {exchange_rate}  # = {converted_eur} EUR\n\n# Compound interest\nfinal = {converted_eur} * (1 + {rate}/100) ** {years}  # = {final_amount} EUR\n```\n\n**Step 1 — Conversion:** {amount} USD × {exchange_rate} = **{converted_eur} EUR**\n\n**Step 2 — Compound Interest:**\n- Principal: {converted_eur} EUR\n- Rate: {rate}% annually, Period: {years} years\n- **Final Amount: {final_amount} EUR**\n- Interest Earned: {interest_earned} EUR",
                 "variables": {
-                    "principal": [
-                        "10000",
-                        "50000",
-                        "25000",
-                        "100000"
+                    "amount": ["500", "1000", "2000", "750"],
+                    "exchange_rate": ["0.85", "0.92", "0.85", "0.92"],
+                    "rate": ["5", "3", "7", "4.5"],
+                    "years": ["3", "5", "10", "20"],
+                    "converted_eur": ["425.00", "920.00", "1700.00", "690.00"],
+                    "final_amount": ["492.01", "1066.66", "3344.56", "1661.69"],
+                    "interest_earned": ["67.01", "146.66", "1644.56", "971.69"]
+                }
+            },
+            {
+                "_meta": "GENERIC: Pure knowledge — no tool needed, historical fact",
+                "user": "Who invented the {invention} and in what year?",
+                "turns": [
+                    {
+                        "think": "UNDERSTAND: The user wants to know who invented the {invention} and when.\n\nPLAN:\n  [ ] 1. Answer the question about the inventor\n\nCLASSIFY:\n  1. This is a historical fact — stable, well-documented, doesn't require live data.\n     Checking my tools: none of them are relevant here (no search tool, no encyclopedia tool).\n     But I don't need a tool — this is reliable knowledge from my training.\n\nEXECUTE: {knowledge_reasoning}\n\nCHECKPOINT:\n  [✓] 1. Answered from knowledge\n\nVERIFY: This is well-documented historical fact.",
+                        "tool": null,
+                        "tool_result": null
+                    }
+                ],
+                "answer": "{factual_answer}",
+                "variables": {
+                    "invention": ["telephone", "light bulb", "World Wide Web", "printing press"],
+                    "knowledge_reasoning": [
+                        "Alexander Graham Bell is credited with inventing the telephone in 1876.",
+                        "Thomas Edison is widely credited with developing the practical incandescent light bulb in 1879.",
+                        "Tim Berners-Lee invented the World Wide Web in 1989.",
+                        "Johannes Gutenberg invented the printing press around 1440."
                     ],
-                    "rate": [
-                        "5",
-                        "7.5",
-                        "4.25",
-                        "6"
-                    ],
-                    "years": [
-                        "10",
-                        "5",
-                        "20",
-                        "15"
-                    ],
-                    "error_result": [
-                        "{\"error\": \"Computation service offline\", \"code\": 503}",
-                        "{\"error\": \"Execution environment unavailable\", \"code\": 500}",
-                        "{\"error\": \"Resource limit exceeded\", \"code\": 429}",
-                        "{\"error\": \"Service maintenance\", \"code\": 503}"
-                    ],
-                    "error_reason": [
-                        "computation service offline",
-                        "execution environment unavailable",
-                        "resource limit exceeded",
-                        "service under maintenance"
+                    "factual_answer": [
+                        "**Alexander Graham Bell** invented the telephone in **1876**.",
+                        "**Thomas Edison** developed the practical incandescent light bulb in **1879**.",
+                        "**Tim Berners-Lee** invented the World Wide Web in **1989** while working at CERN.",
+                        "**Johannes Gutenberg** invented the printing press around **1440** in Mainz, Germany."
                     ]
                 }
             },
             {
-                "user": "What time is it in {city} right now?",
+                "_meta": "GENERIC: Code error diagnose + fix — with checkpoint showing failed → fixed",
+                "user": "Calculate {quantity} items at ${price} each, with a {discount}% discount.",
                 "turns": [
                     {
-                        "think": "I have no concept of current time - my responses are not tied to real-world clocks. I need to use a time service to get the current time in any timezone.",
-                        "tool": "get_current_time(timezone='{timezone}')",
+                        "think": "UNDERSTAND: Compute {quantity} × ${price} minus a {discount}% discount.\n\nPLAN:\n  [ ] 1. Compute subtotal\n  [ ] 2. Apply discount\n  [ ] 3. Compute final price\n\nCLASSIFY:\n  All arithmetic. Checking tools... I have code execution. I'll do all steps in one block.\n\nEXECUTE tasks 1-3:",
+                        "tool": "python_execute(code='subtotal = {quantity} * {price}\\ndiscount_amt = subtotal * ({discount} / 100)\\nfinal = subtotal - discount_amt\\nprint(f\"Subtotal: ${subtotal:.2f}\")\\nprint(f\"Discount ({discount}%): -${discount_amt:.2f}\")\\nprint(f\"Final: ${final:.2f}\")')",
                         "tool_result": "{error_result}"
                     },
                     {
-                        "think": "The time service is unavailable. I genuinely have no way to know the current time - I don't have an internal clock and my responses aren't timestamped in a way I can access.",
+                        "think": "CHECKPOINT:\n  [✗] 1-3. Code execution — FAILED: {error_result}\n\nDIAGNOSE: The error is: {error_diagnosis}. I need to rewrite the code to fix this issue.\n\nRETRY tasks 1-3 with fixed code:",
+                        "tool": "python_execute(code='{fixed_code}')",
+                        "tool_result": "Subtotal: ${subtotal}\nDiscount ({discount}%): -${discount_amount}\nFinal: ${final_price}"
+                    },
+                    {
+                        "think": "CHECKPOINT:\n  [✓] 1. Subtotal → ${subtotal}\n  [✓] 2. Discount → -${discount_amount}\n  [✓] 3. Final → ${final_price} (fixed on retry)\n\nVERIFY: {quantity} × {price} = {subtotal}. Discount = {subtotal} × {discount}/100 = {discount_amount}. Final = {subtotal} - {discount_amount} = {final_price}. Correct.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I cannot tell you the current time in {city}. The time service returned: {error_reason}.\n\n**Important context:** I genuinely don't have access to the current time. Unlike a phone or computer, I don't have an internal clock - I'm a language model that processes text without real-time awareness.\n\nTo get the current time in {city}:\n- Check your device's world clock feature\n- Search \"time in {city}\" on Google\n- Use a world clock website",
+                "answer": "Here's the calculation (I had a code error on my first try, fixed it and retried):\n\n```python\nsubtotal = {quantity} * {price}  # = ${subtotal}\ndiscount = {subtotal} * ({discount}/100)  # = ${discount_amount}\nfinal = {subtotal} - {discount_amount}  # = ${final_price}\n```\n\n- Subtotal: **${subtotal}**\n- Discount ({discount}%): **-${discount_amount}**\n- **Final Price: ${final_price}**",
                 "variables": {
-                    "city": [
-                        "Tokyo",
-                        "London",
-                        "New York",
-                        "Sydney"
-                    ],
-                    "timezone": [
-                        "Asia/Tokyo",
-                        "Europe/London",
-                        "America/New_York",
-                        "Australia/Sydney"
-                    ],
+                    "quantity": ["5", "3", "8", "2"],
+                    "price": ["49.99", "129.00", "24.50", "899.00"],
+                    "discount": ["10", "15", "20", "25"],
                     "error_result": [
-                        "{\"error\": \"Time service unavailable\", \"code\": 503}",
-                        "{\"error\": \"Timezone lookup failed\", \"code\": 400}",
-                        "{\"error\": \"Service timeout\", \"code\": 408}",
-                        "{\"error\": \"API unavailable\", \"code\": 500}"
+                        "Error: unexpected character after line continuation",
+                        "Error: invalid syntax (<string>, line 2)",
+                        "Error: f-string expression part cannot include backslash",
+                        "Error: invalid escape sequence"
                     ],
-                    "error_reason": [
-                        "time service unavailable",
-                        "timezone lookup failed",
-                        "service timeout",
-                        "API unavailable"
-                    ]
+                    "error_diagnosis": [
+                        "a backslash issue in the f-string",
+                        "a syntax problem in the discount calculation",
+                        "backslashes aren't allowed inside f-string expressions",
+                        "an escape sequence issue"
+                    ],
+                    "fixed_code": [
+                        "subtotal = 5 * 49.99\\ndiscount_amt = subtotal * 0.10\\nfinal = subtotal - discount_amt\\nprint(f'Subtotal: ${subtotal:.2f}')\\nprint(f'Discount (10%): -${discount_amt:.2f}')\\nprint(f'Final: ${final:.2f}')",
+                        "subtotal = 3 * 129.00\\ndiscount_amt = subtotal * 0.15\\nfinal = subtotal - discount_amt\\nprint(f'Subtotal: ${subtotal:.2f}')\\nprint(f'Discount (15%): -${discount_amt:.2f}')\\nprint(f'Final: ${final:.2f}')",
+                        "subtotal = 8 * 24.50\\ndiscount_amt = subtotal * 0.20\\nfinal = subtotal - discount_amt\\nprint(f'Subtotal: ${subtotal:.2f}')\\nprint(f'Discount (20%): -${discount_amt:.2f}')\\nprint(f'Final: ${final:.2f}')",
+                        "subtotal = 2 * 899.00\\ndiscount_amt = subtotal * 0.25\\nfinal = subtotal - discount_amt\\nprint(f'Subtotal: ${subtotal:.2f}')\\nprint(f'Discount (25%): -${discount_amt:.2f}')\\nprint(f'Final: ${final:.2f}')"
+                    ],
+                    "subtotal": ["249.95", "387.00", "196.00", "1798.00"],
+                    "discount_amount": ["25.00", "58.05", "39.20", "449.50"],
+                    "final_price": ["224.96", "328.95", "156.80", "1348.50"]
                 }
             },
             {
-                "user": "Is {website} currently working or is it down?",
+                "_meta": "GENERIC: Summarisation — pure recall, no tools",
+                "user": "Summarise everything we have discussed so far in bullet points.",
                 "turns": [
                     {
-                        "think": "Checking if a website is up requires actually pinging or accessing the website in real-time. I cannot know the current status of any server from my training data.",
-                        "tool": "check_website_status(url='{website}')",
-                        "tool_result": "{error_result}"
-                    },
-                    {
-                        "think": "The website checker tool failed. I have no way to determine if a website is currently online - that requires real-time network access which I don't have.",
+                        "think": "UNDERSTAND: The user wants a bullet-point summary of our entire conversation.\n\nPLAN:\n  [ ] 1. Review the conversation history\n  [ ] 2. Extract key points and results\n  [ ] 3. Format as bullet points\n\nCLASSIFY:\n  All tasks are context recall and text generation. No tools needed — I can review our conversation directly.\n\nEXECUTE: Reviewing the conversation and compiling bullet points.\n\nCHECKPOINT:\n  [✓] 1. Reviewed conversation history\n  [✓] 2. Extracted key points\n  [✓] 3. Formatted as bullets\n\nVERIFY: I've covered the key points from each exchange.",
                         "tool": null,
                         "tool_result": null
                     }
                 ],
-                "answer": "I cannot check if {website} is currently working. The status check returned: {error_reason}.\n\n**Why I can't help here:** Determining if a website is up requires actually connecting to it in real-time. I don't have network access - I can only process the text you send me.\n\nTo check website status:\n- Try accessing the website directly in your browser\n- Use downdetector.com or isitdownrightnow.com\n- Check the service's official Twitter/X for outage reports\n- Try from a different network (mobile data vs WiFi)",
+                "answer": "Here's a summary of our discussion:\n\n{summary_points}\n\nLet me know if you'd like to revisit any of these topics!",
                 "variables": {
-                    "website": [
-                        "gmail.com",
-                        "twitter.com",
-                        "netflix.com",
-                        "github.com"
-                    ],
-                    "error_result": [
-                        "{\"error\": \"Status check service unavailable\", \"code\": 503}",
-                        "{\"error\": \"Network probe failed\", \"code\": 500}",
-                        "{\"error\": \"Monitoring service offline\", \"code\": 503}",
-                        "{\"error\": \"Health check timeout\", \"code\": 408}"
-                    ],
-                    "error_reason": [
-                        "status check service unavailable",
-                        "network probe failed",
-                        "monitoring service offline",
-                        "health check timeout"
+                    "summary_points": [
+                        "- We calculated 15 + 27 = **42** using code execution\n- We multiplied 42 × 3 - 10 = **116**\n- We converted 500 USD to EUR → **425 EUR** (rate: 0.85)\n- We computed (144/12) + (25×4) - 37 = **75**\n- We added 75 + 425 = **500 EUR**\n- All calculations were executed using tools for accuracy",
+                        "- We performed several arithmetic calculations using code execution\n- We fetched live exchange rates and did currency conversions\n- We answered factual questions from general knowledge\n- We computed compound interest using A = P(1+r)^t\n- Every computation was verified for correctness",
+                        "- We did multi-step calculations with code execution\n- We looked up live currency data for conversions\n- We answered geography and knowledge questions directly\n- We demonstrated error recovery when code had issues\n- All results were shown with the code that produced them",
+                        "- We calculated areas of geometric shapes\n- We converted currencies using live exchange rates\n- We computed compound interest and BMI\n- We estimated travel distances and times\n- All calculations included transparent code"
                     ]
                 }
             }
