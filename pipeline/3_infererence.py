@@ -12,20 +12,20 @@ from unsloth import FastModel
 class Tools:
     @staticmethod
     def python_execute(code: str) -> str:
-        """Execute Python code and return the output."""
+        """Execute Python code in a subprocess with a 10-second timeout."""
+        import subprocess
         try:
-            import io
-            import sys
-            
-            old_stdout = sys.stdout
-            sys.stdout = buffer = io.StringIO()
-            
-            exec(code)
-            
-            sys.stdout = old_stdout
-            output = buffer.getvalue()
+            result = subprocess.run(
+                ["python", "-c", code],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = result.stdout.strip() or result.stderr.strip()
             print(f"Executed code:\n{code}\nOutput:\n{output}")
-            return output.strip() if output else "Code executed successfully (no output)"
+            return output if output else "Code executed successfully (no output)"
+        except subprocess.TimeoutExpired:
+            return "Error: Code execution timed out (10s limit)"
         except Exception as e:
             return f"Error: {str(e)}"
     
@@ -102,20 +102,16 @@ def execute_tool(tool_call: Dict[str, Any], tools: Tools) -> str:
         return f"Error executing {func_name}: {str(e)}"
 
 
-def build_messages(conversation_history: list) -> str:
-    """Build messages list for the chat template."""
-    return conversation_history
-
-
 def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterations: int, temperature: float, tools: Tools, model_name: str = "Model", include_tools: bool = True):
     """Run inference with a given model and return the full conversation."""
     if include_tools:
         system_prompt = (
-            "You are a helpful assistant that thinks step by step. Use <think> for reasoning "
-            "about what to do next, <tool> for tool calls, and <answer> for final responses. You may need "
-            "multiple iterations of thinking and tool calls to reach the final answer.\n\n"
+            "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
+            "Think step by step using <think>, call tools using <tool>, and give your final answer in <answer>. "
+            "You must never guess when tools are needed, always acknowledge uncertainty, ask for missing information "
+            "rather than assuming, deny impossible tasks honestly, and present tradeoffs for subjective questions.\n\n"
             "Available tools:\n"
-            "1. python_execute(code='...') - Execute Python code and return the output. Use for calculations, data processing, etc.\n"
+            "1. python_execute(code='...') - Execute Python code and return the output.\n"
             "   Example: <tool>python_execute(code='print(15 + 27)')</tool>\n\n"
             "2. get_exchange_rate(from='USD', to='EUR') - Get currency exchange rates between two currencies.\n"
             "   Example: <tool>get_exchange_rate(from='USD', to='EUR')</tool>\n\n"
@@ -123,9 +119,9 @@ def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterat
         )
     else:
         system_prompt = (
-            "You are a helpful assistant. Provide clear and accurate responses to user queries. Use <think> for reasoning "
-            "about what to do next, and <answer> for final responses. You may need "
-            "multiple iterations of thinking to reach the final answer."
+            "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
+            "Think step by step using <think> and give your final answer in <answer>. "
+            "Always acknowledge uncertainty and never guess facts you are not confident about."
         )
     
     conversation = [
@@ -174,9 +170,9 @@ def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterat
             tool_result = execute_tool(tool_call, tools)
             print(f"[Tool result: {tool_result}]\n")
             
-            # Add tool result to conversation as a user message
+            # Add tool result using the same role as training data
             conversation.append({
-                "role": "user",
+                "role": "tool",
                 "content": f"Tool result: {tool_result}"
             })
         else:
@@ -242,7 +238,7 @@ def main():
         print(f"Loading base model: {args.base_model}...")
         base_model, base_tokenizer = FastModel.from_pretrained(
             model_name=args.base_model,
-            max_seq_length=2048,
+            max_seq_length=4096,
             load_in_4bit=True,
             dtype=None,
         )
@@ -253,7 +249,7 @@ def main():
             print(f"Loading custom model: {model_dir}...")
             custom_model, custom_tokenizer = FastModel.from_pretrained(
                 model_name=str(model_dir),
-                max_seq_length=2048,
+                max_seq_length=4096,
                 load_in_4bit=True,
                 dtype=None,
             )
@@ -317,7 +313,7 @@ def main():
         print("Loading custom model...")
         model, tokenizer = FastModel.from_pretrained(
             model_name=str(model_dir),
-            max_seq_length=2048,
+            max_seq_length=4096,
             load_in_4bit=True,
             dtype=None,
         )

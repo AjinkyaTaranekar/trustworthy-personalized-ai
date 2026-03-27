@@ -1,3 +1,4 @@
+import json
 import os
 import argparse
 from pathlib import Path
@@ -6,8 +7,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 try:
     from unsloth import FastModel
-    from trl import SFTTrainer
-    from transformers import TrainingArguments
+    from trl import SFTTrainer, SFTConfig
     from datasets import load_dataset
     HAS_LIBS = True
 except ImportError:
@@ -16,23 +16,27 @@ except ImportError:
 
 MODEL_CONFIG = {
     "base_model": "unsloth/Qwen3-0.6B",
-    "max_seq_length": 2048,
+    # Increased from 2048 to handle longer think traces and multi-turn contexts
+    "max_seq_length": 4096,
     "load_in_4bit": True,
-    "lora_r": 64,
-    "lora_alpha": 64,
+    # Reduced rank — 0.6B model doesn't need r=64; r=16 trains faster and generalises better
+    "lora_r": 16,
+    "lora_alpha": 32,  # 2× rank is standard practice
 }
 
 SFT_CONFIG = {
     "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 4,
-    "num_train_epochs": 2,
+    "num_train_epochs": 3,       # One extra epoch for the expanded template set
     "learning_rate": 2e-4,
     "warmup_steps": 100,
     "logging_steps": 10,
     "save_steps": 500,
+    "eval_steps": 100,           # Evaluate periodically to catch overfitting
     "bf16": True,
     "optim": "adamw_8bit",
     "weight_decay": 0.01,
+    "packing": True,             # Pack short examples into full sequences — faster training
 }
 
 
@@ -84,15 +88,19 @@ class ModelTrainer:
     
     def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft"):
         """Run supervised fine-tuning on the provided dataset."""
-        dataset = load_dataset("json", data_files=dataset_path)
-        train_dataset = dataset["train"]
-        if "text" not in train_dataset.column_names and "messages" in train_dataset.column_names:
-            train_dataset = train_dataset.map(
-                messages_to_text,
-                fn_kwargs={"tokenizer": self.tokenizer},
-            )
-        
-        training_args = TrainingArguments(
+        raw = load_dataset("json", data_files=dataset_path)
+
+        # Convert messages → text and split off a 5% eval set
+        full_dataset = raw["train"].map(
+            messages_to_text,
+            fn_kwargs={"tokenizer": self.tokenizer},
+        )
+        split = full_dataset.train_test_split(test_size=0.05, seed=42)
+        train_dataset = split["train"]
+        eval_dataset  = split["test"]
+        print(f"  Train: {len(train_dataset)} examples | Eval: {len(eval_dataset)} examples")
+
+        training_args = SFTConfig(
             output_dir=str(self.output_dir / output_name),
             per_device_train_batch_size=SFT_CONFIG["per_device_train_batch_size"],
             gradient_accumulation_steps=SFT_CONFIG["gradient_accumulation_steps"],
@@ -101,26 +109,40 @@ class ModelTrainer:
             warmup_steps=SFT_CONFIG["warmup_steps"],
             logging_steps=SFT_CONFIG["logging_steps"],
             save_steps=SFT_CONFIG["save_steps"],
+            eval_steps=SFT_CONFIG["eval_steps"],
+            eval_strategy="steps",
             bf16=SFT_CONFIG["bf16"],
             optim=SFT_CONFIG["optim"],
             weight_decay=SFT_CONFIG["weight_decay"],
+            packing=SFT_CONFIG["packing"],
+            max_seq_length=MODEL_CONFIG["max_seq_length"],
+            dataset_text_field="text",
             report_to="none",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
         )
-        
+
         trainer = SFTTrainer(
             model=self.model,
             tokenizer=self.tokenizer,
             train_dataset=train_dataset,
-            dataset_text_field="text",
-            max_seq_length=MODEL_CONFIG["max_seq_length"],
+            eval_dataset=eval_dataset,
             args=training_args,
         )
-        
-        trainer.train()
-        
+
+        train_result = trainer.train()
+
+        # Save loss history for thesis charts
+        log_history = trainer.state.log_history
+        loss_log_path = self.output_dir / output_name / "loss_history.json"
+        loss_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(loss_log_path, "w") as f:
+            json.dump(log_history, f, indent=2)
+        print(f"  Loss history saved → {loss_log_path}")
+
         save_path = self.output_dir / output_name
         trainer.save_model(str(save_path))
-        
+
         return self
     
     def train(self):

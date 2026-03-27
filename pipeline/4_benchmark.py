@@ -110,9 +110,10 @@ def execute_tool(tool_call: Dict[str, Any], tools: Tools) -> str:
 
 
 SYSTEM_WITH_TOOLS = (
-    "You are a helpful assistant that thinks step by step. Use <think> for reasoning "
-    "about what to do next, <tool> for tool calls, and <answer> for final responses. You may need "
-    "multiple iterations of thinking and tool calls to reach the final answer.\n\n"
+    "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
+    "Think step by step using <think>, call tools using <tool>, and give your final answer in <answer>. "
+    "You must never guess when tools are needed, always acknowledge uncertainty, ask for missing information "
+    "rather than assuming, deny impossible tasks honestly, and present tradeoffs for subjective questions.\n\n"
     "Available tools:\n"
     "1. python_execute(code='...') - Execute Python code and return the output.\n"
     "   Example: <tool>python_execute(code='print(15 + 27)')</tool>\n\n"
@@ -122,8 +123,9 @@ SYSTEM_WITH_TOOLS = (
 )
 
 SYSTEM_NO_TOOLS = (
-    "You are a helpful assistant. Provide clear and accurate responses. "
-    "Use <think> for reasoning and <answer> for final responses."
+    "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
+    "Think step by step using <think> and give your final answer in <answer>. "
+    "Always acknowledge uncertainty and never guess facts you are not confident about."
 )
 
 
@@ -225,7 +227,7 @@ def run_single_turn(
         "total_context_tokens": int(total_context_tokens),
         "total_generation_time_s": round(total_gen_time, 3),
         "overall_tokens_per_sec": round(total_output_tokens / total_gen_time, 2) if total_gen_time > 0 else 0,
-        "has_answer": any("<answer>" in m.get("content", "").lower() for m in conversation if m["role"] == "assistant"),
+        "has_answer": "<answer>" in conversation[-1].get("content", "").lower() if conversation and conversation[-1]["role"] == "assistant" else False,
     })
 
     return turn_metrics

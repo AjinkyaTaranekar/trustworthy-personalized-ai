@@ -139,60 +139,83 @@ class DatasetGenerator:
         }
     
     def generate_interleaved_with_personalization_example(self, template_config: Dict) -> Dict:
-        """Generate example for full system (interleaved + personalization + emotion)."""
+        """Generate example for full system (interleaved + personalization + emotion).
+        Supports both multi-turn (turns array) and legacy single-turn formats.
+        """
         template = random.choice(template_config["templates"])
         variables = self.sample_variables(template["variables"])
-        
-        assistant_parts = []
-        
-        if "think" in template:
-            think = self.render_template(template["think"], variables)
-            assistant_parts.append(f"<think>{think}</think>")
-        
-        if "tool" in template:
-            tool = self.render_template(template["tool"], variables)
-            assistant_parts.append(f"<tool>{tool}</tool>")
-        
+
         conversation = [
             {"role": "system", "content": template_config["system_prompt"]},
             {"role": "user", "content": self.render_template(template["user"], variables)},
-            {"role": "assistant", "content": "\n".join(assistant_parts)}
         ]
-        
-        if "tool" in template and "tool_result" in template:
-            tool_result = self.render_template(template["tool_result"], variables)
-            conversation.append({"role": "tool", "content": tool_result})
-            
-            answer = self.render_template(template["answer"], variables)
-            scrutiny = template.get("scrutiny", {})
-            
-            scrutiny_text = ""
-            if scrutiny:
-                rendered_scrutiny = {}
-                for key, value in scrutiny.items():
-                    if isinstance(value, list):
-                        rendered_scrutiny[key] = [self.render_template(v, variables) for v in value]
-                    else:
-                        rendered_scrutiny[key] = self.render_template(value, variables)
-                scrutiny_text = f"\n<scrutiny>{json.dumps(rendered_scrutiny, indent=2)}</scrutiny>"
-            
-            conversation.append({
-                "role": "assistant", 
-                "content": f"<answer>{answer}</answer>{scrutiny_text}"
-            })
-        elif "answer" in template:
-            answer = self.render_template(template["answer"], variables)
-            conversation[-1]["content"] += f"\n<answer>{answer}</answer>"
-        
+
+        num_tool_calls = 0
+
+        # Multi-turn format (same logic as generate_interleaved_example)
+        if "turns" in template:
+            for turn in template["turns"]:
+                assistant_parts = []
+                if turn.get("think"):
+                    assistant_parts.append(f"<think>{self.render_template(turn['think'], variables)}</think>")
+                if turn.get("tool"):
+                    assistant_parts.append(f"<tool>{self.render_template(turn['tool'], variables)}</tool>")
+                    num_tool_calls += 1
+                if assistant_parts:
+                    conversation.append({"role": "assistant", "content": "\n".join(assistant_parts)})
+                if turn.get("tool_result"):
+                    conversation.append({"role": "tool", "content": self.render_template(turn["tool_result"], variables)})
+
+            if "answer" in template:
+                answer = self.render_template(template["answer"], variables)
+                scrutiny = template.get("scrutiny", {})
+                scrutiny_text = ""
+                if scrutiny:
+                    rendered = {
+                        k: [self.render_template(v, variables) for v in val] if isinstance(val, list)
+                        else self.render_template(val, variables)
+                        for k, val in scrutiny.items()
+                    }
+                    scrutiny_text = f"\n<scrutiny>{json.dumps(rendered, indent=2)}</scrutiny>"
+                conversation.append({"role": "assistant", "content": f"<answer>{answer}</answer>{scrutiny_text}"})
+
+        # Legacy single-turn format
+        else:
+            assistant_parts = []
+            if "think" in template:
+                assistant_parts.append(f"<think>{self.render_template(template['think'], variables)}</think>")
+            if "tool" in template:
+                assistant_parts.append(f"<tool>{self.render_template(template['tool'], variables)}</tool>")
+                num_tool_calls = 1
+            conversation.append({"role": "assistant", "content": "\n".join(assistant_parts)})
+
+            if "tool" in template and "tool_result" in template:
+                conversation.append({"role": "tool", "content": self.render_template(template["tool_result"], variables)})
+                answer = self.render_template(template["answer"], variables)
+                scrutiny = template.get("scrutiny", {})
+                scrutiny_text = ""
+                if scrutiny:
+                    rendered = {
+                        k: [self.render_template(v, variables) for v in val] if isinstance(val, list)
+                        else self.render_template(val, variables)
+                        for k, val in scrutiny.items()
+                    }
+                    scrutiny_text = f"\n<scrutiny>{json.dumps(rendered, indent=2)}</scrutiny>"
+                conversation.append({"role": "assistant", "content": f"<answer>{answer}</answer>{scrutiny_text}"})
+            elif "answer" in template:
+                answer = self.render_template(template["answer"], variables)
+                conversation[-1]["content"] += f"\n<answer>{answer}</answer>"
+
         return {
             "messages": conversation,
             "metadata": {
                 "model_variant": "interleaved_with_personalization",
                 "has_thinking": True,
-                "has_tools": "tool" in template,
+                "has_tools": num_tool_calls > 0,
+                "num_tool_calls": num_tool_calls,
                 "has_personalization": "profile" in template.get("user", ""),
-                "has_emotion": "emotion" in template.get("user", "") or "appraisal" in str(template)
-            }
+                "has_emotion": "emotion" in template.get("user", "") or "appraisal" in str(template),
+            },
         }
     
     def generate_rl_verifiable_example(self) -> Dict:
