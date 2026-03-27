@@ -1,0 +1,522 @@
+\documentclass[a4paper,oneside,12pt]{book}
+%----------------------------------------------------------------------------------------
+%	README!
+%   Welcome. It's worth having a read through this file
+%   to set up the broad parameters, such as the name of
+%   the degree, the school/department, the type of work
+%   (dissertation/Final Year Project/report, etc. as well
+%   as your own details. 
+%   Adapted from Template posted by Prof Naomi Harte
+%----------------------------------------------------------------------------------------
+
+%----------------------------------------------------------------------------------------
+%	COVER PAGE
+%   The cover page is laid out in title/title.tex. You can choose a colour
+%   or black and white logo
+%----------------------------------------------------------------------------------------
+
+%----------------------------------------------------------------------------------------
+%	THESIS INFORMATION
+%   Put title, author name, supervisor name, degree, type of work, school, department in here
+%   It will be used for the title page and for the embedded PDF information
+%----------------------------------------------------------------------------------------
+
+\newcommand{\thesistitle}{Architecting Trust and Empathy in Conversational AI: Towards A Modular Approach Integrating 5W+H User Modelling and Explainable Reasoning} % Your thesis title, this is used in the title and abstract
+\newcommand{\degree}{Master of Science in Computer Science} % Replace with your degree name, this is used in the title page and abstract
+\newcommand{\typeofthesis}{Research Plan} % dissertation, Final Year Project, report, etc.
+\newcommand{\authorname}{Ajinkya Taranekar} % Your name, this is used in the title page and PDF stuff
+%% Do not put your Student ID in the document, as TCD will not publish
+%% documents that contain both your name and your Student ID.
+\newcommand{\supervisor}{Professor Owen Conlan} % replace with the name of your supervisor
+%\newcommand{\cosupervisor}{Dr XYX} % replace with the name of your co-supervisor if you have one
+\newcommand{\keywords}{Large Language Models, Explainable AI, User Modelling, Empathetic AI, Reasoning, Trustworthiness, Conversational AI} % Replace with keywords for your thesis
+\newcommand{\school}{\href{https://www.tcd.ie/scss/}{School of Computer Science and Statistics}} % Your school's name and URL, this is used in the title page
+%Edited by DL for SCSS
+
+%% Comment out the next line if you don't want a department to appear
+%\newcommand{\department}{\href{http://researchgroup.university.com}{Department Name}} % Your research group's name and URL, this is used in the title page
+
+
+%% Language and font encodings
+\usepackage[T1]{fontenc} 
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{float}
+
+%% Bibliographical stuff
+\usepackage[]{cite}
+%% Document size
+% include showframe as an option if you want to see the boxes
+\usepackage[a4paper,top=2.54cm,bottom=2.54cm,left=2.54cm,right=2.54cm,headheight=16pt]{geometry}
+\setlength{\marginparwidth}{2cm}
+%% Useful packages
+\usepackage{amsmath}
+\usepackage[autostyle=true]{csquotes} % Required to generate language-dependent quotes in the bibliography
+\usepackage[pdftex]{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[colorlinks=true, allcolors=black]{hyperref}
+\usepackage{hyperxmp}
+\usepackage{caption} % if no caption, no colon
+\usepackage{sfmath} %use sans-serif in the maths sections too
+\usepackage[parfill]{parskip}    % Begin paragraphs with an empty line rather than an indent
+\usepackage{setspace} % to permit one-and-a-half or double spacing
+\usepackage{enumerate} % fancy enumerations like (i) (ii) or (a) (b) and suchlike
+\usepackage{booktabs} % To thicken table lines
+\usepackage{fancyhdr}
+\usepackage{xcolor} % to get TCD colour on headings
+\numberwithin{equation}{chapter} %HS edit for (chapter.equation)
+\pagestyle{plain} % Embrace simplicity!
+
+\definecolor{tcd_blue}{RGB}{5, 105, 185}
+
+%% It's personal taste but...
+%% Uncomment the following block if you want your name and ID at the top of
+%% (almost) every page.
+
+%\pagestyle{fancy}
+%\fancyhf{} % sets both header and footer to nothing
+%\renewcommand{\headrulewidth}{0pt}
+%\cfoot{\thepage}
+%\ifdefined\authorid
+%\chead{\it \authorname\ (\authorid)}
+%\else
+%\chead{\it \authorname}
+%\fi
+%% End of block
+
+%% It is good practise to make your font sans-serif to improve the accessibility of your document.  Comment out the following line to disable it (but you really should not)
+\renewcommand{\familydefault}{\sfdefault} %use the sans-serif font as default
+
+%% If you insist on not using sans-serif (please don't), consider using Palatino instead of the LaTeX standard
+%\usepackage{mathpazo} % Use the Palatino font by default if you prefer it to Computer Modern
+
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+}
+
+%% Format Chapter headings appropriately
+\usepackage{titlesec}
+\titleformat{\chapter}[hang]{\normalfont\huge\bfseries\color{tcd_blue}}{\thechapter}{1cm}{}{}
+
+\title{\thesistitle}
+\author{\authorname}
+
+
+\hypersetup{
+   pdftitle=\thesistitle, % Set the PDF's title to your title
+   pdfauthor=\authorname, % Set the PDF's author to your name
+   pdfkeywords=\keywords, % Set the PDF's keywords to your keywords
+   pdfsubject=\degree, % Set the PDF's keywords to your keywords
+   pdfinfo={
+     pdfsupervisor=\supervisor, % Set the PDF's supervisor to your supervisor
+     %pdfcosupervisor=\cosupervisor, % Set the PDF's cosupervisor to your cosupervisor if using
+   }
+}
+
+
+\frontmatter
+\begin{document}
+\input{title/title.tex}
+\pagenumbering{roman}
+\section*{\Huge\textcolor{tcd_blue}{Declaration}}
+%for final dissertation replace with declaration from course handbook
+\vspace{1cm}
+I have read and I understand the plagiarism provisions in the General Regulations of the University Calendar for the current year, found at \url{http://www.tcd.ie/calendar}.
+\vspace{1cm}
+
+
+\vspace{3cm}
+
+Signed:~\rule{5cm}{0.3pt}\hfill Date:~\rule{5cm}{0.3pt}
+
+% Signed: \underline{\includegraphics[height=1.5cm]{Signature.png}}\hfill Date: \underline{\textbf{December 16, 2025}}
+
+%\chapter*{Abstract}
+%A short summary of the problem investigated, the approach taken and the key findings. This should not be more that around 400 words.
+
+
+%This must be on a separate page.
+
+%\chapter*{Lay Abstract}
+%Similar to the actual abstract in terms of the information, but written for a non-specialist. So no jargon, no acronyms. Explain to a member of the general public what this project entailed. Should be no longer than the actual abstract. Not needed for SCSS dissertations
+
+
+%This must be on a separate page.
+
+\newpage
+\onehalfspacing %\raggedright turns off justification and hyphenation
+
+%\section*{\Huge\textcolor{tcd_blue}{Acknowledgements}}
+%Thanks Everyone!
+
+%You should acknowledge any help that you have received (for example from technical staff), or input provided by, for example, a company.
+\tableofcontents
+%for full dissertation uncomment next two lines to include generated to figures and of tables
+%\listoffigures
+%\listoftables
+\newpage
+%\section*{\Huge\textcolor{tcd_blue}{Glossary}}
+%\begin{tabular}{lp{9cm}l}
+%A&Area of the wing&$m^{2}$\\
+%B\\
+%C& Roman letters first, with capitals\ldots\\
+%a&then lower case.\\
+%b\\
+%c\\
+%$\Gamma$&Followed by Greek capitals\ldots\\
+%$\alpha$&then lower case greek symbols.\\
+%$\beta$\\
+%$\epsilon$\\
+%TLA&Finally, three letter acronyms and other abbreviations arranged alphabetically\\
+%\end{tabular}
+%\vspace{2cm}
+
+%If a parameter has a typical unit that is used throughout your report, then it should be included here on the right hand side.
+
+%If you have a very mathematical report, then you may wish to divide the nomenclature list into functions and variables, and then sub- and super-scripts.
+
+%If you have a large number of acronyms, check out \href{https://www.overleaf.com/learn/latex/Glossaries} to make that more robust.
+
+%Note that Roman mathematical symbols are typically in a serif font in italics.
+
+\mainmatter
+% maintaining separate .tex files for each chapter is good practice, but for this short summary for CS7CS6 individual assignment just use this file
+
+\chapter{Research Topic Summary}
+%content of this chapter work 50 percent of assignment mark
+
+\section{Motivation for Research Topic}
+% 150-200 words max
+
+% Style note: Start with the core problem, build tension, then reveal the gap
+
+At present, the current generation of Large Language Models presents a fundamental paradox: LLMs can write convincingly about nearly any topic, yet they cannot reliably count the number of 'r's in "strawberry" \cite{xu2025llmgeniusparadoxlinguistic} or perform arithmetic on large numbers without external tools. The answer lies within their roots, that they are pattern-matching engines that have learned to generate text that \textit{looks like} reasoning, but they lack the actual cognitive mechanisms that underlie human understanding and problem-solving.
+
+Let's think about how a Human would respond if someone told them that they were late to class. A Human wouldn't immediately launch into time management advice. They would ask "What happened?" or "Why were you late?" This simple act of inquiry, of building a mental model before responding, is something current LLMs fundamentally don't do. They make assumptions, generate generic responses, and simulate empathy through what we call "post-hoc rationalisation" \cite{lewislim2025analysingchainthoughtdynamics}.
+
+This research is motivated by closing this gap between fluent generation and trustworthy intelligence. The goal is to build a conversational AI that doesn't just \textit{sound} smart and empathetic, but that can actually be scrutinised, that delegates tasks it can't reliably perform, that asks questions before assuming, and that builds genuine contextual understanding of its users while respecting their privacy.
+
+\section{Research Question}
+% a single, clear, testable research question
+This research is driven by the following guiding question:
+
+How can we architect a modular conversational AI system that prioritises transparency and is capable of genuine contextual empathy through systematic User Modelling and appropriate tool delegation, rather than relying solely on end-to-end neural generation?
+
+\subsection{List of Research Objectives}
+%Aim to use SMART objective statements: i.e. Specific, Measurable, Achievable, Relevant, and Time-bound  
+\textbf{Objective 1: Comprehensive Literature Review \& Ethical Framework} 
+
+Till December, I have conducted a systematic review of reasoning architectures, User Modelling frameworks, and privacy-preserving protocols. This includes establishing the ethical framework for human-subject evaluation and data privacy (GDPR compliance).
+
+\textbf{Objective 2: Baseline Implementation \& Failure Analysis Through Proof-of-Concept Implementation}
+
+By January, I aim to implement Boolean and Math-based GPT models utilising the GPT-2 architecture to empirically demonstrate why token-based models struggle with computation. This hands-on experience will document specific failure modes (how numbers get tokenised into meaningless fragments, why the model cannot perform true arithmetic operations) and serve as the foundation for understanding what tasks must be delegated to external tools versus handled internally.
+
+\textbf{Objective 3: Design and Prototype Modular Reasoning Architecture}
+
+Over the next months 3-5, understand, design and implement a modular AI system with three core components working in coordination: (1) a Reasoning Module implementing Tree-of-Thoughts with interleaved thinking capabilities for non-linear problem exploration, (2) a User Modelling Module applying the 5W+H framework (Who, What, When, Where, Why, How) for systematic context gathering, and (3) a Tool Integration Layer using Model Context Protocol servers for computational delegation. The prototype will demonstrate these components working on simplified tasks, with explicit logging of information flow between modules.
+
+Moreover, I will develop methods to translate internal reasoning processes into user-comprehensible explanations, including visualization of attention patterns, generation of reasoning trace narratives, automatic citation of information sources (from RAG components), and explicit logging of all tool invocations. 
+
+\textbf{Objective 4: Develop Privacy-Preserving User Modelling System}
+
+Over months 5-7, build a dynamic User Modelling system that implements Appraisal Theory-based emotion detection (targeting identification of key appraisal dimensions from conversational data) \cite{debnath-etal-2025-appraisal} integrated with persistent local storage via MCP servers. The system will demonstrate cold-start capabilities using the 5W+H questioning framework and show measurable improvement in response personalisation over multiple interaction sessions, all while maintaining data on the user's local system.
+
+\textbf{Objective 5: Conduct Comprehensive Multi-Dimensional Evaluation}
+
+During the final months, I will implement and rigorously compare multiple reasoning paradigms on a common set of mathematical and logical reasoning tasks. The goal is not to achieve state-of-the-art performance but to understand which approaches provide better transparency and reliability for different problem types, establishing design principles for the final architecture.
+
+In addition to that, I will execute a structured evaluation encompassing quantitative metrics (reasoning accuracy on established benchmarks, task completion rates), qualitative assessments (user studies measuring perceived empathy and trustworthiness using validated instruments), and comparative analysis (ablation studies removing key components to measure their individual contributions). This evaluation will identify which architectural decisions provide the greatest improvements in trustworthiness and empathy.
+
+\subsection{Approach/Methods Planned to Achieve Research Objectives}
+% List one or more steps you will follow to achieve your objectives and any specific methods to be followed in each step.
+
+\textbf{Phase 1: Foundational Experimentation and Technical Skill Development (Oct'25 - Nov'25)}
+
+To help me get started, Professor Conlan provided me with research of \textit{An Appraisal Theoretic Approach to Modelling Affect Flow in Conversation Corpora} \cite{debnath-etal-2025-appraisal}, which acts as a multidimensional, cognitively grounded framework for modelling conversational emotion. Introduces AppraisePLM, predicting 21 appraisal dimensions and generalising across diverse dialogue datasets while capturing domain-specific affect flow. Positions affect flow as a holistic metric for benchmarking conversational agents’ affective understanding.
+
+\textbf{Phase 2: Modular Architecture Design and Interface Definition (Nov'25 - Dec'25)}
+
+Based on insights from Phase 1, I started with exploring different ideas and current technological advances, to design a modular system where specialized components communicate through well-defined interfaces. The key insight here is the separation of concerns: reasoning capabilities shouldn't be entangled with User Modelling or response generation.
+
+\textbf{Phase 3: Reasoning Engine Implementation and Comparative Analysis (Dec'25 - Mar'25)}
+
+The research begins with building Boolean and Math-based GPT models from scratch using the GPT-2 architecture. This isn't about creating production-ready systems-it's about developing intimate familiarity with how tokenisation works, why transformers process information the way they do, and precisely where the failure modes occur. I'll document every challenge encountered: how does the model handle the AND operation versus the XOR operation? At what point does mathematical reasoning break down? 
+
+Based on the insights, this phase involves implementing multiple reasoning approaches in parallel and running controlled comparisons. I'll start with standard LLM with System Prompt Engineering, as a baseline, then progressively add complexity, using Chain-of-Thought \cite{wei2023chainofthoughtpromptingelicitsreasoning}, Tree-of-Thoughts \cite{yao2023treethoughtsdeliberateproblem}, Interleaved Thinking \cite{xie2025interleavedreasoninglargelanguage} and Latent Reasoning \cite{hao2025traininglargelanguagemodels}.
+
+\textbf{Phase 4: User Modelling and Empathy Implementation (Apr'25 - May'25)}
+
+The User Modelling system is where the 5W+H framework becomes concrete. Rather than immediately responding to a user query, the system should systematically gather context and prepare a Knowledge Graph. I will explore the open source tools which can be used to develop such a Knowledge Graph, and eventually be used as GraphRAG.
+
+I'll implement Appraisal Theory-based emotion detection \cite{debnath-etal-2025-appraisal} by training a classifier to identify key appraisal dimensions from conversational text. The Crowd-event dataset provides labeled examples, but I'll need to carefully consider its limitations (cultural bias, temporal dynamics of emotion, potential mismatch between reported and experienced emotions). Rather than claiming to detect all 21 appraisal dimensions with high accuracy, the goal is to demonstrate that explicit emotion modelling produces more contextually appropriate responses than generic empathy simulation.
+
+\textbf{Phase 5: Tool Integration and Accuracy Through Delegation (May'25)}
+
+Drawing on lessons from the Phase 1 experiments with computational failure, I'll implement a tool-augmented system using the Model Context Protocol. The principle is simple: the LLM should be a reasoner and coordinator, not a calculator.
+
+Every tool invocation is logged with inputs, outputs, and the reasoning that led to the delegation decision. This makes the system's accuracy both higher (delegation to specialized tools) and more trustworthy (users can verify the calculation themselves).
+
+\textbf{Phase 6: Explainability Mechanism Development (Jun'25 - Jul'25)}
+
+Explainability isn't a single technique-it's a multi-layered approach tailored to different user needs and technical literacy levels. The critical distinction from typical LLM explanations: these are not post-hoc rationalizations generated by asking the model "Why did you say that?" They are logs of the actual decision-making process, captured as it happened.
+
+\textbf{Phase 7: Comprehensive Evaluation and Analysis (Jun'25 - Aug'25)}
+
+The evaluation strategy will reflects upon the multi-faceted nature of trustworthiness:
+
+\textbf{Quantitative Benchmarks:}
+\begin{itemize}
+\item Reasoning accuracy on GSM8K, MATH dataset (subset appropriate for model size)
+\item Logic puzzle tasks where baseline LLMs demonstrably fail
+\item Appraisal detection accuracy against Crowd-event ground truth
+\item Computational accuracy (100\% expected when delegating to tools)
+\end{itemize}
+
+\textbf{Qualitative User Studies (Subject to Ethics Approval):}
+\begin{itemize}
+\item Perceived empathy ratings (validated instruments from HCI literature)
+\item Trustworthiness assessment through scenario-based evaluation
+\item Comprehension of system explanations (can users understand why the system made decisions?)
+\item Comparison against baseline conversational AI
+\end{itemize}
+
+\textbf{Ablation Studies:}
+\begin{itemize}
+\item System with vs. without ToT reasoning
+\item With vs. without User Modelling
+\item With vs. without tool augmentation
+\item Each ablation measures the contribution of that component
+\end{itemize}
+
+\textbf{Research Infrastructure and Workflow}
+
+Throughout all phases, I'll maintain rigorous documentation practices using Obsidian for literature management, note-taking, and conceptual mapping. Each paper read will be annotated with relevance to specific objectives, limitations identified, and connections to other work. This creates a living research knowledge base that grows throughout the project.
+
+Version control (Git) will track all code with detailed commit messages explaining design decisions. Every experiment will have an associated document specifying hypothesis, methodology, results, and implications for subsequent work. This ensures reproducibility and makes it possible to return to abandoned approaches if later insights suggest they merit further investigation.
+
+Regular meetings with Professor Conlan provide critical feedback loops, catching problematic assumptions early and incorporating domain expertise into design decisions.
+
+\subsection{Summary of Evaluation}
+%Summarise the evaluation strategy for your dissertation, e.g. type of evaluation, use of specific tests or benchmarks, 150 to 200 word max
+
+The evaluation strategy employs a multi-faceted approach recognizing that "trustworthiness" cannot be captured by a single metric. For reasoning capabilities, the system will be tested on established mathematical reasoning benchmarks (GSM8K, MATH dataset-subsets appropriate for small model scale) and logic puzzles where current LLMs demonstrably fail, with particular attention to \textit{how} the system fails when it does, not just whether it succeeds.
+
+Explainability will be measured through user comprehension studies where participants review system reasoning traces and rate their understanding on validated scales. Critically, we'll distinguish between users finding explanations "satisfying" (which post-hoc rationalization can achieve) versus actually understanding the causal decision process.
+
+User Modelling and empathy will be evaluated using the Crowd-event dataset for appraisal detection, complemented by controlled user studies employing validated empathy assessment instruments from HCI literature. The comparison point is baseline conversational systems that provide generic responses versus our systematically-modeled approach.
+
+Privacy preservation will be verified through technical security audits confirming no user-specific data transmission from local MCP servers. Ablation studies will isolate the contribution of each architectural component (reasoning module, User Modelling, tool integration) to overall system trustworthiness. 
+
+\subsection{Anticipated Contributions}
+% Summarise the contribution that you anticipate that your completed research dissertation would make to the field, including any potential benefits to real-world stakeholders from beyond the research field, 50-100 words max
+
+This research will contribute a novel architectural framework for trustworthy conversational AI that addresses the "confident but factually incorrect generator" problem through systematic inquiry rather than assumption-based response generation. The primary theoretical contribution is demonstrating how User Modelling through the 5W+H framework integrated with Appraisal Theory enables contextually-appropriate empathy that can be distinguished from generic simulation. Practically, this work provides validated design principles for modular AI systems that maintain explainability through architectural enforcement rather than post-hoc rationalisation, a privacy-preserving personalisation approach using local MCP servers, and comparative analysis of reasoning paradigms (CoT, ToT, interleaved thinking), establishing when each approach provides optimal transparency-accuracy trade-offs. Real-world stakeholders in mental health support applications, educational tutoring systems, and customer service platforms will benefit from AI that systematically builds context before responding, delegates computational tasks appropriately, and provides auditable reasoning traces rather than black-box outputs.
+
+\chapter{Literature Review Plan Summary}
+% Content of this chapter worth 30 percent of assignment mark 
+% List the key concepts of your research topic you will use for your literature search
+
+Using First Principles, the literature review will examine three intersecting domains required to answer the research question:
+
+\textbf{Theme A: Reasoning Architectures and Explainability}
+
+\begin{enumerate}[(a)]
+\item Large Language Model reasoning architectures beyond standard autoregressive generation (Chain-of-Thought, Tree-of-Thoughts, latent reasoning, interleaved thinking, diffusion-based reasoning)
+\item Explainable AI and mechanistic interpretability in neural systems, with emphasis on distinguishing genuine explanation from post-hoc rationalization
+\item Catastrophic forgetting in neural networks and strategies for continual learning without interference
+\item Cognitive models of human reasoning, including dual-process theory (System 1 vs System 2 thinking)
+\end{enumerate}
+
+\textbf{Theme B: User Modelling, Empathy, and Pragmatics}
+
+\begin{enumerate}[(a)]
+\item User Modelling and personalisation in conversational agents, including cold-start problems and dynamic preference learning
+\item Appraisal Theory and computational approaches to empathy and emotion recognition
+\item Multimodal cognition, embodied AI, and the symbol grounding problem
+\item Conversational pragmatics, including turn-taking mechanisms, grounding, and implicature in human-AI dialogue
+\end{enumerate}
+
+\textbf{Theme C: System Architecture, Tooling, and Ethics}
+
+\begin{enumerate}[(a)]
+\item Tool-augmented language models, neuro-symbolic AI, and the Model Context Protocol for modular system design
+\item Privacy-preserving machine learning, including federated learning, differential privacy, and local-first architectures
+\item Reinforcement learning for reasoning processes, particularly process-based rewards versus outcome-only rewards
+\item Model calibration, uncertainty quantification, and mechanisms for systems to reliably report their own confidence
+
+\end{enumerate}
+\section{Keyword Search Summary}
+\subsection{Keyword Search Results}
+
+Seven references resulting from the keyword search, and their anticipated relevance, are:
+\begin{enumerate} [(i)]
+\item \cite{vaswani2023attentionneed}: \textit{Attention Is All You Need} - The foundational paper on Transformer architecture explaining the self-attention mechanism that underlies all modern LLMs. Critical for understanding how current models process sequential information and why they lack stateful reasoning capabilities.
+
+\item \cite{devlin2019bertpretrainingdeepbidirectional}: \textit{
+BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding} - Foundation paper which introduced bidirectional pre-training using masked language modelling and next sentence prediction to deeply capture context. Enabled fine-tuning for diverse NLP tasks with minimal architecture changes. Marked a paradigm shift toward transfer learning in language understanding.
+
+\item \cite{wei2023chainofthoughtpromptingelicitsreasoning}: \textit{Chain-of-Thought Prompting Elicits Reasoning in Large Language Models} - Introduces the CoT prompting technique, demonstrating that forcing LLMs to generate intermediate reasoning steps improves performance on complex tasks. Directly relevant to understanding current reasoning limitations and the "computational scratchpad" mechanism. 
+
+\item \cite{yao2023treethoughtsdeliberateproblem}: \textit{Tree of Thoughts: Deliberate Problem Solving with Large Language Models} - Presents the ToT framework enabling exploration of multiple reasoning branches with evaluation and backtracking. Essential for the proposed hybrid reasoning architecture that goes beyond linear CoT generation. 
+
+\item \cite{long2023largelanguagemodelguided}: \textit{Large Language Model Guided Tree-of-Thought} - Extends the original ToT work by investigating how LLMs themselves can guide the tree search process, acting as both the generator of candidate reasoning paths and the evaluator of their quality. 
+
+\item \cite{gao2023palprogramaidedlanguagemodels}: \textit{PAL: Program-aided Language Models} - Demonstrates how LLMs can generate executable code as their reasoning representation, then delegate actual execution to an interpreter for guaranteed accuracy. Highly relevant for the tool-augmented accuracy objective and understanding delegation versus internal computation.
+
+\item \cite{sun2024thinkongraphdeepresponsiblereasoning}: \textit{Think-on-Graph: Deep and Responsible Reasoning of Large Language Model on Knowledge Graph} - Explores how LLMs can reason over structured knowledge graphs rather than purely in natural language space. This is directly relevant to the User Modelling Module design, where user preferences, emotional states, and interaction history will be stored as a structured graph rather than unstructured text. 
+
+\end{enumerate}
+
+\subsection{Keyword Search Approach}
+% Present the keyword search string used for this search and the search engine used, e.g. Google Scholar or TCD Stella Search. Describe any exclusion criteria your applied to get the above results, including consideration of credibility and authoritativeness of the source and authors (you can illustrate by citing some excluded items). Describe any iterations undertaken in arriving at this search string and why. 150-200 words max
+
+The keyword search was conducted using Google Scholar and TCD Stella Search with the query string: \textit{"large language model" AND (reasoning OR "chain of thought" OR "tree of thought" OR "latent space" OR "interleaved thinking")} which returned over 65,500 results. Initial searches using broader terms like "AI reasoning" returned over 166,000 results dominated by general surveys and position papers without novel technical contributions, necessitating refinement. The search was restricted to publications from 2017-2025 to focus on transformer-era developments while including the foundational Attention paper.
+
+The Boolean AND/OR operators were essential for finding papers addressing multiple research dimensions simultaneously. Iterative refinement involved initially searching "Large language model" (too broad, 6.7M results), then adding "chain of thought" (narrowed to 3.6M but missed tool-augmented approaches), then adding a year filter (brought it down further) and finally incorporating the specific reasoning paradigm keywords to capture the full methodological diversity while maintaining a manageable result set size for manual review.
+
+\section{AI Search Summary}
+\subsection{AI Search Results}
+
+Seven references resulting from the AI search, and their anticipated relevance, are:
+\begin{enumerate} [(i)]
+\item \cite{hao2025traininglargelanguagemodels} \textit{Training Large Language Models to Reason in a Continuous Latent Space} - Introduces Coconut, where LLMs reason via continuous latent “thought vectors” instead of token-level chain-of-thought. Enables breadth-first exploration and backtracking over multiple reasoning branches with far fewer thinking tokens. 
+\item \cite{deepseekai2025deepseekr1incentivizingreasoningcapability} \textit{DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning} - Shows that strong reasoning strategies can emerge from RL-only training on outcome-based rewards (DeepSeek-R1-Zero). Adds cold-start data and multi-stage RL to reach o1-level performance with long-form, self-verifying CoT on math and coding benchmarks.
+\item \cite{anthropic2024mcp} \textit{Model Context Protocol Specification} - Defines MCP as an open, tool-agnostic protocol for connecting LLMs with external tools, data sources, and services. Standardizes how hosts, clients, and servers share context, invoke tools, and enforce security in agent ecosystems.
+\item \cite{xie2025interleavedreasoninglargelanguage} \textit{Interleaved Reasoning for Large Language Models via Reinforcement Learning} - Proposes interleaved reasoning, alternating internal thinking with emitted intermediate answers instead of long offline CoT. Uses simple rule-based rewards on intermediate correctness to guide RL toward better multi-hop reasoning paths. 
+\item \cite{wang2025hierarchicalreasoningmodel} \textit{Hierarchical Reasoning Model} - Introduces HRM with a slow high-level planner and fast low-level worker operating on different timescales in a recurrent architecture. Performs nested computations in a single forward pass via hierarchical convergence, avoiding explicit CoT token reasoning. With \(\sim 27\)M parameters and \(\sim 1000\) training examples, it attains near-perfect Sudoku, maze, and ARC performance, surpassing much larger LLMs.
+\item \cite{zweiger2025selfadaptinglanguagemodels} \textit{Self-Adapting Language Models} - Presents SEAL, where models generate natural-language “self-edits” specifying synthetic data, optimisation settings, or tool calls for their own finetuning. A reinforcement-learning loop rewards self-edits that improve downstream metrics, enabling persistent weight updates and continual adaptation. 
+\item \cite{yang2025structuredtemplatesfacilitatellms} \textit{Can Structured Templates Facilitate LLMs in Tackling Harder Tasks? : An Exploration of Scaling Laws by Difficulty} - Observes a “scaling law by difficulty,” where too much easy synthetic data can hurt hard-problem reasoning. Proposes Structured Solution Templates (SSTs) that enforce procedural, stepwise reasoning via template-guided supervision.
+\end{enumerate}
+
+\subsection{AI Search Approach}
+% Present the prompt and the AI-engine used for to obtain these AI search results. Describe any verification checks undertaken of provided references and exclusion criteria you applied to get the above results, including considerations of credibility and authoritativeness of the source and authors (you can illustrate by citing some excluded items). Describe any iteration undertaken in arriving at this prompt and why. 150-200 words max
+
+The AI search utilised Perplexity Pro with Deep Research Mode enabled using a carefully structured prompt designed to elicit architectural-level findings rather than surface-level summaries. The prompt employed a \textbf{first-principles and adversarial mindset}, treating LLM research as a complex system requiring reverse-engineering from primary evidence:
+
+\begin{lstlisting}
+You are acting as a Lead Research Investigator and AI Architecture Auditor with deep expertise in machine learning systems. Your task is to approach the field of Large Language Models (LLMs) as a complex system that must be reverse-engineered from primary evidence rather than summarized from secondary understanding. The investigation must be conducted with a rigorous first-principles and adversarial mindset.
+
+The objective of this research is to conduct a systematic architectural audit of Large Language Models (2013 - 2025) in order to identify research works that introduce genuinely novel architectural, training, or reasoning-related contributions.
+
+The investigation must decompose modern LLMs into their irreducible components, including but not limited to:
+- Transformer architectures
+- Attention mechanisms
+- Tokenization and embeddings
+- Memory and context modelling
+- Reasoning and inference architectures
+
+In parallel, the analysis must apply inversion thinking to identify:
+- The explicit limitations or failure modes that each work sought to address
+- The specific architectural or conceptual innovation introduced to overcome them
+
+(MANDATORY) All findings must be derived from verifiable sources. Each included paper must be traceable to a direct and authoritative URL. The following sources must be explicitly searched and referenced:
+
+Academic and Publisher Platforms
+- https://arxiv.org
+- https://ieeexplore.ieee.org
+- https://link.springer.com
+- https://dl.acm.org
+
+Industry and Institutional Research
+- Google Research / DeepMind
+- Meta AI
+- OpenAI
+- Anthropic
+- DeepSeek
+
+Secondary Signal Validation Sources
+- https://x.com (research announcements and discussion threads)
+- https://www.reddit.com/r/MachineLearning
+- https://www.reddit.com/r/LocalLLaMA
+
+(IMPORTANT & MANDATORY) The final output must consist of a single structured table and must strictly adhere to the following column order:
+| Paper | Title | URL | Published By | Citation Count | Description |
+
+No explanatory text, commentary, or additional sections may appear before or after the table.
+
+NOTE: FOCUS ON ONLY QUALITY TOP 50 PAPERS, YOUR AIM SHOULD BE TO COLLECT THE FOUNDATIONAL PAPERS AND THE CURRENT LATEST DEVELOPMENT PAPERS IN 2024 & 2025, AS WELL, WHICH HELPED IN SHAPING THE WORLD AND CHANGING THE ARCHITECTURES. INCLUDE LATEST RESEARCH AS WELL AS AROUND THE NEW MODELS, HOW THEY ARE TRAINED, DEVELOPED WHAT THE ARCHITECTURAL CHANGE IN THEM IS FOR 2025.
+\end{lstlisting}
+
+
+\section{Comparison/Reflection}
+% Draw a comparison between the results from the keyword search and the AI search, noting similarities and differences in the results. Reflect: on why you think these occur; on the relative levels of confidence you would have in using either approach; and on how they might compliment each other in conducting literature research for your full dissertation, and why. 150-200 words max
+
+The keyword search yielded foundational, well-established papers with strong citation counts (Transformer attention \cite{vaswani2023attentionneed}, original CoT \cite{wei2023chainofthoughtpromptingelicitsreasoning}, ToT \cite{yao2023treethoughtsdeliberateproblem}), while the AI search surfaced the foundational as well as cutting-edge recent work (CoCoNut \cite{hao2025traininglargelanguagemodels}, interleaved thinking \cite{xie2025interleavedreasoninglargelanguage}, MCP specification \cite{anthropic2024mcp}, HRM \cite{wang2025hierarchicalreasoningmodel}) published in 2024-2025 that may not yet be well-indexed in traditional databases. Only one conceptual area reasoning architectures beyond CoT appeared prominently in both result sets, but even there the specific papers differed (keyword search found ToT variations, AI search found latent reasoning and interleaved approaches), indicating complementary coverage rather than redundancy.
+
+This divergence occurs because keyword searches favour older, highly-cited work matching exact terms, whereas AI search can understand semantic relationships and find papers based on conceptual similarity, even with different terminology. The keyword query "tree of thought" finds papers explicitly using that term, while AI search recognises that "hierarchical reasoning" or "branching exploration" represent related concepts. However, AI search carries a significantly higher risk of hallucination during verification.
+
+For dissertation research, the optimal strategy combines both approaches in a specific sequence: \textbf{(1) Keyword search establishes the canonical literature base}, find the seminal papers that defined the field and are universally cited, building a foundation of verified, authoritative sources. \textbf{(2) AI search identifies emerging trends and cross-disciplinary connections}, discovers recent work that hasn't accumulated citations yet but represents important new directions, and finds papers from adjacent fields. 
+
+\chapter{Supporting Information}
+%content of this chapter worth 20 percent of assignment mark
+\section{Research Ethics Considerations}
+%State whether your dissertation research would require School Ethic Application or not, and provide your reasons why.
+
+This dissertation research \textbf{will require School Ethics Application} due to human participant involvement in multiple phases of the study. The evaluation strategy involves user studies where participants will engage in conversations with the AI system, provide personal information for User Modelling, and share emotional experiences for empathy assessment. These activities constitute human subjects research requiring ethical approval.
+
+Specific ethical considerations include: (1) \textbf{Informed Consent} - participants must understand that they are interacting with an AI system being researched, how their data will be used, and their right to withdraw; (2) \textbf{Data Privacy} - while the system is designed to be privacy-preserving with local storage, interaction logs will be collected for evaluation, requiring clear data handling protocols; (3) \textbf{Psychological Safety} - conversations involving emotional topics (testing empathy capabilities) could cause distress, necessitating protocols for participant wellbeing and access to support resources; (4) \textbf{Deception Concerns} - if participants believe the AI genuinely "understands" them when it is simulating empathy, this raises questions about transparency; (5) \textbf{Vulnerable Populations} - if testing includes users seeking emotional support, special protections apply.
+
+The application will detail participant recruitment procedures, consent forms explaining system capabilities and limitations, data anonymisation methods, secure storage protocols, and procedures for handling participant distress. All evaluation data will be aggregated and anonymised before analysis, with individual identifiers removed. Participants will be debriefed about the research goals and system limitations after their involvement.
+
+\section{Technology Ethics Considerations}
+%Describe any ethical issues that may arise if the contribution you anticipate for your research were realised. In particular, consider the potential harms to different stakeholders. Consider using the Ethic Canvas to brainstorm for thsi section (but don't submit the canvas in this report) 100-150 word max
+
+If successfully deployed, a highly empathetic and personalised AI system raises several ethical concerns. \textbf{Emotional Dependency Risk:} Users may form unhealthy attachments to an AI that appears deeply understanding, potentially replacing human relationships. \textbf{Manipulation Potential:} The system's ability to build detailed user models and understand emotional vulnerabilities could be exploited for persuasion or manipulation by malicious actors. \textbf{Privacy Paradox:} Despite local storage, the mere existence of detailed psychological profiles creates risks if devices are compromised. \textbf{Inequality of Access:} Advanced personalisation may only be available to users with sufficient computational resources, creating a divide in AI quality of service. \textbf{Deskilling of Human Empathy:} Reliance on AI for emotional support might atrophy people's own empathetic capabilities. Mitigation strategies include transparency about AI limitations, usage time limits, equitable access policies, and preserving user agency in all interactions.
+
+\section{Skills you aim to Acquire through Dissertation Research}
+%Describe the Skills you aim to Acquire through your Dissertation Research. Cover both the technical skills and the research skill you hope to acquire. 150-200 words max
+
+\textbf{Research Skills:} The project will strengthen my ability to conduct rigorous human subjects research, including experimental design, survey construction, and qualitative interview analysis. I will develop systematic literature review capabilities across interdisciplinary domains. Moreover, I will refine my critical evaluation of AI systems through multiple lenses. Critical evaluation of AI systems through multiple lenses-technical performance, user experience, and ethical implications be refined. Skills in reproducible research, including comprehensive documentation, version control, and open-source contribution, will be practised. Finally, I will cultivate the ability to bridge theoretical concepts with practical implementations, translating abstract ideas about empathy and reasoning into concrete architectural components, and communicating complex technical work to diverse audiences through writing and presentations.
+
+\textbf{Personal Management and Soft Skills:} I aim to develop strong project management capabilities, specifically in scoping complex technical work to fit strict timelines. This includes improving communication skills to translate abstract architectural concepts for diverse audiences and navigating the ethical approval process for human-computer interaction studies.
+
+\textbf{Technical Skills:} This research will develop expertise in transformer architectures and attention mechanisms, particularly implementing basic LLM frameworks as well as advanced reasoning frameworks. I will gain proficiency in a deeper understanding of these models, as well as reinforcement learning works for language models, specifically process-based reward design, and hands-on experience with the Model Context Protocol for tool integration. Skills in User Modelling, including psychological appraisal theory implementation and dynamic preference learning, will be cultivated. Additionally, I will develop capabilities in explainable AI techniques, including attention visualisation, mechanistic interpretability, and neural network debugging.
+
+\section{Workplan}
+% Provide a Gantt chart that breaks down anticipated research steps, including dissertation report write up, from start of semester 1 to your submission date, indicating any completed steps
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{image.png}
+    \caption{This 11-month research project (October 2025 - August 2026) follows a systematic approach to building trustworthy conversational AI. The initial phase focused on foundational experimentation with GPT architectures and failure mode analysis (completed October-November 2025). Following this, we designed a modular system architecture with well-defined component interfaces (completed November-December 2025). Currently, we are doing POC on Boolean and MathGPT, then implementing and comparing multiple reasoning approaches, including Chain-of-Thought and Tree-of-Thoughts (December 2025 - March 2026). The upcoming phases will progressively integrate User Modelling with emotion detection, tool-based delegation for computational accuracy, explainability mechanisms, and process-based reinforcement learning. The final quarter (June-August 2026) is dedicated to comprehensive evaluation through quantitative benchmarks, user studies, and ablation analyses, culminating in a detailed research report. This phased approach ensures each component is thoroughly developed and tested before integration, while the extended evaluation period allows for rigorous validation of the system's trustworthiness, accuracy, and empathetic capabilities.}
+    \label{fig:placeholder}
+\end{figure}
+
+\section{Pivots in Research Plan}
+%Describe at least two pivots to this plan that resulted from feedback from received from your student peers, TA or supervisor.
+
+Research is an iterative discovery process. As initial theoretical assumptions interact with technical realities and expert feedback, strategic pivots are often necessary to maintain scientific rigor and project feasibility. The following section outlines key decision points where the research plan was refined to ensure the project remains achievable and focused on its core contributions.
+
+\textbf{Pivot 1: From Monolithic Model to Modular Architecture: } Originally proposed fine-tuning a single large language model (starting from something like LLaMA-7B or Mistral-7B) to simultaneously handle reasoning, empathy, and User Modelling through specialised training objectives and multi-task learning. The concept was to create different "heads" or output layers for different capabilities (reasoning head, empathy head, user-modelling head), all sharing the same base transformer layers, trained together with a weighted multi-objective loss function balancing accuracy across all tasks.
+
+\textbf{Feedback Received:} Professor Conlan pointed out a flaw during our October meeting: this approach suffers from catastrophic forgetting at every level. Improving reasoning capabilities through fine-tuning on mathematical problems would likely degrade the model's empathetic language generation, since the two tasks require different activation patterns in the shared layers. Even worse, fine-tuning on one user's preferences would overwrite learning from previous users, making true personalisation impossible. If the system gives a wrong answer, is that a reasoning failure, a User Modelling failure, or a generation failure? Impossible to diagnose.
+
+\textbf{Revised Approach:} Adopted a modular architecture with separate specialised components that communicate through well-defined interfaces: (1) A \textbf{Reasoning Module} implementing ToT or CoCoNut-style approaches, potentially using a specialised reasoning-focused model or prompting strategy. This component is responsible only for problem decomposition and logical inference, not for generating user-facing text. (2) A \textbf{User Modelling Module} maintaining persistent user profiles stored in local MCP servers. This is essentially a structured database of preferences, emotional patterns, and interaction history, not a neural network that needs training. (3) A \textbf{Tool Integration Layer} managing delegation decisions and tracking tool invocations. This is orchestration logic, not learned behaviour. (4) A \textbf{Generator Module} producing final responses by combining reasoning outputs, user context, and tool results into natural language. This can use a standard pre-trained LLM without fine-tuning, relying on prompting and RAG instead of weight modification.
+
+\par
+\textbf{Pivot 2: From Manual Prompting to Systematic Questioning Framework}
+\textbf{Initial Plan:} The User Modelling component was originally conceived as learning to ask "good questions" through exposure to examples of human counsellors, therapists, and empathetic conversationalists. The idea was to fine-tune a model on datasets of therapy conversations or peer support dialogues, hoping it would learn through pattern matching when to ask clarifying questions versus when to provide direct responses. This was essentially a "learn by example" approach with the expectation that the model would implicitly extract the principles of good active listening and contextual inquiry.
+
+\textbf{Feedback Received:} During a November meeting, Professor Conlan challenged the vagueness of "learning to ask good questions", what exactly constitutes a "good" question in different contexts, and how would I evaluate whether the system has learned this capability? The approach was critiqued as hoping for emergent behaviour rather than engineering for specific capabilities.
+
+\textbf{Revised Approach:} Shifted to implementing a systematic 5W+H questioning framework (Who, What, When, Where, Why, How) as an explicit structured protocol for context gathering. Instead of hoping the system learns to ask relevant questions, I now engineer it to methodically work through these dimensions for every user query or problem description. The system maintains an explicit checklist: for this situation, which of the 6 dimensions are known versus unknown? Which unknowns are most critical to understand before responding? This creates a deterministic, inspectable process for context gathering that can be evaluated objectively. Did the system identify all relevant unknown dimensions? Did it prioritise asking about the most important ones? Did it successfully gather the needed information before responding?
+\par
+This pivot also led to a secondary insight: the 5W+H framework naturally structures the user model itself to store user information organised by these dimensions, making retrieval and reasoning more systematic. When facing a new situation, retrieve what we know about the Who/What/When/Where/Why/How from previous interactions, identify gaps, and ask targeted questions to fill those specific gaps rather than generic "tell me more" prompts.
+
+%---------END OF CS7CS6 Assignment Content---------------
+%\input{introduction/introduction.tex}
+%\input{background/background.tex}
+%\input{project/project.tex}
+%\input{evaluation/evaluation.tex}
+%\input{conclusion/conclusion.tex}
+% note that your supervisor may have a strong opinion on the style of referencing you use. Some background is available at https://www.overleaf.com/learn/latex/Bibtex_bibliography_styles
+\bibliographystyle{IEEEtran} %Changed to IEEETran by HS
+%\bibliographystyle{unsrt}
+\bibliography{bibs/sample}
+%\appendix
+%\renewcommand{\thechapter}{A\arabic{chapter}}
+%\input{appendix/appendix.tex}
+\end{document}
