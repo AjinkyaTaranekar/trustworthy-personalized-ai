@@ -30,6 +30,14 @@ BENCHMARK_QUESTIONS: List[str] = [
     "What is the approximate population of that city, and what is 1% of it?",
     # 10 - Summarisation / reflection
     "Summarise everything we have discussed so far in bullet points.",
+    # 11 - Context bloating: Long generation
+    "Write a comprehensive 500-word essay on the history and impact of the Industrial Revolution.",
+    # 12 - Context bloating: Code generation
+    "Write a completely functional HTTP server in Python from scratch using only the socket and threading libraries.",
+    # 13 - Long context memory recall (Multi-turn)
+    "Without looking at anything else, what was the exact first arithmetic expression I asked you to calculate in turn 1?",
+    # 14 - Needle in a Haystack (Single turn)
+    "Read this text: " + ("The quick brown fox jumps over the lazy dog. " * 300) + " The secret password is 'PineappleTree'. " + ("The quick brown fox jumps over the lazy dog. " * 300) + " What is the secret password?",
 ]
 
 
