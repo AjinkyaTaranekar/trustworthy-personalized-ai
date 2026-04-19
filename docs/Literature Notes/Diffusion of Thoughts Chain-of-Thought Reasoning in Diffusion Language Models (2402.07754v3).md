@@ -1,0 +1,12 @@
+---
+paper id: 2402.07754v3
+title: "Diffusion of Thoughts: Chain-of-Thought Reasoning in Diffusion Language
+  Models"
+authors: Jiacheng Ye, Shansan Gong, Liheng Chen, Lin Zheng, Jiahui Gao, Han Shi, Chuan Wu, Xin Jiang, Zhenguo Li, Wei Bi, Lingpeng Kong
+publication date: 2024-02-12T16:23:28Z
+abstract: "Recently, diffusion models have garnered significant interest in the field of text processing due to their many potential advantages compared to conventional autoregressive models. In this work, we propose Diffusion-of-Thought (DoT), a novel approach that integrates diffusion models with Chain-of-Thought, a well-established technique for improving the reasoning ability of autoregressive language models. In contrast to autoregressive language models that make decisions in a left-to-right, token-by-token manner, DoT allows reasoning steps to diffuse over time through a diffusion language model and offers greater flexibility in trading-off computation for reasoning performance. Our experimental results demonstrate the effectiveness of DoT in multi-digit multiplication, boolean logic, and grade school math problems, with a small diffusion model outperforming a much larger autoregressive model in both efficiency and accuracy. In addition to that, DoT showcases promising self-correction abilities and benefits from existing reasoning-enhancing techniques like self-consistency decoding. Our findings contribute to the understanding and development of reasoning with diffusion language models."
+comments: "NeurIPS 2024"
+pdf: "[[Assets/Diffusion of Thoughts Chain-of-Thought Reasoning in Diffusion Language Models (2402.07754v3).pdf]]"
+url: https://arxiv.org/abs/2402.07754v3
+tags: []
+---

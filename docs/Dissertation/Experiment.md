@@ -1,0 +1,18 @@
+- ML Assignment/Project
+	- Creating Boolean and Math Based GPT.
+		- Take notes on challenges
+		- How can a token based model understand maths operations.
+- Review Deepseek R1 Architecture
+	- Create a Dummy Model using this: https://www.youtube.com/watch?v=QWNxQIq0hMo&list=PLPTV0NXA_ZSiOpKKlHCyOq9lnp-dLvlms
+- Go through MiniMax M2 Code
+	- Github: https://huggingface.co/MiniMaxAI/MiniMax-M2/tree/main
+	- Check what can we replicate
+- Go through over Interleaved thinking approach
+	- https://docs.vllm.ai/en/latest/features/interleaved_thinking/
+- Research on open source graph tools to plot out reasoning:
+	- Cognee, FalkorDB, Neo4J
+- How User Modelling can be done with interleaved thinking? 
+	- Asking the right questions before answering?
+	- Showing users why they thought of this for them
+	- 
+
