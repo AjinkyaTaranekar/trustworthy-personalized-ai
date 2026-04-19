@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "c357fad39afefcbc",
+        "id": "3e4dca3e7f6ec999",
         "type": "tabs",
         "children": [
           {
-            "id": "0b84b05a79b655f0",
+            "id": "529be4550c8e39db",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "docs/Research Plan Edits.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Research Plan Edits"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -94,9 +90,8 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/Research Plan Edits.md",
-                "collapseAll": false,
-                "extraContext": false,
+                "collapseAll": true,
+                "extraContext": true,
                 "sortOrder": "alphabetical",
                 "showSearch": false,
                 "searchQuery": "",
@@ -104,7 +99,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Research Plan Edits"
+              "title": "Backlinks"
             }
           },
           {
@@ -156,16 +151,26 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "docs/Research Plan Edits.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Research Plan Edits"
+              "title": "Outline"
+            }
+          },
+          {
+            "id": "9612fcb54eeb2144",
+            "type": "leaf",
+            "state": {
+              "type": "file-properties",
+              "state": {},
+              "icon": "lucide-info",
+              "title": "File properties"
             }
           }
-        ]
+        ],
+        "currentTab": 4
       }
     ],
     "direction": "horizontal",
@@ -183,43 +188,43 @@
       "bases:Create new base": false
     }
   },
-  "active": "0b84b05a79b655f0",
+  "active": "529be4550c8e39db",
   "lastOpenFiles": [
-    "docs/Assets/Advancing Multi-Agent Systems Through Model Context Protocol Architecture, Implementation, and Applications (2504.21030v1).pdf",
-    "docs/Literature Notes/Advancing Multi-Agent Systems Through Model Context Protocol Architecture, Implementation, and Applications (2504.21030v1).md",
-    "docs/Research Plan Edits.md",
-    "TCD_SCSS_CS7CS6_Research_Plan_Ajinkya_Taranekar.pdf",
-    "docs/Assets/VLM-R1 A Stable and Generalizable R1-style Large Vision-Language Model (2504.07615v2).pdf",
-    "docs/Assets/VAPO Efficient and Reliable Reinforcement Learning for Advanced Reasoning Tasks (2504.05118v3).pdf",
-    "docs/Assets/Understanding R1-Zero-Like Training A Critical Perspective (2503.20783v2).pdf",
-    "docs/Assets/UI-R1 Enhancing Efficient Action Prediction of GUI Agents by Reinforcement Learning (2503.21620v5).pdf",
-    "docs/Assets/Tree of Thoughts Deliberate Problem Solving with Large Language Models (2305.10601v2).pdf",
-    "docs/Assets/Training Large Language Models to Reason in a Continuous Latent Space (2412.06769v3).pdf",
-    "docs/Assets/Token-Hungry, Yet Precise DeepSeek R1 Highlights the Need for Multi-Step Reasoning Over Speed in MATH (2501.18576v1).pdf",
-    "docs/Assets/State Stream Transformer (SST) Emergent Metacognitive Behaviours Through Latent State Persistence (2501.18356v1).pdf",
-    "docs/Assets/Self-Enhanced Reasoning Training Activating Latent Reasoning in Small Models for Enhanced Reasoning Distillation (2502.12744v1).pdf",
+    "wiki/sources/papers/token-hungry-deepseek-r1.md",
+    "wiki/log.md.tmp.9236.1776634644202",
+    "wiki/entities/qwen3-0.6b.md",
+    "wiki/index.md.tmp.9236.1776634627227",
+    "wiki/index.md.tmp.9236.1776634619104",
+    "wiki/index.md.tmp.9236.1776634612742",
+    "wiki/overview.md.tmp.9236.1776634610274",
+    "wiki/overview.md.tmp.9236.1776634607032",
+    "wiki/experiments/experiment-catalog.md.tmp.9236.1776634602639",
+    "wiki/decisions/2025-11-10-ontology-focus-shift.md.tmp.9236.1776634597369",
+    "wiki/topics/tool-use-and-verification.md.tmp.9236.1776634594333",
+    "wiki/entities/5w-h.md.tmp.9236.1776634588936",
+    "wiki/sources/dissertation/research-plan.md",
+    "wiki/questions/2026-04-19-initial-questions.md",
+    "wiki/topics/ontology-integration.md",
+    "wiki/entities/graph-rag.md",
+    "wiki/index.md",
+    "wiki/entities/grpo.md",
+    "wiki/sources/papers/understanding-r1-zero.md",
     "docs/Dissertation/Rough Notes.md",
-    "docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md",
-    "docs/Dissertation/Experimental Planning Document.md",
-    "docs/Dissertation/Experiment.md",
-    "docs/Literature Notes/VLM-R1 A Stable and Generalizable R1-style Large Vision-Language Model (2504.07615v2).md",
-    "docs/Literature Notes/VAPO Efficient and Reliable Reinforcement Learning for Advanced Reasoning Tasks (2504.05118v3).md",
-    "docs/Literature Notes/Understanding R1-Zero-Like Training A Critical Perspective (2503.20783v2).md",
-    "docs/Literature Notes/UI-R1 Enhancing Efficient Action Prediction of GUI Agents by Reinforcement Learning (2503.21620v5).md",
-    "docs/Literature Notes/Tree of Thoughts Deliberate Problem Solving with Large Language Models (2305.10601v2).md",
-    "docs/Literature Notes/Training Large Language Models to Reason in a Continuous Latent Space (2412.06769v3).md",
-    "docs/Literature Notes/Token-Hungry, Yet Precise DeepSeek R1 Highlights the Need for Multi-Step Reasoning Over Speed in MATH (2501.18576v1).md",
-    "docs/Literature Notes/State Stream Transformer (SST) Emergent Metacognitive Behaviours Through Latent State Persistence (2501.18356v1).md",
-    "docs/Literature Notes/Self-Enhanced Reasoning Training Activating Latent Reasoning in Small Models for Enhanced Reasoning Distillation (2502.12744v1).md",
-    "docs/Literature Notes/Seed1.5-Thinking Advancing Superb Reasoning Models with Reinforcement Learning (2504.13914v3).md",
-    "docs/Literature Notes/Search-R1 Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning (2503.09516v5).md",
-    "docs/Literature Notes/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (2005.11401v4).md",
-    "docs/Literature Notes/Reasoning with Latent Thoughts On the Power of Looped Transformers (2502.17416v1).md",
-    "docs/Literature Notes/ReAct Synergizing Reasoning and Acting in Language Models (2210.03629v3).md",
-    "docs/Literature Notes/Prompting Science Report 2 The Decreasing Value of Chain of Thought in Prompting (2506.07142v1).md",
-    "docs/Literature Notes/PAL Program-aided Language Models (2211.10435v2).md",
-    "docs/Literature Notes/None of the Others a General Technique to Distinguish Reasoning from Memorization in Multiple-Choice LLM Evaluation Benchmarks (2502.12896v5).md",
-    "docs/Literature Notes/Neural Machine Translation of Rare Words with Subword Units (1508.07909v5).md",
-    "docs/Literature Notes/Measuring Word Significance using Distributed Representations of Words (1508.02297v1).md"
+    "wiki/experiments/experiment-catalog.md",
+    "wiki/topics/explainability.md",
+    "wiki/entities/appraisal-theory.md",
+    "wiki/entities/5w-h.md",
+    "wiki/sources/code/training-and-benchmark.md",
+    "wiki/sources/code/constitution-document.md",
+    "wiki/sources/code/sft-v2-pipeline.md",
+    "wiki/sources/dissertation/personal-notes.md",
+    "wiki/sources/dissertation/experimental-planning-document.md",
+    "wiki/sources/dissertation/road-towards-trustworthy-empathetic-ai.md",
+    "wiki/entities/rag.md",
+    "wiki/entities/mcp.md",
+    "wiki/sources/papers/xai-sentiment-deepseek-r1.md",
+    "wiki/sources/papers/vlm-r1.md",
+    "wiki/sources/papers/ui-r1.md",
+    "wiki/sources/papers/measuring-word-significance.md"
   ]
 }
