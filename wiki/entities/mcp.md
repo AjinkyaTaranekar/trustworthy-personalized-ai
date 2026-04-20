@@ -11,28 +11,20 @@ status: current
 
 # Model Context Protocol (MCP)
 
-**An open standard from Anthropic for connecting LLMs to external tools,
-resources, and data sources. "USB for AI" — write a server once, use with
-any MCP-compatible model.**
+**An open standard from Anthropic for connecting LLMs to external tools, resources, and data sources. "USB for AI" — write a server once, use with any MCP-compatible model.**
 
 ## Architecture
 - **MCP Client** — the LLM application (Claude, custom chatbot, etc.).
-- **MCP Server** — exposes tools / resources (file system, database, Python
-  sandbox, calculator, ontology).
+- **MCP Server** — exposes tools / resources (file system, database, Python sandbox, calculator, ontology).
 - **Transport** — stdio, HTTP, WebSocket.
 
 ## Why it matters for this thesis
 MCP is the transport substrate for three pillars of the architecture:
-- Tool use (`python_execute`, `web_search`, `read_url`, `get_datetime` in
-  [[entities/constitution]]).
-- [[topics/personalisation|Personalisation]] — local MCP servers keep user
-  memory off cloud LLMs.
-- Ontology verification ([[decisions/2025-11-10-ontology-focus-shift]]) —
-  the ontology becomes another MCP server in Approach B.
+- Tool use (`python_execute`, `web_search`, `read_url`, `get_datetime` in [[entities/constitution]]).
+- [[topics/personalisation|Personalisation]] — local MCP servers keep user memory off cloud LLMs.
+- Ontology verification ([[decisions/2025-11-10-ontology-focus-shift]]) — the ontology becomes another MCP server in Approach B.
 
-Advantage over native function calling: **model-agnostic**. The same
-reasoner can swap between Python sandbox, GraphRAG memory, and ontology
-verifier without per-vendor glue.
+Advantage over native function calling: **model-agnostic**. The same reasoner can swap between Python sandbox, GraphRAG memory, and ontology verifier without per-vendor glue.
 
 ## Related
 

@@ -15,23 +15,13 @@ status: current
 
 # BPE — Subword Units
 
-**Applies byte-pair encoding to NMT so rare words are represented as
-sequences of subword units, eliminating the closed-vocabulary problem.**
+**Applies byte-pair encoding to NMT so rare words are represented as sequences of subword units, eliminating the closed-vocabulary problem.**
 
 ## What it does
-Treats translation as an open-vocabulary problem by encoding words as
-compositions of frequent subword fragments. Improves WMT EN–DE / EN–RU by
-~1.1–1.3 BLEU vs a dictionary back-off baseline.
+Treats translation as an open-vocabulary problem by encoding words as compositions of frequent subword fragments. Improves WMT EN–DE / EN–RU by ~1.1–1.3 BLEU vs a dictionary back-off baseline.
 
 ## Why it matters for this thesis
-BPE is the **technical root** of LLM arithmetic failure as framed in the
-dissertation: numbers like `183491` get split into `["183", "491"]`, stripping
-the digit-place structure that makes arithmetic compositional. This is not a
-training-data issue — it is baked into the tokeniser. The thesis uses this to
-justify treating computation as an external tool call
-([[sources/papers/pal]]) rather than expecting the LLM to calculate. A
-cornerstone fact for the "capability-honesty" principle in
-[[entities/constitution]].
+BPE is the **technical root** of LLM arithmetic failure as framed in the dissertation: numbers like `183491` get split into `["183", "491"]`, stripping the digit-place structure that makes arithmetic compositional. This is not a training-data issue — it is baked into the tokeniser. The thesis uses this to justify treating computation as an external tool call ([[sources/papers/pal]]) rather than expecting the LLM to calculate. A cornerstone fact for the "capability-honesty" principle in [[entities/constitution]].
 
 ## Related
 

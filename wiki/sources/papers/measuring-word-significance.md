@@ -14,20 +14,13 @@ status: current
 
 # Measuring Word Significance
 
-**Uses Word2Vec vector *length* (together with term frequency) as a measure
-of a word's significance in a corpus — visualising semantic importance on
-a 2D plane.**
+**Uses Word2Vec vector *length* (together with term frequency) as a measure of a word's significance in a corpus — visualising semantic importance on a 2D plane.**
 
 ## What it does
-A short 7-page report. Proposes vector length as a complement to semantic
-direction, and builds a visualisation technique for corpus exploration.
+A short 7-page report. Proposes vector length as a complement to semantic direction, and builds a visualisation technique for corpus exploration.
 
 ## Why it matters for this thesis
-Minor but cited in the dissertation draft's §2 foundations section for the
-broader claim that "not all tokens are equally important in a sequence" —
-a motivation for attention-based explainability. Useful if any visualisation
-of appraisal-bearing tokens becomes part of the
-[[topics/empathy|empathy]] evaluation.
+Minor but cited in the dissertation draft's §2 foundations section for the broader claim that "not all tokens are equally important in a sequence" — a motivation for attention-based explainability. Useful if any visualisation of appraisal-bearing tokens becomes part of the [[topics/empathy|empathy]] evaluation.
 
 ## Related
 

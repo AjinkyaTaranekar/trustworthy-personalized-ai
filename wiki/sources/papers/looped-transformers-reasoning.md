@@ -15,21 +15,13 @@ status: current
 
 # Looped Transformers for Reasoning
 
-**Depth, not parameters, drives reasoning. A k-layer Transformer looped L
-times matches a kL-layer model on many reasoning problems — and implicitly
-generates latent thoughts equivalent to T CoT steps with T loops.**
+**Depth, not parameters, drives reasoning. A k-layer Transformer looped L times matches a kL-layer model on many reasoning problems — and implicitly generates latent thoughts equivalent to T CoT steps with T loops.**
 
 ## What it does
-Shows theoretically and empirically that iterative algorithms suit looped
-architectures. Bridges loop count to CoT step count. Presents a dichotomy:
-reasoning benefits from depth; memorisation benefits from width/params.
+Shows theoretically and empirically that iterative algorithms suit looped architectures. Bridges loop count to CoT step count. Presents a dichotomy: reasoning benefits from depth; memorisation benefits from width/params.
 
 ## Why it matters for this thesis
-Another "reasoning is architectural" argument
-([[sources/papers/hierarchical-reasoning-model|HRM]] is its cousin). For a
-small model ([[entities/qwen3-0.6b|Qwen3-0.6B]]) this is actionable: loops
-at inference may recover depth without training a larger model. Also clean
-theory for the CoT step count → latent compute correspondence.
+Another "reasoning is architectural" argument ([[sources/papers/hierarchical-reasoning-model|HRM]] is its cousin). For a small model ([[entities/qwen3-0.6b|Qwen3-0.6B]]) this is actionable: loops at inference may recover depth without training a larger model. Also clean theory for the CoT step count → latent compute correspondence.
 
 ## Related
 

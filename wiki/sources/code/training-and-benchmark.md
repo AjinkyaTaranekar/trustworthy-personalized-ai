@@ -16,9 +16,7 @@ status: current
 
 # Training & Benchmark Scripts
 
-**The numbered v1 entry points plus the context-degradation evaluator.
-Together they cover data generation → training → inference → benchmark →
-multi-turn degradation testing.**
+**The numbered v1 entry points plus the context-degradation evaluator. Together they cover data generation → training → inference → benchmark → multi-turn degradation testing.**
 
 ## Scripts at a glance
 
@@ -33,17 +31,14 @@ multi-turn degradation testing.**
 ## Base model & training config
 
 - Base: `unsloth/Qwen3-0.6B`.
-- Fine-tuning: LoRA (low-rank adapters) — small enough to run on a single
-  GPU, cheap enough to iterate on.
-- Inference defaults: `max_new_tokens=2048`, `max_iterations=10` (tool
-  loop), `temperature=0.7`.
+- Fine-tuning: LoRA (low-rank adapters) — small enough to run on a single GPU, cheap enough to iterate on.
+- Inference defaults: `max_new_tokens=2048`, `max_iterations=10` (tool loop), `temperature=0.7`.
 
 ## Reports surface
 
 - Inference reports: `./reports/inference_*.json` or `./reports/comparison_*.json`.
 - Benchmark reports: `./reports/benchmark_*.json`.
-- Local viewer: `python3 server.py` in `reports/`, open
-  `view_benchmark.html`.
+- Local viewer: `python3 server.py` in `reports/`, open `view_benchmark.html`.
 
 ## Ablation conditions
 
@@ -54,11 +49,7 @@ multi-turn degradation testing.**
 | C | SFT → GRPO, format + accuracy only | Proves RL correctness signal |
 | D | SFT → GRPO, all rewards incl. tool_integrity + behavioural | Full thesis contribution |
 
-**Branch note.** The GRPO RL trainer (`2c_rl_trainer.py` in memory
-records) lives on a separate branch, not on `main`. The `main` branch in
-this repo contains the SFT v2 data pipeline + benchmark infrastructure
-only. Expect to switch branches (or merge) before running Conditions C
-and D.
+**Branch note.** The GRPO RL trainer (`2c_rl_trainer.py` in memory records) lives on a separate branch, not on `main`. The `main` branch in this repo contains the SFT v2 data pipeline + benchmark infrastructure only. Expect to switch branches (or merge) before running Conditions C and D.
 
 ## Related
 

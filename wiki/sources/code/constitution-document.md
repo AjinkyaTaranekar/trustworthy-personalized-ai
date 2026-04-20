@@ -11,10 +11,7 @@ status: current
 
 # Constitution — full source
 
-**The document every gold response is critiqued against. Lives at
-`pipeline/constitution.md`. Structured into Capability/Honesty, Tool
-Discipline, and Robustness parts; every response must begin with a
-CAPABILITY_CHECK.**
+**The document every gold response is critiqued against. Lives at `pipeline/constitution.md`. Structured into Capability/Honesty, Tool Discipline, and Robustness parts; every response must begin with a CAPABILITY_CHECK.**
 
 ## The CAPABILITY_CHECK ritual
 
@@ -57,14 +54,9 @@ Before answering anything, the model must run:
 
 ## Why this matters for the thesis
 
-- It is the **operational definition of trustworthy behaviour** — every
-  trust claim must reduce to one of these principles being upheld.
-- The constitution is the reward ground truth for the behavioural RL
-  layer in [[entities/grpo]]: any candidate response that violates one of
-  these earns negative reward.
-- The "MATH = CODE" / "HOLD UNDER PRESSURE" / "I DON'T KNOW" triad is the
-  single best response to the dissertation's "sociopath yapper" critique in
-  [[topics/reasoning]].
+- It is the **operational definition of trustworthy behaviour** — every trust claim must reduce to one of these principles being upheld.
+- The constitution is the reward ground truth for the behavioural RL layer in [[entities/grpo]]: any candidate response that violates one of these earns negative reward.
+- The "MATH = CODE" / "HOLD UNDER PRESSURE" / "I DON'T KNOW" triad is the single best response to the dissertation's "sociopath yapper" critique in [[topics/reasoning]].
 
 ## Related
 

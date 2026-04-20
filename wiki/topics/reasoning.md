@@ -13,34 +13,22 @@ status: stub
 
 # Trustworthy Reasoning
 
-**How to make an LLM's reasoning honest, verifiable, and robust — not just
-fluent.**
+**How to make an LLM's reasoning honest, verifiable, and robust — not just fluent.**
 
 ## Summary
-Standard LLMs generate "sociopath yapper" explanations: post-hoc rationalisations
-that look like reasoning but are just next-token prediction over an essay shape.
-This thesis frames *trustworthy* reasoning as three properties: (a) **process
-fidelity** — intermediate steps are what actually drove the answer, (b)
-**delegation honesty** — computation that belongs in a tool goes to a tool, and
-(c) **refusal honesty** — the model says "I don't know" when grounded evidence
-is missing.
+Standard LLMs generate "sociopath yapper" explanations: post-hoc rationalisations that look like reasoning but are just next-token prediction over an essay shape. This thesis frames *trustworthy* reasoning as three properties: (a) **process fidelity** — intermediate steps are what actually drove the answer, (b) **delegation honesty** — computation that belongs in a tool goes to a tool, and (c) **refusal honesty** — the model says "I don't know" when grounded evidence is missing.
 
 ## Key sub-ideas
 
-- **Process-reward RL** — reward the thought process, not just the final answer
-  (Seed1.5-Thinking, DeepSeek-R1). Trains "how to think" over "what to answer".
-- **Tool-augmented reasoning** — PAL, ReAct: delegate computation to a Python
-  interpreter / search tool. Enables the honest report "I used a calculator".
+- **Process-reward RL** — reward the thought process, not just the final answer (Seed1.5-Thinking, DeepSeek-R1). Trains "how to think" over "what to answer".
+- **Tool-augmented reasoning** — PAL, ReAct: delegate computation to a Python interpreter / search tool. Enables the honest report "I used a calculator".
 - **Interleaved thinking** — thinking and acting interleaved at the token level.
-- **Constitution-driven SFT** — 19 principles covering capability honesty, tool
-  discipline, refusal. See [[entities/constitution]].
-- **Capability check** — every `<think>` block must include a `CAPABILITY_CHECK`
-  step in the SFT v2 data filter.
+- **Constitution-driven SFT** — 19 principles covering capability honesty, tool discipline, refusal. See [[entities/constitution]].
+- **Capability check** — every `<think>` block must include a `CAPABILITY_CHECK` step in the SFT v2 data filter.
 
 ## Open questions
 
-- Does process-reward RL generalise to novel problem shapes, or does it overfit
-  to rubric patterns?
+- Does process-reward RL generalise to novel problem shapes, or does it overfit to rubric patterns?
 - How do we score "process correctness" cheaply at scale without a human judge?
 - Process vs. outcome rewards — when is each needed? (See user's rough notes.)
 

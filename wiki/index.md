@@ -6,8 +6,7 @@ updated: 2026-04-19
 
 # Index
 
-Catalog of everything in the wiki. Regenerated on every ingest. One line per
-entry. For chronological activity, see [[log]].
+Catalog of everything in the wiki. Regenerated on every ingest. One line per entry. For chronological activity, see [[log]].
 
 ## Meta
 
@@ -122,13 +121,11 @@ _None yet. Ask me a durable question and I will offer to file the answer here._
 ## Not yet ingested
 
 - `IMPROVEMENT_ROADMAP.md` — 54KB roadmap at repo root. Ingest if still authoritative.
-- Per-file deep-dives of individual `pipeline/sft_*.py` scripts — summarised together in
-  [[sources/code/sft-v2-pipeline]] for now.
+- Per-file deep-dives of individual `pipeline/sft_*.py` scripts — summarised together in [[sources/code/sft-v2-pipeline]] for now.
 
 ## Cited but not in `docs/Assets/`
 
-Papers referenced in the research plan that we don't hold PDFs for
-(flagged in [[questions/2026-04-19-initial-questions]]):
+Papers referenced in the research plan that we don't hold PDFs for (flagged in [[questions/2026-04-19-initial-questions]]):
 
 - Debnath et al. 2025 — **AppraisePLM** (blocks Experiment 2)
 - Sun et al. 2024 — **Think-on-Graph** (informs [[entities/graph-rag]])

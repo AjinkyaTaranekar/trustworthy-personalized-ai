@@ -80,7 +80,19 @@ status: current           # stub | draft | current | stale  (omit if N/A)
 ---
 ```
 
-### 3.1 Tag discipline
+### 3.1 Line wrapping
+Write each paragraph as a **single long line**. Do not hard-wrap prose at
+80 / 100 / any character column. Obsidian renders long lines cleanly, and
+soft-wrapping keeps diffs and grep-based navigation sane. Lists,
+tables, code, headings, and blockquotes follow their usual structure.
+If a file ever slips back into hard-wrapped style, run:
+
+```bash
+python scripts/unwrap_markdown.py wiki/ --dry-run   # preview
+python scripts/unwrap_markdown.py wiki/             # apply
+```
+
+### 3.2 Tag discipline
 - **Read `wiki/tags.md` before writing any tag.** It is the canonical
   registry. Reuse existing tags wherever possible.
 - If the concept genuinely isn't covered, add the new tag to

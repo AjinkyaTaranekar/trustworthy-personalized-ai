@@ -15,22 +15,13 @@ status: current
 
 # BERT
 
-**Bidirectional pre-training of Transformers via masked-language-modelling —
-context both before and after each token, unlike GPT's causal mask.**
+**Bidirectional pre-training of Transformers via masked-language-modelling — context both before and after each token, unlike GPT's causal mask.**
 
 ## What it does
-Pre-trains an encoder on unlabelled text with two objectives (masked LM,
-next-sentence prediction), producing contextual embeddings that fine-tune to
-state-of-the-art on eleven NLP tasks with minimal task-specific architecture.
+Pre-trains an encoder on unlabelled text with two objectives (masked LM, next-sentence prediction), producing contextual embeddings that fine-tune to state-of-the-art on eleven NLP tasks with minimal task-specific architecture.
 
 ## Why it matters for this thesis
-BERT establishes the critical distinction between **understanding**
-(bidirectional) and **generation** (causal). The dissertation draft flags this
-as an open design lever: could a hybrid — BERT-like understanding to classify
-or verify, GPT-like generation to respond — close the "sociopath yapper" gap
-in [[topics/reasoning]]? Approach B of the ontology-verifier direction
-([[decisions/2025-11-10-ontology-focus-shift]]) is structurally similar:
-generate with a causal LM, verify with a bidirectional check.
+BERT establishes the critical distinction between **understanding** (bidirectional) and **generation** (causal). The dissertation draft flags this as an open design lever: could a hybrid — BERT-like understanding to classify or verify, GPT-like generation to respond — close the "sociopath yapper" gap in [[topics/reasoning]]? Approach B of the ontology-verifier direction ([[decisions/2025-11-10-ontology-focus-shift]]) is structurally similar: generate with a causal LM, verify with a bidirectional check.
 
 ## Related
 

@@ -11,9 +11,7 @@ status: current
 
 # 5W+H
 
-**A structured user-modelling schema the thesis uses to gather context
-systematically: Who, What, When, Where, Why, How. Designed as an
-alternative to "assume defaults" personalisation.**
+**A structured user-modelling schema the thesis uses to gather context systematically: Who, What, When, Where, Why, How. Designed as an alternative to "assume defaults" personalisation.**
 
 ## The six slots
 
@@ -28,15 +26,10 @@ alternative to "assume defaults" personalisation.**
 
 ## Why the thesis uses it
 
-- **Cold-start solution** — systematic first-session context collection
-  beats demographic-proxy stereotyping.
-- **Per-turn adaptivity** — the dissertation's "late-to-class" and
-  "Frappuccino" examples show that LLMs assume when they should be asking.
-  5W+H turns assumption into enquiry.
-- **Structured slot → structured memory** — each answered slot is a clean
-  target for a [[entities/graph-rag|GraphRAG]]-style user graph node.
-- **Privacy-respecting** — each slot is explicit so users see exactly
-  what the system remembers.
+- **Cold-start solution** — systematic first-session context collection beats demographic-proxy stereotyping.
+- **Per-turn adaptivity** — the dissertation's "late-to-class" and "Frappuccino" examples show that LLMs assume when they should be asking. 5W+H turns assumption into enquiry.
+- **Structured slot → structured memory** — each answered slot is a clean target for a [[entities/graph-rag|GraphRAG]]-style user graph node.
+- **Privacy-respecting** — each slot is explicit so users see exactly what the system remembers.
 
 ## Related
 

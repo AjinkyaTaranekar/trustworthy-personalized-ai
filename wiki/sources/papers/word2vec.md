@@ -14,22 +14,13 @@ status: current
 
 # Word2Vec
 
-**Learns dense continuous word vectors from large corpora using CBOW /
-skip-gram, making word meaning a geometric object.**
+**Learns dense continuous word vectors from large corpora using CBOW / skip-gram, making word meaning a geometric object.**
 
 ## What it does
-Two efficient architectures for learning word embeddings from billions of
-words in under a day. Produces vectors on which semantic and syntactic
-relations become linear (king − man + woman ≈ queen).
+Two efficient architectures for learning word embeddings from billions of words in under a day. Produces vectors on which semantic and syntactic relations become linear (king − man + woman ≈ queen).
 
 ## Why it matters for this thesis
-Word2Vec is the **static-embedding** baseline that Transformer-era
-contextualised embeddings replace. The dissertation uses this contrast to
-explain polysemy handling: "bank" in "river bank" vs "bank account" has one
-vector here, many in a Transformer. Important for the
-[[topics/personalisation]] story too — vector-store [[entities/rag|RAG]]
-systems still rely on embedding spaces, so embedding quality is a lower bound
-on retrieval fidelity.
+Word2Vec is the **static-embedding** baseline that Transformer-era contextualised embeddings replace. The dissertation uses this contrast to explain polysemy handling: "bank" in "river bank" vs "bank account" has one vector here, many in a Transformer. Important for the [[topics/personalisation]] story too — vector-store [[entities/rag|RAG]] systems still rely on embedding spaces, so embedding quality is a lower bound on retrieval fidelity.
 
 ## Related
 

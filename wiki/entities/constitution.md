@@ -11,17 +11,10 @@ status: current
 
 # Constitution (SFT v2)
 
-**The 19-principle document that governs every gold response generated in the
-SFT v2 pipeline. Covers capability honesty, tool discipline, and honest
-refusal.**
+**The 19-principle document that governs every gold response generated in the SFT v2 pipeline. Covers capability honesty, tool discipline, and honest refusal.**
 
 ## Summary
-The v2 supervised-fine-tuning pipeline replaces a 42-template scenario approach
-with a **constitution-driven** generator: the teacher model drafts a response,
-critiques it against the 19 principles in `pipeline/constitution.md`, and
-revises on violations. Only the revised response enters the training set.
-Every `<think>` block in the assembled dataset must contain a
-`CAPABILITY_CHECK` — asserted by the dataset assembler quality filter.
+The v2 supervised-fine-tuning pipeline replaces a 42-template scenario approach with a **constitution-driven** generator: the teacher model drafts a response, critiques it against the 19 principles in `pipeline/constitution.md`, and revises on violations. Only the revised response enters the training set. Every `<think>` block in the assembled dataset must contain a `CAPABILITY_CHECK` — asserted by the dataset assembler quality filter.
 
 ## Where it lives in the code
 

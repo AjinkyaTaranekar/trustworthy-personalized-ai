@@ -14,23 +14,13 @@ status: current
 
 # SST — State Stream Transformer
 
-**Adds a sliding-window FFN-cache with weighted decay that persists latent
-state across autoregressive generations — using the *same* frozen weights,
-elicits emergent metacognitive behaviour (89.01% GSM8K, 91.04% ARC).**
+**Adds a sliding-window FFN-cache with weighted decay that persists latent state across autoregressive generations — using the *same* frozen weights, elicits emergent metacognitive behaviour (89.01% GSM8K, 91.04% ARC).**
 
 ## What it does
-Architectural modification only; no retraining. Removes the
-across-generation discontinuity that autoregression imposes. Attributes
-gains purely to the "state stream" via controlled ablations.
+Architectural modification only; no retraining. Removes the across-generation discontinuity that autoregression imposes. Attributes gains purely to the "state stream" via controlled ablations.
 
 ## Why it matters for this thesis
-Direct evidence that **metacognition can be architectural**, not behavioural
-— counterweight to the "sociopath yapper" framing that treats metacognition
-as a training-time problem. Tension with the thesis's external-verification
-approach: if metacognition is unlockable from frozen weights, the need for
-an external ontology verifier weakens. Useful to cite as an alternative
-hypothesis in the literature review section of
-[[sources/dissertation/road-towards-trustworthy-empathetic-ai]].
+Direct evidence that **metacognition can be architectural**, not behavioural — counterweight to the "sociopath yapper" framing that treats metacognition as a training-time problem. Tension with the thesis's external-verification approach: if metacognition is unlockable from frozen weights, the need for an external ontology verifier weakens. Useful to cite as an alternative hypothesis in the literature review section of [[sources/dissertation/road-towards-trustworthy-empathetic-ai]].
 
 ## Related
 

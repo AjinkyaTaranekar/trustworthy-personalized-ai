@@ -15,23 +15,13 @@ status: current
 
 # SERT — Self-Enhanced Reasoning Training
 
-**Small models (GPT-2 scale) can already generate high-quality reasoning
-paths during sampling — those paths are just low-probability. SERT filters
-and self-trains on them, activating latent reasoning without needing a
-stronger teacher.**
+**Small models (GPT-2 scale) can already generate high-quality reasoning paths during sampling — those paths are just low-probability. SERT filters and self-trains on them, activating latent reasoning without needing a stronger teacher.**
 
 ## What it does
-Zero-shot sampling produces latent good-reasoning paths; SERT selects the
-correct ones and fine-tunes the student on its own output. Improves
-reasoning distillation from GPT-3.5 teacher to GPT-2 student.
+Zero-shot sampling produces latent good-reasoning paths; SERT selects the correct ones and fine-tunes the student on its own output. Improves reasoning distillation from GPT-3.5 teacher to GPT-2 student.
 
 ## Why it matters for this thesis
-Directly supports the repo's small-model bet on
-[[entities/qwen3-0.6b|Qwen3-0.6B]]. If reasoning is **already latent** in a
-small model, the SFT+GRPO pipeline is essentially an unlocking procedure —
-reinforcing [[sources/papers/hidden-reasoners|Hidden Reasoners]]'s claim.
-Also suggests a cheap data-augmentation step: rejection-sample the base
-model's own reasoning before involving a teacher.
+Directly supports the repo's small-model bet on [[entities/qwen3-0.6b|Qwen3-0.6B]]. If reasoning is **already latent** in a small model, the SFT+GRPO pipeline is essentially an unlocking procedure — reinforcing [[sources/papers/hidden-reasoners|Hidden Reasoners]]'s claim. Also suggests a cheap data-augmentation step: rejection-sample the base model's own reasoning before involving a teacher.
 
 ## Related
 

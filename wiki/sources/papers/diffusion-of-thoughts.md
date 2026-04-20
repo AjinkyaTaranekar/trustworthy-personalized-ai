@@ -15,22 +15,13 @@ status: current
 
 # Diffusion of Thoughts (DoT)
 
-**Marries CoT with diffusion language models so reasoning steps diffuse
-over time rather than being generated strictly left-to-right. Trades
-compute for reasoning quality more smoothly than autoregressive CoT.**
+**Marries CoT with diffusion language models so reasoning steps diffuse over time rather than being generated strictly left-to-right. Trades compute for reasoning quality more smoothly than autoregressive CoT.**
 
 ## What it does
-On multi-digit multiplication, boolean logic, and GSM-style problems, a
-small diffusion model beats a much larger autoregressive model, with
-emergent self-correction and compatibility with self-consistency decoding.
+On multi-digit multiplication, boolean logic, and GSM-style problems, a small diffusion model beats a much larger autoregressive model, with emergent self-correction and compatibility with self-consistency decoding.
 
 ## Why it matters for this thesis
-Supports the architectural-alternatives narrative around
-[[sources/papers/attention-is-all-you-need|Attention Is All You Need]]'s
-no-backtracking limitation: diffusion *does* backtrack. Less immediately
-actionable for the current pipeline (diffusion LMs are not the base
-model), but relevant as evidence that self-correction capability can be an
-architectural property rather than a trained behaviour.
+Supports the architectural-alternatives narrative around [[sources/papers/attention-is-all-you-need|Attention Is All You Need]]'s no-backtracking limitation: diffusion *does* backtrack. Less immediately actionable for the current pipeline (diffusion LMs are not the base model), but relevant as evidence that self-correction capability can be an architectural property rather than a trained behaviour.
 
 ## Related
 

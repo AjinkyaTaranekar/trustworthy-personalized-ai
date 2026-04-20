@@ -11,47 +11,30 @@ status: stub
 
 # Empathy
 
-**How to condition responses on *detected* user appraisals rather than
-generating generic sympathy tokens.**
+**How to condition responses on *detected* user appraisals rather than generating generic sympathy tokens.**
 
 ## Summary
-Current LLMs produce "simulated empathy" — surface-level validation that has
-no structured handle on what the user actually feels. The thesis proposes
-**appraisal-theoretic conditioning**: (1) detect the appraisal dimensions
-present in the user's message using an AppraisePLM-style tagger, (2) generate
-a response conditioned on those tags. This gives empathy an explicit, testable
-signal rather than a stylistic habit.
+Current LLMs produce "simulated empathy" — surface-level validation that has no structured handle on what the user actually feels. The thesis proposes **appraisal-theoretic conditioning**: (1) detect the appraisal dimensions present in the user's message using an AppraisePLM-style tagger, (2) generate a response conditioned on those tags. This gives empathy an explicit, testable signal rather than a stylistic habit.
 
 ## Key sub-ideas
 
-- **Appraisal theory** — emotions arise from a structured evaluation of
-  events; 21 appraisal dimensions (crowd-event dataset).
+- **Appraisal theory** — emotions arise from a structured evaluation of events; 21 appraisal dimensions (crowd-event dataset).
 - **AppraisePLM** — a PLM trained to tag user utterances with appraisals.
-- **Two-phase generation** — detect → condition → generate. Evaluation can
-  score each phase separately.
-- **Qualia gap** — even perfect appraisal simulation lacks subjective
-  experience; thesis takes the position that this matters less for utility
-  than for philosophy.
+- **Two-phase generation** — detect → condition → generate. Evaluation can score each phase separately.
+- **Qualia gap** — even perfect appraisal simulation lacks subjective experience; thesis takes the position that this matters less for utility than for philosophy.
 
 ## Open questions
 
-- Are the 21 appraisal dimensions tractable for users / annotators, or do
-  they need collapsing?
+- Are the 21 appraisal dimensions tractable for users / annotators, or do they need collapsing?
 - Temporal drift: does appraisal detection degrade as conversations lengthen?
-- Evaluation: can human raters distinguish appraisal-conditioned responses
-  from strong baseline responses?
+- Evaluation: can human raters distinguish appraisal-conditioned responses from strong baseline responses?
 
 ## Conversation design (from the draft)
 
-- **Turn-taking** — LLMs currently wait passively; thesis argues they
-  should know when to interject with a clarifying question.
-- **Grounding** — "uh-huh, I see" acknowledgements matter for perceived
-  empathy. LLMs rarely do this unmanaged.
-- **Gricean implicature** — "Can you pass the salt?" is not a yes/no
-  question. Understanding subtext is a prerequisite for emotional
-  support.
-- **Simple over open questions** — when clarity is needed, prefer
-  yes/no.
+- **Turn-taking** — LLMs currently wait passively; thesis argues they should know when to interject with a clarifying question.
+- **Grounding** — "uh-huh, I see" acknowledgements matter for perceived empathy. LLMs rarely do this unmanaged.
+- **Gricean implicature** — "Can you pass the salt?" is not a yes/no question. Understanding subtext is a prerequisite for emotional support.
+- **Simple over open questions** — when clarity is needed, prefer yes/no.
 
 ## Related
 

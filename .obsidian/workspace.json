@@ -199,17 +199,18 @@
   },
   "active": "529be4550c8e39db",
   "lastOpenFiles": [
+    "scripts/README.md",
+    "scripts/README.md.tmp.9236.1776674638693",
+    "CLAUDE.md.tmp.9236.1776674629906",
+    "scripts/__pycache__/unwrap_markdown.cpython-310.pyc",
+    "scripts/__pycache__",
+    "scripts/_preview_unwrap.py",
+    "scripts/unwrap_markdown.py",
+    "scripts/unwrap_markdown.py.tmp.9236.1776674537730",
+    "scripts",
     "docs/Literature Notes/PAL Program-aided Language Models (2211.10435v2).md",
     "wiki/log.md.tmp.9236.1776674187216",
     "wiki/entities/qwen3-0.6b.md.tmp.9236.1776674174847",
-    "wiki/index.md.tmp.9236.1776674154348",
-    "wiki/entities/graph-rag.md.tmp.9236.1776674151123",
-    "wiki/topics/personalisation.md.tmp.9236.1776674149674",
-    "wiki/topics/empathy.md.tmp.9236.1776674148535",
-    "wiki/entities/5w-h.md.tmp.9236.1776674147038",
-    "wiki/entities/appraisal-theory.md.tmp.9236.1776674145841",
-    "wiki/topics/ontology-integration.md.tmp.9236.1776674143182",
-    "wiki/topics/llm-foundations.md.tmp.9236.1776674142061",
     "wiki/tags.md",
     "wiki/index.md",
     "docs/Research Plan Edits.md",
@@ -234,7 +235,6 @@
     "wiki/sources/papers/react.md",
     "wiki/sources/papers/rag-original.md",
     "wiki/sources/papers/prompting-science-report-2.md",
-    "wiki/sources/papers/pal.md",
-    "wiki/sources/papers/none-of-the-others.md"
+    "wiki/sources/papers/pal.md"
   ]
 }

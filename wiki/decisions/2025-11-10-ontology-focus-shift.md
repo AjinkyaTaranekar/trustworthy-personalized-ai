@@ -13,30 +13,22 @@ status: current
 **Date:** 2025-11-10 (advisor meeting)
 
 ## Decision
-Make **ontology-LLM integration** the primary experimental lens, demoting the
-earlier focus on pure process-reward RL to a secondary experiment. Pursue two
-complementary approaches in parallel:
+Make **ontology-LLM integration** the primary experimental lens, demoting the earlier focus on pure process-reward RL to a secondary experiment. Pursue two complementary approaches in parallel:
 
 - **Approach A** — ontology as core knowledge base; LLM as NL interface.
 - **Approach B** — ontology as post-hoc verifier of LLM claims.
 
 ## Rationale
-The advisor pressed for a **concrete, measurable** experimental basis over
-theoretical framing. Two structural problems motivate the shift:
+The advisor pressed for a **concrete, measurable** experimental basis over theoretical framing. Two structural problems motivate the shift:
 
-1. Transformers cannot explain token generation from inside (tokens are IDs;
-   output complexity is multi-parameter). Explainability has to come from an
-   external structure.
-2. Current industry practice (MCP / tools) **delegates** but does not
-   **verify**. Ontology-based verification fills that gap.
+1. Transformers cannot explain token generation from inside (tokens are IDs; output complexity is multi-parameter). Explainability has to come from an external structure.
+2. Current industry practice (MCP / tools) **delegates** but does not **verify**. Ontology-based verification fills that gap.
 
 ## Consequences
 
 - Reasoning / RL work becomes a supporting component, not the flagship.
-- Need to choose an ontology (OWL / RDF) and a test domain. Political or
-  geopolitical reasoning was suggested.
-- New evaluation axes: verification accuracy, routing precision,
-  cross-cultural consistency.
+- Need to choose an ontology (OWL / RDF) and a test domain. Political or geopolitical reasoning was suggested.
+- New evaluation axes: verification accuracy, routing precision, cross-cultural consistency.
 
 ## Open items (to resolve before next advisor meeting)
 

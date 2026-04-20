@@ -15,24 +15,13 @@ status: current
 
 # Coconut — Continuous Latent Reasoning
 
-**Feeds the last hidden state back as next input embedding — "continuous
-thought" — instead of decoding to words. Each latent thought encodes multiple
-alternative next steps, enabling implicit breadth-first search instead of
-committing prematurely.**
+**Feeds the last hidden state back as next input embedding — "continuous thought" — instead of decoding to words. Each latent thought encodes multiple alternative next steps, enabling implicit breadth-first search instead of committing prematurely.**
 
 ## What it does
-Replaces the CoT text interface with a continuous-vector reasoning loop.
-Outperforms CoT on logical-reasoning tasks that reward planning search.
+Replaces the CoT text interface with a continuous-vector reasoning loop. Outperforms CoT on logical-reasoning tasks that reward planning search.
 
 ## Why it matters for this thesis
-A direct rebuttal to one core thesis claim — that **textual reasoning is
-scrutable** and therefore more trustworthy. Coconut trades scrutability for
-performance. Worth citing as the "alternative trade-off" the thesis argues
-against: if we accept latent reasoning, we lose the auditability story in
-[[topics/reasoning]]. File as an explicit tension in
-[[decisions/2025-11-10-ontology-focus-shift]] — ontology verification
-**requires** textual claims to extract, making Coconut-style
-representations a poor fit for the chosen direction.
+A direct rebuttal to one core thesis claim — that **textual reasoning is scrutable** and therefore more trustworthy. Coconut trades scrutability for performance. Worth citing as the "alternative trade-off" the thesis argues against: if we accept latent reasoning, we lose the auditability story in [[topics/reasoning]]. File as an explicit tension in [[decisions/2025-11-10-ontology-focus-shift]] — ontology verification **requires** textual claims to extract, making Coconut-style representations a poor fit for the chosen direction.
 
 ## Related
 

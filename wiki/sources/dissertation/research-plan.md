@@ -13,45 +13,28 @@ status: current
 
 # Research Plan
 
-**The CS7CS6 formal research-plan submission. Establishes the thesis
-title, research question, five SMART objectives, a seven-phase timeline
-(Oct 2025 – Aug 2026), two documented pivots, ethics considerations, and
-the keyword- vs AI-search literature strategy.**
+**The CS7CS6 formal research-plan submission. Establishes the thesis title, research question, five SMART objectives, a seven-phase timeline (Oct 2025 – Aug 2026), two documented pivots, ethics considerations, and the keyword- vs AI-search literature strategy.**
 
 ## Thesis identity
 
-- **Title:** *Architecting Trust and Empathy in Conversational AI:
-  Towards A Modular Approach Integrating 5W+H User Modelling and
-  Explainable Reasoning*
+- **Title:** *Architecting Trust and Empathy in Conversational AI: Towards A Modular Approach Integrating 5W+H User Modelling and Explainable Reasoning*
 - **Degree:** MSc Computer Science, TCD
 - **Supervisor:** Prof. Owen Conlan
-- **Keywords:** LLMs, Explainable AI, User Modelling, Empathetic AI,
-  Reasoning, Trustworthiness, Conversational AI
+- **Keywords:** LLMs, Explainable AI, User Modelling, Empathetic AI, Reasoning, Trustworthiness, Conversational AI
 
 ## Formal research question
 
-> How can we architect a modular conversational AI system that
-> prioritises transparency and is capable of genuine contextual empathy
-> through systematic User Modelling and appropriate tool delegation,
-> rather than relying solely on end-to-end neural generation?
+> How can we architect a modular conversational AI system that prioritises transparency and is capable of genuine contextual empathy through systematic User Modelling and appropriate tool delegation, rather than relying solely on end-to-end neural generation?
 
-*(Narrower than the exploratory question in
-[[sources/dissertation/road-towards-trustworthy-empathetic-ai]]; the
-Research Plan Edits file flagged the original as "too huge" — this is
-the narrowed version the advisor agreed to.)*
+*(Narrower than the exploratory question in [[sources/dissertation/road-towards-trustworthy-empathetic-ai]]; the Research Plan Edits file flagged the original as "too huge" — this is the narrowed version the advisor agreed to.)*
 
 ## Five objectives
 
 1. **Comprehensive Literature Review & Ethical Framework** (by Dec 2025)
-2. **Baseline Implementation & Failure Analysis** via Boolean/Math GPT-2
-   (by Jan 2026) — tokenisation failure mode documentation.
-3. **Design & Prototype Modular Reasoning Architecture** (months 3–5) —
-   Reasoning Module (ToT + interleaved), User Modelling Module (5W+H),
-   Tool Integration Layer (MCP).
-4. **Privacy-Preserving User Modelling** (months 5–7) — AppraisePLM
-   integration + local MCP storage, cold start via 5W+H.
-5. **Multi-Dimensional Evaluation** (final months) — quantitative +
-   qualitative + ablation.
+2. **Baseline Implementation & Failure Analysis** via Boolean/Math GPT-2 (by Jan 2026) — tokenisation failure mode documentation.
+3. **Design & Prototype Modular Reasoning Architecture** (months 3–5) — Reasoning Module (ToT + interleaved), User Modelling Module (5W+H), Tool Integration Layer (MCP).
+4. **Privacy-Preserving User Modelling** (months 5–7) — AppraisePLM integration + local MCP storage, cold start via 5W+H.
+5. **Multi-Dimensional Evaluation** (final months) — quantitative + qualitative + ablation.
 
 ## Seven phases
 
@@ -65,45 +48,24 @@ the narrowed version the advisor agreed to.)*
 | 6 | Jun–Jul 2026 | Explainability mechanism development |
 | 7 | Jun–Aug 2026 | Comprehensive evaluation + write-up |
 
-> ⚠ The tex source says "Phase 3: Dec'25 - Mar'25" (line ~244) — almost
-> certainly a typo for "Mar'26". Flag for the user to correct on next
-> edit pass.
+> ⚠ The tex source says "Phase 3: Dec'25 - Mar'25" (line ~244) — almost certainly a typo for "Mar'26". Flag for the user to correct on next edit pass.
 
 ## Two documented pivots
 
-- **Pivot 1 (Oct 2025) — monolithic → modular.** Originally planned to
-  fine-tune a single LLM with reasoning / empathy / user-modelling
-  heads. Prof. Conlan argued catastrophic forgetting at every level;
-  switched to specialised components communicating through interfaces.
-- **Pivot 2 (Nov 2025) — emergent questioning → explicit 5W+H.**
-  Originally planned to fine-tune on therapy transcripts hoping the
-  model would emerge good questioning. Critique: "hoping for emergent
-  behaviour rather than engineering for specific capabilities".
-  Replaced with the systematic [[entities/5w-h]] framework.
+- **Pivot 1 (Oct 2025) — monolithic → modular.** Originally planned to fine-tune a single LLM with reasoning / empathy / user-modelling heads. Prof. Conlan argued catastrophic forgetting at every level; switched to specialised components communicating through interfaces.
+- **Pivot 2 (Nov 2025) — emergent questioning → explicit 5W+H.** Originally planned to fine-tune on therapy transcripts hoping the model would emerge good questioning. Critique: "hoping for emergent behaviour rather than engineering for specific capabilities". Replaced with the systematic [[entities/5w-h]] framework.
 
-The 2025-11-10 ontology shift
-([[decisions/2025-11-10-ontology-focus-shift]]) post-dates this plan
-and is not yet reflected in it. A pivot-3 entry should be added when
-the plan is revised.
+The 2025-11-10 ontology shift ([[decisions/2025-11-10-ontology-focus-shift]]) post-dates this plan and is not yet reflected in it. A pivot-3 entry should be added when the plan is revised.
 
 ## Ethics
 
-School Ethics Application **required**: user studies involve emotional
-conversations, personal-data capture for User Modelling, and qualitative
-interview debriefs. Covered: informed consent, data privacy, psychological
-safety, deception concerns (empathy simulation), vulnerable populations.
+School Ethics Application **required**: user studies involve emotional conversations, personal-data capture for User Modelling, and qualitative interview debriefs. Covered: informed consent, data privacy, psychological safety, deception concerns (empathy simulation), vulnerable populations.
 
 ## Literature-search strategy
 
-- **Keyword search** (Google Scholar + TCD Stella) — foundational canon
-  (Attention, CoT, ToT, PAL). Query: `"large language model" AND
-  (reasoning OR "chain of thought" OR "tree of thought" OR "latent
-  space" OR "interleaved thinking")`.
-- **AI search** (Perplexity Pro, Deep Research) — cutting-edge 2024-25
-  work (Coconut, interleaved reasoning, MCP, HRM, SEAL, structured
-  templates). First-principles + adversarial prompt structure.
-- **Reflection:** keyword = canonical, AI = frontier; combine both,
-  verify AI-cited papers before citing.
+- **Keyword search** (Google Scholar + TCD Stella) — foundational canon (Attention, CoT, ToT, PAL). Query: `"large language model" AND (reasoning OR "chain of thought" OR "tree of thought" OR "latent space" OR "interleaved thinking")`.
+- **AI search** (Perplexity Pro, Deep Research) — cutting-edge 2024-25 work (Coconut, interleaved reasoning, MCP, HRM, SEAL, structured templates). First-principles + adversarial prompt structure.
+- **Reflection:** keyword = canonical, AI = frontier; combine both, verify AI-cited papers before citing.
 
 ## Papers cited in the plan — ingestion status
 
@@ -125,8 +87,7 @@ safety, deception concerns (empathy simulation), vulnerable populations.
 | **Yang 2025 — Structured Templates** | ✗ | Not ingested |
 | **Debnath 2025 — AppraisePLM** | ✗ | **Not ingested** — blocker for Experiment 2 empathy work |
 
-See [[questions/2026-04-19-initial-questions]] for the AppraisePLM /
-Think-on-Graph ingestion TODO.
+See [[questions/2026-04-19-initial-questions]] for the AppraisePLM / Think-on-Graph ingestion TODO.
 
 ## Related
 

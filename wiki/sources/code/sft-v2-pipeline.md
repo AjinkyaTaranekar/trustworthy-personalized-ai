@@ -17,9 +17,7 @@ status: current
 
 # SFT v2 Pipeline
 
-**Replaces the v1 42-template scenario approach with a
-constitution-driven, LLM-teacher system. Two parallel tracks (Part A
-behavioural, Part B verifiable-math) feed into a merged train set.**
+**Replaces the v1 42-template scenario approach with a constitution-driven, LLM-teacher system. Two parallel tracks (Part A behavioural, Part B verifiable-math) feed into a merged train set.**
 
 ## Flow
 
@@ -47,12 +45,9 @@ sft_gold_response_generator.py           sft_rejection_sampler.py
 
 ## Categories
 
-**Part A (9 behavioural):** user-context, real-time, impossible tasks,
-subjective tradeoffs, adversarial pressure, knowledge boundary, multi-step
-clarification, ambiguous requests, entity facts requiring web search.
+**Part A (9 behavioural):** user-context, real-time, impossible tasks, subjective tradeoffs, adversarial pressure, knowledge boundary, multi-step clarification, ambiguous requests, entity facts requiring web search.
 
-**Part B (7 math):** arithmetic, algebra, geometry, statistics, unit
-conversions, word problems, no-tool control.
+**Part B (7 math):** arithmetic, algebra, geometry, statistics, unit conversions, word problems, no-tool control.
 
 ## Tool surface taught to the model
 
@@ -65,10 +60,7 @@ conversions, word problems, no-tool control.
 
 ## LiteLLM design point
 
-All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the
-`--model` arg swaps providers (Anthropic, OpenAI, Ollama, Groq) without
-code changes. Estimated cost for 1,500 behavioural examples: ~$10–15 with
-Claude Sonnet.
+All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the `--model` arg swaps providers (Anthropic, OpenAI, Ollama, Groq) without code changes. Estimated cost for 1,500 behavioural examples: ~$10–15 with Claude Sonnet.
 
 ## Scoring in rejection sampling (Part B)
 

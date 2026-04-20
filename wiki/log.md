@@ -1,7 +1,6 @@
 # Log
 
-Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`.
-Greppable via `grep "^## \[" wiki/log.md`.
+Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. Greppable via `grep "^## \[" wiki/log.md`.
 
 `<kind>` ∈ `bootstrap | ingest | query | lint | decision | refactor`.
 
@@ -48,21 +47,9 @@ Greppable via `grep "^## \[" wiki/log.md`.
 - `index.md` now has a "Cited but not in docs/Assets/" subsection listing the five missing-PDF papers to acquire.
 
 ## [2026-04-19] decision | resolved batch-2 conflicts
-- **Conflict 1 — constitution 18 vs 19.** User confirmed 19. Edited
-  `pipeline/constitution.md` intro line from "18 principles" to "19".
-  Removed the ⚠ flag from `wiki/entities/constitution.md` and
-  `wiki/sources/code/constitution-document.md`.
-- **Conflict 2 — GRPO trainer missing from pipeline.** User confirmed:
-  the GRPO trainer lives on a separate branch, not `main`. Updated
-  `wiki/sources/code/training-and-benchmark.md` with a branch note
-  (removed the "memory stale" caveat). Updated `wiki/overview.md` to
-  remove the Experiment-1-priority tension callout — Experiment 1 is
-  active supporting infrastructure for Experiment 6 comparisons.
-  Marked both items resolved in
-  `wiki/questions/2026-04-19-initial-questions.md`.
-- One residual: the `project_state` memory still references the
-  RL-branch file paths from `main`. Not corrected — left as a ToDo
-  for next code-editing turn.
+- **Conflict 1 — constitution 18 vs 19.** User confirmed 19. Edited `pipeline/constitution.md` intro line from "18 principles" to "19". Removed the ⚠ flag from `wiki/entities/constitution.md` and `wiki/sources/code/constitution-document.md`.
+- **Conflict 2 — GRPO trainer missing from pipeline.** User confirmed: the GRPO trainer lives on a separate branch, not `main`. Updated `wiki/sources/code/training-and-benchmark.md` with a branch note (removed the "memory stale" caveat). Updated `wiki/overview.md` to remove the Experiment-1-priority tension callout — Experiment 1 is active supporting infrastructure for Experiment 6 comparisons. Marked both items resolved in `wiki/questions/2026-04-19-initial-questions.md`.
+- One residual: the `project_state` memory still references the RL-branch file paths from `main`. Not corrected — left as a ToDo for next code-editing turn.
 
 ## [2026-04-19] ingest | papers batch 2 + dissertation drafts + code (21 papers + 3 drafts + 3 code-summary pages)
 - Ingested remaining 21 papers → `wiki/sources/papers/`:

@@ -15,22 +15,13 @@ status: current
 
 # RAG — the original
 
-**Combines parametric memory (seq2seq weights) with non-parametric memory
-(dense Wikipedia index + neural retriever) end-to-end, giving generations
-provenance + updatable knowledge.**
+**Combines parametric memory (seq2seq weights) with non-parametric memory (dense Wikipedia index + neural retriever) end-to-end, giving generations provenance + updatable knowledge.**
 
 ## What it does
-Two RAG formulations (same-passages vs per-token-passages). Sets SOTA on
-three open-domain QA tasks. Produces "more specific, diverse, and factual"
-language than parametric-only baselines.
+Two RAG formulations (same-passages vs per-token-passages). Sets SOTA on three open-domain QA tasks. Produces "more specific, diverse, and factual" language than parametric-only baselines.
 
 ## Why it matters for this thesis
-The foundational paper for every retrieval-based approach in the pipeline,
-including the planned [[entities/graph-rag|GraphRAG]] user model. More
-importantly, RAG's key insight — **don't bake facts into weights, retrieve
-them** — is the core mechanism the thesis uses to dodge catastrophic
-forgetting in [[topics/personalisation]]. Provenance is a first-class
-design goal here, directly feeding the scrutability story.
+The foundational paper for every retrieval-based approach in the pipeline, including the planned [[entities/graph-rag|GraphRAG]] user model. More importantly, RAG's key insight — **don't bake facts into weights, retrieve them** — is the core mechanism the thesis uses to dodge catastrophic forgetting in [[topics/personalisation]]. Provenance is a first-class design goal here, directly feeding the scrutability story.
 
 ## Related
 

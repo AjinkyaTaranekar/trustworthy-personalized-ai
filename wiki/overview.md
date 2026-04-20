@@ -13,16 +13,10 @@ status: current
 
 # Thesis Overview
 
-**Can we architect a conversational LLM that is trustworthy in its reasoning,
-accurate through appropriate task delegation, privacy-preserving in its
-personalisation, and capable of genuine contextual empathy through systematic
-user modelling?**
+**Can we architect a conversational LLM that is trustworthy in its reasoning, accurate through appropriate task delegation, privacy-preserving in its personalisation, and capable of genuine contextual empathy through systematic user modelling?**
 
 ## Central hypothesis
-Monolithic LLMs cannot simultaneously be empathetic, logically rigorous, and
-personalised without catastrophic forgetting and hallucination. A **modular
-architecture** — reasoning engine, user model, empathy layer, verification
-layer — is required.
+Monolithic LLMs cannot simultaneously be empathetic, logically rigorous, and personalised without catastrophic forgetting and hallucination. A **modular architecture** — reasoning engine, user model, empathy layer, verification layer — is required.
 
 ## Five pillars
 
@@ -37,11 +31,7 @@ layer — is required.
 | ★ | [[topics/ontology-integration]] | Cross-cutting topic — the flagship experimental lens that binds pillars 1, 4, 5 together |
 
 ## Current direction shift
-On 2025-11-10 the advisor reframed the project around **ontology-LLM
-integration** as the flagship experiment. Pure process-reward RL becomes
-supporting infrastructure. See
-[[decisions/2025-11-10-ontology-focus-shift]] and
-[[experiments/experiment-catalog]].
+On 2025-11-10 the advisor reframed the project around **ontology-LLM integration** as the flagship experiment. Pure process-reward RL becomes supporting infrastructure. See [[decisions/2025-11-10-ontology-focus-shift]] and [[experiments/experiment-catalog]].
 
 ## Experimental map
 
@@ -69,9 +59,7 @@ supporting infrastructure. See
 - [[entities/5w-h]] · [[entities/appraisal-theory]]
 
 ## Open questions
-See [[questions/2026-04-19-initial-questions]] — grouped by exploration
-TODOs, ontology-LLM (advisor prep), reasoning/RL design,
-personalisation/empathy, infrastructure, and literature tensions.
+See [[questions/2026-04-19-initial-questions]] — grouped by exploration TODOs, ontology-LLM (advisor prep), reasoning/RL design, personalisation/empathy, infrastructure, and literature tensions.
 
 ## Sources
 

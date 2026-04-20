@@ -14,24 +14,13 @@ status: current
 
 # MCP — Multi-Agent Systems via Model Context Protocol
 
-**Frames MCP as the standardised context-sharing substrate that lets
-specialised agents coordinate without ad-hoc vendor-specific function-calling
-schemas.**
+**Frames MCP as the standardised context-sharing substrate that lets specialised agents coordinate without ad-hoc vendor-specific function-calling schemas.**
 
 ## What it does
-Presents a unified theoretical foundation plus implementation case studies
-(enterprise knowledge management, collaborative research, distributed problem
-solving). Argues MCP is "USB for AI" — one protocol, any compatible model —
-and benchmarks coordinated multi-agent systems built on it.
+Presents a unified theoretical foundation plus implementation case studies (enterprise knowledge management, collaborative research, distributed problem solving). Argues MCP is "USB for AI" — one protocol, any compatible model — and benchmarks coordinated multi-agent systems built on it.
 
 ## Why it matters for this thesis
-MCP is the **transport** that makes the thesis's tool-use and verification
-layers composable. Function calling is vendor-specific; MCP standardises it,
-so the same reasoner can swap in a Python sandbox, an ontology verifier, a
-user-memory store, or a search tool without bespoke glue. Directly supports
-the Phase 3 plan for MCP servers around Python execution and memory
-retrieval, and enables local servers for the privacy property in
-[[topics/personalisation]].
+MCP is the **transport** that makes the thesis's tool-use and verification layers composable. Function calling is vendor-specific; MCP standardises it, so the same reasoner can swap in a Python sandbox, an ontology verifier, a user-memory store, or a search tool without bespoke glue. Directly supports the Phase 3 plan for MCP servers around Python execution and memory retrieval, and enables local servers for the privacy property in [[topics/personalisation]].
 
 ## Related
 

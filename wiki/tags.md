@@ -6,13 +6,9 @@ updated: 2026-04-20
 
 # Tags Index
 
-**Canonical tag vocabulary. Before adding a new tag to a page's
-frontmatter, check this file.** If a near-match already exists, reuse
-it. If nothing fits, add the tag here *with a one-line meaning* in the
-same commit.
+**Canonical tag vocabulary. Before adding a new tag to a page's frontmatter, check this file.** If a near-match already exists, reuse it. If nothing fits, add the tag here *with a one-line meaning* in the same commit.
 
-Counts below were last audited on **2026-04-20** (post-normalisation).
-Expect them to drift; re-audit during lint.
+Counts below were last audited on **2026-04-20** (post-normalisation). Expect them to drift; re-audit during lint.
 
 ---
 
@@ -119,16 +115,9 @@ Concrete artefacts with their own pages in `entities/`.
 | `multi-agent` | 1 | Multi-agent system design |
 
 ## Narrow / specialised tags (kept, but low-frequency)
-These are single-use tags retained because they name a specific technique
-that could recur. Review during lint — fold in if a second paper uses them.
+These are single-use tags retained because they name a specific technique that could recur. Review during lint — fold in if a second paper uses them.
 
-`critique`, `dr-grpo`, `value-based`, `hierarchical`, `metacognition`,
-`state`, `continuous`, `refinement`, `self-reward`, `self-training`,
-`self-correction`, `variational`, `classifier`, `inference-efficiency`,
-`delegation`, `deliberation`, `automation`, `depth`, `looped`, `moe`,
-`bidirectional`, `significance`, `sentiment`, `graph`, `memory`,
-`knowledge`, `anthropic`, `code` (as in source-code), `formal`,
-`objectives`, `timeline`.
+`critique`, `dr-grpo`, `value-based`, `hierarchical`, `metacognition`, `state`, `continuous`, `refinement`, `self-reward`, `self-training`, `self-correction`, `variational`, `classifier`, `inference-efficiency`, `delegation`, `deliberation`, `automation`, `depth`, `looped`, `moe`, `bidirectional`, `significance`, `sentiment`, `graph`, `memory`, `knowledge`, `anthropic`, `code` (as in source-code), `formal`, `objectives`, `timeline`.
 
 ---
 
@@ -155,20 +144,14 @@ These appeared once or twice in early files and have been normalised away.
 
 ## Rules for adding new tags
 
-1. **Read this file first.** If a canonical tag or near-match covers
-   the concept, reuse it.
+1. **Read this file first.** If a canonical tag or near-match covers the concept, reuse it.
 2. **Prefer the shortest meaningful form.** `cot` over `chain-of-thought`.
 3. **Kebab-case.** `tool-use`, not `tool_use` or `toolUse`.
 4. **Avoid experiment numbers.** They drift. Tag by theme instead.
-5. **Avoid "framework" / "method" / "approach".** These say nothing.
-   Use a specific name.
-6. **Match the user's spelling** — British (`tokenisation`,
-   `personalisation`, `memorisation`).
-7. **When you add a new tag to a page, add it to this file in the same
-   edit.** Include a one-line meaning.
-8. **During lint, promote high-frequency narrow tags** (≥3 uses) into
-   the main sections; **demote low-use duplicates** to this file's
-   Deprecated section.
+5. **Avoid "framework" / "method" / "approach".** These say nothing. Use a specific name.
+6. **Match the user's spelling** — British (`tokenisation`, `personalisation`, `memorisation`).
+7. **When you add a new tag to a page, add it to this file in the same edit.** Include a one-line meaning.
+8. **During lint, promote high-frequency narrow tags** (≥3 uses) into the main sections; **demote low-use duplicates** to this file's Deprecated section.
 
 ## Related
 

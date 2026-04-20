@@ -14,22 +14,13 @@ status: current
 
 # VAPO
 
-**Value-based PPO tuned for long-CoT reasoning: fixes value-model bias,
-heterogeneous sequence lengths, and sparse reward — reaches SOTA on AIME 2024
-(60.4) in 5,000 steps with no training crashes.**
+**Value-based PPO tuned for long-CoT reasoning: fixes value-model bias, heterogeneous sequence lengths, and sparse reward — reaches SOTA on AIME 2024 (60.4) in 5,000 steps with no training crashes.**
 
 ## What it does
-Identifies three pathologies of value-based RL on long-chain reasoning and
-designs targeted fixes. Beats DeepSeek-R1-Zero-Qwen-32B and DAPO by 10+
-points under identical settings.
+Identifies three pathologies of value-based RL on long-chain reasoning and designs targeted fixes. Beats DeepSeek-R1-Zero-Qwen-32B and DAPO by 10+ points under identical settings.
 
 ## Why it matters for this thesis
-VAPO is a direct alternative to the [[entities/grpo|GRPO]] used in this
-repo's pipeline. The repo's GRPO choice is pragmatic (memory-efficient, no
-value model) but VAPO's results argue that value-based approaches, when
-stabilised, can be more sample-efficient. Worth citing as a design
-alternative in the ablation study design, and as evidence that **RL
-instability is the bottleneck** — not reward shape.
+VAPO is a direct alternative to the [[entities/grpo|GRPO]] used in this repo's pipeline. The repo's GRPO choice is pragmatic (memory-efficient, no value model) but VAPO's results argue that value-based approaches, when stabilised, can be more sample-efficient. Worth citing as a design alternative in the ablation study design, and as evidence that **RL instability is the bottleneck** — not reward shape.
 
 ## Related
 

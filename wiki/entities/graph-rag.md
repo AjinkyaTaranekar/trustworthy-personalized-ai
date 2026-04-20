@@ -12,25 +12,15 @@ status: current
 
 # GraphRAG
 
-**A variant of [[entities/rag|RAG]] where the non-parametric memory is a
-structured knowledge graph (entities + typed relations) rather than a flat
-dense-vector index. The retriever walks the graph; generation is
-conditioned on the retrieved sub-graph, not on cosine-nearest chunks.**
+**A variant of [[entities/rag|RAG]] where the non-parametric memory is a structured knowledge graph (entities + typed relations) rather than a flat dense-vector index. The retriever walks the graph; generation is conditioned on the retrieved sub-graph, not on cosine-nearest chunks.**
 
 ## Why this thesis cares
 
-In the proposed architecture, GraphRAG is the **User Modelling backend** —
-the place where a per-user [[entities/5w-h|5W+H]] profile lives. The
-research plan (`researchplan.tex` Phase 4) makes this explicit: "prepare a
-Knowledge Graph, and eventually be used as GraphRAG." Three properties
-matter:
+In the proposed architecture, GraphRAG is the **User Modelling backend** — the place where a per-user [[entities/5w-h|5W+H]] profile lives. The research plan (`researchplan.tex` Phase 4) makes this explicit: "prepare a Knowledge Graph, and eventually be used as GraphRAG." Three properties matter:
 
-- **Typed relations beat dense vectors** for reasoning about user context
-  — who-did-what-with-whom is a graph query, not a similarity match.
-- **Structured slots map to graph nodes** — the 5W+H schema gives clean
-  node types (Person, Goal, Location, Time, Motivation, Method).
-- **Privacy by locality** — the graph can live on the user's device
-  behind a local [[entities/mcp|MCP]] server; nothing leaves.
+- **Typed relations beat dense vectors** for reasoning about user context — who-did-what-with-whom is a graph query, not a similarity match.
+- **Structured slots map to graph nodes** — the 5W+H schema gives clean node types (Person, Goal, Location, Time, Motivation, Method).
+- **Privacy by locality** — the graph can live on the user's device behind a local [[entities/mcp|MCP]] server; nothing leaves.
 
 ## Backend candidates (decision pending)
 
@@ -44,11 +34,8 @@ See [[questions/2026-04-19-initial-questions]] for the decision item.
 
 ## Upstream literature
 
-- [[sources/papers/rag-original]] — the parametric / non-parametric
-  memory split that GraphRAG specialises.
-- Think-on-Graph (Sun et al. 2024) — LLM reasoning over a knowledge
-  graph. Cited in the research plan but **not yet in `docs/Assets/`**;
-  listed as a gap in [[questions/2026-04-19-initial-questions]].
+- [[sources/papers/rag-original]] — the parametric / non-parametric memory split that GraphRAG specialises.
+- Think-on-Graph (Sun et al. 2024) — LLM reasoning over a knowledge graph. Cited in the research plan but **not yet in `docs/Assets/`**; listed as a gap in [[questions/2026-04-19-initial-questions]].
 
 ## Related
 

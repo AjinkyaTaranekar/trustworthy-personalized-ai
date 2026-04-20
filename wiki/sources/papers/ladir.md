@@ -14,24 +14,13 @@ status: current
 
 # LaDiR
 
-**Encodes reasoning steps into VAE latent blocks and runs a latent diffusion
-model over them with bidirectional attention, enabling iterative refinement
-of whole reasoning trajectories — parallel diverse paths, holistic revision.**
+**Encodes reasoning steps into VAE latent blocks and runs a latent diffusion model over them with bidirectional attention, enabling iterative refinement of whole reasoning trajectories — parallel diverse paths, holistic revision.**
 
 ## What it does
-VAE builds a structured latent reasoning space; latent diffusion denoises
-blocks of thought tokens; adaptive test-time compute. Gains on maths +
-planning benchmarks vs autoregressive, diffusion, and latent-reasoning
-baselines.
+VAE builds a structured latent reasoning space; latent diffusion denoises blocks of thought tokens; adaptive test-time compute. Gains on maths + planning benchmarks vs autoregressive, diffusion, and latent-reasoning baselines.
 
 ## Why it matters for this thesis
-Combines the themes of [[sources/papers/coconut-continuous-latent|Coconut]]
-(latent) and [[sources/papers/diffusion-of-thoughts|DoT]] (diffusion).
-Relevant as the ceiling reference for reasoning quality when scrutability
-is abandoned — useful as a comparison point when arguing that the
-ontology-verification direction
-([[decisions/2025-11-10-ontology-focus-shift]]) accepts a performance gap
-in exchange for trust.
+Combines the themes of [[sources/papers/coconut-continuous-latent|Coconut]] (latent) and [[sources/papers/diffusion-of-thoughts|DoT]] (diffusion). Relevant as the ceiling reference for reasoning quality when scrutability is abandoned — useful as a comparison point when arguing that the ontology-verification direction ([[decisions/2025-11-10-ontology-focus-shift]]) accepts a performance gap in exchange for trust.
 
 ## Related
 

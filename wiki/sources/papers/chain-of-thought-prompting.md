@@ -15,23 +15,13 @@ status: current
 
 # Chain-of-Thought Prompting
 
-**Prompting with a few worked examples of step-by-step reasoning unlocks
-arithmetic, commonsense, and symbolic reasoning in sufficiently large LLMs.**
+**Prompting with a few worked examples of step-by-step reasoning unlocks arithmetic, commonsense, and symbolic reasoning in sufficiently large LLMs.**
 
 ## What it does
-Shows that at scale (~100B+), prepending a handful of "think step by step"
-demonstrations dramatically lifts GSM8K and similar benchmarks — 540B PaLM
-with 8 CoT exemplars beats verifier-finetuned GPT-3 on math word problems.
+Shows that at scale (~100B+), prepending a handful of "think step by step" demonstrations dramatically lifts GSM8K and similar benchmarks — 540B PaLM with 8 CoT exemplars beats verifier-finetuned GPT-3 on math word problems.
 
 ## Why it matters for this thesis
-CoT is the **baseline** from which the thesis departs. It delivers readable
-reasoning traces, but those traces are **correlation, not process**: the
-model emits a plausible-looking derivation without any guarantee the answer
-was derived from it. This is the "post-hoc rationalisation" problem central
-to [[topics/reasoning]]. Later work in this batch
-([[sources/papers/tree-of-thoughts]], [[sources/papers/deepseek-r1]],
-[[sources/papers/seed15-thinking]]) tries to fix that by adding search,
-RL-trained thought-process rewards, or explicit verification.
+CoT is the **baseline** from which the thesis departs. It delivers readable reasoning traces, but those traces are **correlation, not process**: the model emits a plausible-looking derivation without any guarantee the answer was derived from it. This is the "post-hoc rationalisation" problem central to [[topics/reasoning]]. Later work in this batch ([[sources/papers/tree-of-thoughts]], [[sources/papers/deepseek-r1]], [[sources/papers/seed15-thinking]]) tries to fix that by adding search, RL-trained thought-process rewards, or explicit verification.
 
 ## Related
 

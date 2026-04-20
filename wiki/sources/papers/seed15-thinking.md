@@ -14,22 +14,13 @@ status: current
 
 # Seed1.5-Thinking
 
-**A 20B-active / 200B-total MoE "thinking-before-responding" model that beats
-DeepSeek-R1 by 8% on non-reasoning win rate while matching it on reasoning.**
+**A 20B-active / 200B-total MoE "thinking-before-responding" model that beats DeepSeek-R1 by 8% on non-reasoning win rate while matching it on reasoning.**
 
 ## What it does
-Scales reasoning RL with a relatively small active footprint (MoE). Reports
-86.7 AIME 2024, 55.0 Codeforces, 77.3 GPQA. Releases two new internal
-benchmarks (BeyondAIME, Codeforces) for generalised reasoning.
+Scales reasoning RL with a relatively small active footprint (MoE). Reports 86.7 AIME 2024, 55.0 Codeforces, 77.3 GPQA. Releases two new internal benchmarks (BeyondAIME, Codeforces) for generalised reasoning.
 
 ## Why it matters for this thesis
-The dissertation draft cites this as the canonical **process-reward**
-exemplar: reward signal spans process correctness (steps are sound),
-efficiency (shortest valid path), and verifiability (each step checkable
-independently). This is the axis the thesis wants to push: reward *how* the
-model thinks, not only *what* it concludes. Operationally it underwrites the
-"behavioural reward" design in the repo's RL pipeline — tool_integrity plus
-capability-honesty signals layered on top of outcome correctness.
+The dissertation draft cites this as the canonical **process-reward** exemplar: reward signal spans process correctness (steps are sound), efficiency (shortest valid path), and verifiability (each step checkable independently). This is the axis the thesis wants to push: reward *how* the model thinks, not only *what* it concludes. Operationally it underwrites the "behavioural reward" design in the repo's RL pipeline — tool_integrity plus capability-honesty signals layered on top of outcome correctness.
 
 ## Related
 
