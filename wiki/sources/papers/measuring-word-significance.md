@@ -4,7 +4,7 @@ type: source
 arxiv_id: 1508.02297v1
 authors: Schakel, Wilson
 year: 2015
-tags: [foundation, embeddings, significance]
+tags: [foundations, embeddings, significance]
 sources:
   - docs/Assets/Measuring Word Significance using Distributed Representations of Words (1508.02297v1).pdf
   - docs/Literature Notes/Measuring Word Significance using Distributed Representations of Words (1508.02297v1).md

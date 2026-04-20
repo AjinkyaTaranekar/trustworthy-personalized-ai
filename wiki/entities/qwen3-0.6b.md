@@ -1,7 +1,7 @@
 ---
 title: Qwen3-0.6B
 type: entity
-tags: [model, qwen, small-model, base]
+tags: [qwen, small-model]
 sources:
   - pipeline/2_model_trainer.py
   - README.md

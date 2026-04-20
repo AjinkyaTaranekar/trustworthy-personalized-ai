@@ -72,13 +72,26 @@ Every wiki file begins with YAML frontmatter:
 ---
 title: Group Relative Policy Optimization
 type: entity              # topic | entity | source | experiment | decision | question | query | meta
-tags: [rl, training]
+tags: [rl, training]      # see §3.1 — check wiki/tags.md before adding new tags
 sources:                  # wikilinks or relative paths into raw layer
   - docs/Assets/Seed1.5-Thinking (2504.13914v3).pdf
 updated: 2026-04-19
 status: current           # stub | draft | current | stale  (omit if N/A)
 ---
 ```
+
+### 3.1 Tag discipline
+- **Read `wiki/tags.md` before writing any tag.** It is the canonical
+  registry. Reuse existing tags wherever possible.
+- If the concept genuinely isn't covered, add the new tag to
+  `wiki/tags.md` **in the same edit** with a one-line meaning.
+- Conventions: kebab-case (`tool-use`), shortest meaningful form
+  (`cot` not `chain-of-thought`), British spelling (`tokenisation`,
+  `personalisation`, `memorisation`), no experiment numbers, no
+  vague umbrella tags like `framework` / `method` / `approach`.
+- During lint: promote high-frequency narrow tags (≥3 uses) into
+  `tags.md` main sections; demote low-use duplicates to the Deprecated
+  list.
 
 ### Body template
 

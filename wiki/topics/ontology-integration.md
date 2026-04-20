@@ -1,7 +1,7 @@
 ---
 title: Ontology–LLM Integration
 type: topic
-tags: [ontology, verification, neuro-symbolic, experiment-6]
+tags: [ontology, verification, neuro-symbolic]
 sources:
   - docs/Dissertation/Experimental Planning Document.md
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md

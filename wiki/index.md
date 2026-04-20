@@ -13,6 +13,7 @@ entry. For chronological activity, see [[log]].
 
 - [[overview]] — thesis synthesis and research-question anchor
 - [[log]] — append-only chronological journal
+- [[tags]] — canonical tag vocabulary (check before adding new tags)
 - `../CLAUDE.md` — schema and rules governing this wiki
 
 ## Topics

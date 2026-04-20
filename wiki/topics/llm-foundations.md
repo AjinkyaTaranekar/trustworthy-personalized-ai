@@ -1,7 +1,7 @@
 ---
 title: LLM Foundations
 type: topic
-tags: [foundations, tokenization, attention, embeddings]
+tags: [foundations, tokenisation, attention, embeddings]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
 updated: 2026-04-19

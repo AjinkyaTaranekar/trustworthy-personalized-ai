@@ -1,7 +1,7 @@
 ---
 title: Personalisation
 type: topic
-tags: [personalisation, user-modelling, graph-rag, privacy]
+tags: [personalisation, 5w-h, graph-rag, privacy]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - researchplan.tex

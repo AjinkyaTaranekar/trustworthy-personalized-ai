@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "wiki/index.md",
+                "file": "wiki/sources/code/training-and-benchmark.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "index"
+              "title": "training-and-benchmark"
             }
           }
         ]
@@ -53,7 +53,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "tag:#context-degradation",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -74,7 +74,8 @@
               "title": "Bookmarks"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -94,7 +95,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "wiki/index.md",
+                "file": "wiki/sources/code/training-and-benchmark.md",
                 "collapseAll": true,
                 "extraContext": true,
                 "sortOrder": "alphabetical",
@@ -104,7 +105,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for index"
+              "title": "Backlinks for training-and-benchmark"
             }
           },
           {
@@ -156,13 +157,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "wiki/index.md",
+                "file": "wiki/sources/code/training-and-benchmark.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of index"
+              "title": "Outline of training-and-benchmark"
             }
           },
           {
@@ -171,10 +172,10 @@
             "state": {
               "type": "file-properties",
               "state": {
-                "file": "wiki/index.md"
+                "file": "wiki/sources/code/training-and-benchmark.md"
               },
               "icon": "lucide-info",
-              "title": "File properties for index"
+              "title": "File properties for training-and-benchmark"
             }
           }
         ],
@@ -196,18 +197,26 @@
       "bases:Create new base": false
     }
   },
-  "active": "d218f55b7ca718e2",
+  "active": "529be4550c8e39db",
   "lastOpenFiles": [
+    "docs/Literature Notes/PAL Program-aided Language Models (2211.10435v2).md",
+    "wiki/log.md.tmp.9236.1776674187216",
+    "wiki/entities/qwen3-0.6b.md.tmp.9236.1776674174847",
+    "wiki/index.md.tmp.9236.1776674154348",
+    "wiki/entities/graph-rag.md.tmp.9236.1776674151123",
+    "wiki/topics/personalisation.md.tmp.9236.1776674149674",
+    "wiki/topics/empathy.md.tmp.9236.1776674148535",
+    "wiki/entities/5w-h.md.tmp.9236.1776674147038",
+    "wiki/entities/appraisal-theory.md.tmp.9236.1776674145841",
+    "wiki/topics/ontology-integration.md.tmp.9236.1776674143182",
+    "wiki/topics/llm-foundations.md.tmp.9236.1776674142061",
+    "wiki/tags.md",
+    "wiki/index.md",
     "docs/Research Plan Edits.md",
-    "wiki/entities/rag.md.tmp.9236.1776673483979",
-    "docs/Assets/VLM-R1 A Stable and Generalizable R1-style Large Vision-Language Model (2504.07615v2).pdf",
-    "docs/Assets/VAPO Efficient and Reliable Reinforcement Learning for Advanced Reasoning Tasks (2504.05118v3).pdf",
-    "docs/Assets/Understanding R1-Zero-Like Training A Critical Perspective (2503.20783v2).pdf",
     "wiki/log.md",
     "wiki/overview.md",
     "wiki/questions/2026-04-19-initial-questions.md",
     "2026-04-19.md",
-    "Untitled.base",
     "Untitled.canvas",
     "wiki/sources/dissertation/research-plan.md",
     "wiki/sources/papers/xai-sentiment-deepseek-r1.md",
@@ -226,14 +235,6 @@
     "wiki/sources/papers/rag-original.md",
     "wiki/sources/papers/prompting-science-report-2.md",
     "wiki/sources/papers/pal.md",
-    "wiki/sources/papers/none-of-the-others.md",
-    "wiki/sources/papers/measuring-word-significance.md",
-    "wiki/sources/papers/mcp-multi-agent.md",
-    "wiki/sources/papers/looped-transformers-reasoning.md",
-    "wiki/sources/papers",
-    "wiki/sources/dissertation",
-    "wiki/sources/code",
-    "wiki/topics",
-    "wiki/sources"
+    "wiki/sources/papers/none-of-the-others.md"
   ]
 }

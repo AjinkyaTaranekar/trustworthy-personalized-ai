@@ -16,6 +16,21 @@ Greppable via `grep "^## \[" wiki/log.md`.
 - **Not ingested yet:** 33 PDFs in `docs/Assets/`, 32 existing per-paper notes in `docs/Literature Notes/`, four dissertation drafts in `docs/Dissertation/`, `researchplan.tex`, `pipeline/` scripts. User drives ingestion one-at-a-time via §4.1.
 - **Raw layer left untouched** to preserve Obsidian wikilinks and git history.
 
+## [2026-04-20] refactor | tag vocabulary unified
+- Audited tags across all 57 wiki files — found multiple duplicates/typos that made tag-based pivoting unreliable.
+- Created `wiki/tags.md` — canonical tag registry organised by category (themes, techniques, entities, modalities, evaluation, document types, workflow) with per-tag counts + meanings and a "Deprecated — do not use" section.
+- Updated `CLAUDE.md` §3 with a new §3.1 "Tag discipline" subsection requiring future writers to consult `tags.md` first and add any new tag there in the same edit.
+- Normalisations applied across 14 files:
+  - `foundation` → `foundations` (6 papers)
+  - `tokenization` → `tokenisation` (bpe + llm-foundations; British to match user's prose)
+  - `tools` → `tool-use` (tool-use-and-verification)
+  - `vectors` → dropped as redundant with `embeddings` (word2vec)
+  - `experiment-6` → dropped (ontology-integration) — tagging by experiment number is fragile
+  - `affect` / `emotion` / `psychology` / `framework` / `model` / `base` → dropped where redundant (empathy, appraisal-theory, 5w-h, qwen3-0.6b, personalisation, graph-rag)
+  - Added proper entity tags: `5w-h`, `appraisal-theory`, `graph-rag` on pages representing or closely referring to those entities
+- Linked `tags.md` from `index.md` Meta section.
+- Convention preserved: flow-style YAML (one line). One file (`understanding-r1-zero.md`) remained in block style after a prior linter pass; tags there are already canonical (no change needed).
+
 ## [2026-04-19] lint | post-batch-2 health check
 - **Checked clean:** no contradictions; no orphan pages (every file has ≥1 inbound link via `index.md` or a topic).
 - **Stale annotations found + fixed:** 5 `_(not yet …)_` strings pointing at pages that now exist (`sft-v2-pipeline`, `mcp`, `grpo`, `qwen3-0.6b` × 2).

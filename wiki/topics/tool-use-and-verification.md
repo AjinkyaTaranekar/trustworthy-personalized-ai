@@ -1,7 +1,7 @@
 ---
 title: Tool Use and Verification
 type: topic
-tags: [mcp, tools, ontology, verification]
+tags: [tool-use, mcp, ontology, verification]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md

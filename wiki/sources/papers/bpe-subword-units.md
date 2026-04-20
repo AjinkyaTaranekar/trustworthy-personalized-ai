@@ -5,7 +5,7 @@ arxiv_id: 1508.07909v5
 authors: Sennrich, Haddow, Birch
 year: 2015
 venue: ACL 2016
-tags: [foundation, tokenization, bpe]
+tags: [foundations, tokenisation, bpe]
 sources:
   - docs/Assets/Neural Machine Translation of Rare Words with Subword Units (1508.07909v5).pdf
   - docs/Literature Notes/Neural Machine Translation of Rare Words with Subword Units (1508.07909v5).md

@@ -1,7 +1,7 @@
 ---
 title: Empathy
 type: topic
-tags: [empathy, appraisal-theory, affect]
+tags: [empathy, appraisal-theory]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md

@@ -1,7 +1,7 @@
 ---
 title: Appraisal Theory
 type: entity
-tags: [empathy, psychology, emotion, framework]
+tags: [empathy, appraisal-theory]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md

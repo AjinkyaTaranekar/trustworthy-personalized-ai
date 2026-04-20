@@ -5,7 +5,7 @@ arxiv_id: 2005.11401v4
 authors: Lewis et al. (FAIR)
 year: 2020
 venue: NeurIPS 2020
-tags: [retrieval, rag, knowledge, foundation]
+tags: [retrieval, rag, knowledge, foundations]
 sources:
   - docs/Assets/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (2005.11401v4).pdf
   - docs/Literature Notes/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (2005.11401v4).md

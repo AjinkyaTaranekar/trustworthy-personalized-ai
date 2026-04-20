@@ -5,7 +5,7 @@ arxiv_id: 1810.04805v2
 authors: Devlin, Chang, Lee, Toutanova
 year: 2018
 venue: NAACL
-tags: [foundation, transformers, bidirectional]
+tags: [foundations, transformers, bidirectional]
 sources:
   - docs/Assets/BERT Pre-training of Deep Bidirectional Transformers for Language Understanding (1810.04805v2).pdf
   - docs/Literature Notes/BERT Pre-training of Deep Bidirectional Transformers for Language Understanding (1810.04805v2).md

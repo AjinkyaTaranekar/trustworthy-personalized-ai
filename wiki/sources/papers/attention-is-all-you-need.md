@@ -5,7 +5,7 @@ arxiv_id: 1706.03762v7
 authors: Vaswani et al.
 year: 2017
 venue: NeurIPS
-tags: [foundation, transformers, attention]
+tags: [foundations, transformers, attention]
 sources:
   - docs/Assets/Attention Is All You Need (1706.03762v7).pdf
   - docs/Literature Notes/Attention Is All You Need (1706.03762v7).md

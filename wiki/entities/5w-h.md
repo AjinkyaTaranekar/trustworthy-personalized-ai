@@ -1,7 +1,7 @@
 ---
 title: 5W+H User-Modelling Framework
 type: entity
-tags: [user-modelling, personalisation, framework]
+tags: [personalisation, 5w-h]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - researchplan.tex

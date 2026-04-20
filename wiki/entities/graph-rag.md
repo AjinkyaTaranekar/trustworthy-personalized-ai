@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 type: entity
-tags: [retrieval, graph, rag, personalisation, user-modelling]
+tags: [retrieval, rag, graph-rag, personalisation]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - researchplan.tex

@@ -4,7 +4,7 @@ type: source
 arxiv_id: 1301.3781v3
 authors: Mikolov, Chen, Corrado, Dean
 year: 2013
-tags: [foundation, embeddings, vectors]
+tags: [foundations, embeddings]
 sources:
   - docs/Assets/Efficient Estimation of Word Representations in Vector Space (1301.3781v3).pdf
   - docs/Literature Notes/Efficient Estimation of Word Representations in Vector Space (1301.3781v3).md
