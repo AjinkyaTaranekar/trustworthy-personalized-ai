@@ -31,7 +31,7 @@ RAG is the **root mechanism** that lets the architecture separate facts
 - [[topics/personalisation]] · [[topics/tool-use-and-verification]]
 - [[sources/papers/rag-original]]
 - [[sources/papers/search-r1]] — RL for retrieval
-- [[entities/graph-rag]] _(to be filed when ingested)_
+- [[entities/graph-rag]]
 
 ## Sources
 
