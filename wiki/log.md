@@ -15,6 +15,14 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - **Not ingested yet:** 33 PDFs in `docs/Assets/`, 32 existing per-paper notes in `docs/Literature Notes/`, four dissertation drafts in `docs/Dissertation/`, `researchplan.tex`, `pipeline/` scripts. User drives ingestion one-at-a-time via §4.1.
 - **Raw layer left untouched** to preserve Obsidian wikilinks and git history.
 
+## [2026-04-20] refactor | unwrap hard-wrapped Markdown prose
+- Noticed every wiki page had prose paragraphs hard-wrapped at ~80 characters from my earlier writes — an editor / grep / diff nuisance.
+- Wrote `scripts/unwrap_markdown.py` (stdlib only, `--dry-run` + `--exclude` + `--quiet` flags). Preserves YAML frontmatter, fenced code, headings, tables, HRs, HTML blocks; merges paragraph lines, list-item continuation lines, and blockquote continuation lines.
+- Dry-ran on `wiki/` — 62 files flagged, 0 errors. Spot-checked `entities/grpo.md` before applying.
+- Applied across all 62 wiki files. Scope restricted to `wiki/` (LLM-owned layer); `docs/` left untouched per schema §7.
+- Added `scripts/README.md` documenting the script + conventions for future utilities.
+- Added `CLAUDE.md §3.1 Line wrapping` — binding rule that prose must be one long line per paragraph; includes the invocation if hard-wrapping ever sneaks back in. (Renumbered old §3.1 Tag discipline → §3.2.)
+
 ## [2026-04-20] refactor | tag vocabulary unified
 - Audited tags across all 57 wiki files — found multiple duplicates/typos that made tag-based pivoting unreliable.
 - Created `wiki/tags.md` — canonical tag registry organised by category (themes, techniques, entities, modalities, evaluation, document types, workflow) with per-tag counts + meanings and a "Deprecated — do not use" section.
