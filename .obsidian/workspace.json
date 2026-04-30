@@ -11,22 +11,14 @@
             "id": "529be4550c8e39db",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
-            }
-          },
-          {
-            "id": "352a7d6d463db343",
-            "type": "leaf",
-            "state": {
-              "type": "release-notes",
+              "type": "markdown",
               "state": {
-                "currentVersion": "1.12.7"
+                "file": "wiki/questions/2026-04-30-asset-acquisition-todo.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-book-up",
-              "title": "Release Notes 1.12.7"
+              "icon": "lucide-file",
+              "title": "2026-04-30-asset-acquisition-todo"
             }
           }
         ]
@@ -82,8 +74,7 @@
               "title": "Bookmarks"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "horizontal",
@@ -192,53 +183,61 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "markdown-importer:Open format converter": false,
+      "random-note:Open random note": false,
+      "audio-recorder:Start/stop recording": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
       "canvas:Create new canvas": false,
       "daily-notes:Open today's daily note": false,
       "templates:Insert template": false,
       "command-palette:Open command palette": false,
-      "bases:Create new base": false
+      "bases:Create new base": false,
+      "obsidian-excalidraw-plugin:New drawing": false,
+      "pdf-plus:PDF++: Toggle auto-copy": false,
+      "pdf-plus:PDF++: Toggle auto-focus": false,
+      "pdf-plus:PDF++: Toggle auto-paste": false,
+      "omnisearch:Omnisearch": false
     }
   },
   "active": "529be4550c8e39db",
   "lastOpenFiles": [
-    "wiki/log.md.tmp.22688.1777559260028",
-    "wiki/topics/empathy.md.tmp.22688.1777559246663",
-    "wiki/sources/code/training-and-benchmark.md.tmp.22688.1777559245989",
-    "wiki/topics/tool-use-and-verification.md.tmp.22688.1777559240676",
-    "wiki/topics/reasoning.md.tmp.22688.1777559238767",
-    "wiki/sources/papers/none-of-the-others.md.tmp.22688.1777559237305",
-    "wiki/log.md.tmp.9236.1776697140964",
-    "wiki/sources/dissertation/research-plan.md",
-    "wiki/sources/code/training-and-benchmark.md",
-    "scripts/README.md",
-    "scripts/README.md.tmp.9236.1776674638693",
-    "CLAUDE.md.tmp.9236.1776674629906",
-    "scripts/__pycache__/unwrap_markdown.cpython-310.pyc",
-    "scripts/__pycache__",
-    "docs/Literature Notes/PAL Program-aided Language Models (2211.10435v2).md",
-    "wiki/tags.md",
-    "wiki/index.md",
-    "docs/Research Plan Edits.md",
-    "wiki/log.md",
-    "wiki/overview.md",
+    "docs/Literature Notes/Universal and Transferable Adversarial Attacks on Aligned Language Models (2307.15043v2).md",
+    "docs/Literature Notes/Constitution or Collapse Exploring Constitutional AI with Llama 3-8B (2504.04918v1).md",
+    "docs/Literature Notes/Can Structured Templates Facilitate LLMs in Tackling Harder Tasks An Exploration of Scaling Laws by Difficulty (2508.19069v1).md",
+    "docs/Assets/Universal and Transferable Adversarial Attacks on Aligned Language Models (2307.15043v2).pdf",
+    "docs/Assets/Transparent and Scrutable Recommendations Using Natural Language User Profiles (2402.05810v2).pdf",
+    "docs/Assets/Towards Understanding Sycophancy in Language Models (2310.13548v4).pdf",
+    "docs/Assets/Think-on-Graph Deep and Responsible Reasoning of Large Language Model on Knowledge Graph (2307.07697v6).pdf",
+    "docs/Assets/TEARS Textual Representations for Scrutable Recommendations (2410.19302v2).pdf",
+    "docs/Assets/SycEval Evaluating LLM Sycophancy (2502.08177v4).pdf",
+    "docs/Assets/Self-Adapting Language Models (2506.10943v2).pdf",
+    "docs/Assets/Qwen3 Technical Report (2505.09388v1).pdf",
+    "docs/Assets/Phi-4 Technical Report (2412.08905v1).pdf",
+    "docs/Assets/OpenAI GPT-5 System Card (2601.03267v1).pdf",
+    "wiki/questions/2026-04-30-asset-acquisition-todo.md",
+    "Literature Notes/Can Structured Templates Facilitate LLMs in Tackling Harder Tasks An Exploration of Scaling Laws by Difficulty (2508.19069v1).md",
+    "Literature Notes/Self-Adapting Language Models (2506.10943v2).md",
+    "Literature Notes/Large Language Model Guided Tree-of-Thought (2305.08291v1).md",
+    "Literature Notes/Think-on-Graph Deep and Responsible Reasoning of Large Language Model on Knowledge Graph (2307.07697v6).md",
+    "Literature Notes/Ignore Previous Prompt Attack Techniques For Language Models (2211.09527v1).md",
+    "Literature Notes/Universal and Transferable Adversarial Attacks on Aligned Language Models (2307.15043v2).md",
+    "Literature Notes/Constitutional AI Harmlessness from AI Feedback (2212.08073v1).md",
+    "Literature Notes/Constitution or Collapse Exploring Constitutional AI with Llama 3-8B (2504.04918v1).md",
+    "Literature Notes/OpenAI GPT-5 System Card (2601.03267v1).md",
+    "Literature Notes/Membership Inference Attacks against Machine Learning Models (1610.05820v2).md",
+    "Literature Notes/Phi-4 Technical Report (2412.08905v1).md",
+    "Literature Notes/Qwen3 Technical Report (2505.09388v1).md",
+    "Literature Notes/TEARS Textual Representations for Scrutable Recommendations (2410.19302v2).md",
+    "Literature Notes/Transparent and Scrutable Recommendations Using Natural Language User Profiles (2402.05810v2).md",
+    "Literature Notes/Do LLMs Recognize Your Preferences Evaluating Personalized Preference Following in LLMs (2502.09597v1).md",
+    "Literature Notes/Towards Understanding Sycophancy in Language Models (2310.13548v4).md",
+    "Literature Notes/Context Length Alone Hurts LLM Performance Despite Perfect Retrieval (2510.05381v1).md",
+    "Literature Notes/SycEval Evaluating LLM Sycophancy (2502.08177v4).md",
+    "Literature Notes/OP-Bench Benchmarking Over-Personalization for Memory-Augmented Personalized Conversational Agents (2601.13722v1).md",
+    "Literature Notes/How Does Personalized Memory Shape LLM Behavior Benchmarking Rational Preference Utilization in Personalized Assistants (2601.16621v1).md",
     "wiki/questions/2026-04-19-initial-questions.md",
-    "2026-04-19.md",
-    "Untitled.canvas",
-    "wiki/sources/papers/xai-sentiment-deepseek-r1.md",
-    "wiki/sources/papers/word2vec.md",
-    "wiki/sources/papers/vlm-r1.md",
-    "wiki/sources/papers/vapo.md",
-    "wiki/sources/papers/understanding-r1-zero.md",
-    "wiki/sources/papers/ui-r1.md",
-    "wiki/sources/papers/tree-of-thoughts.md",
-    "wiki/sources/papers/token-hungry-deepseek-r1.md",
-    "wiki/sources/papers/state-stream-transformer.md",
-    "wiki/sources/papers/self-enhanced-reasoning.md",
-    "wiki/sources/papers/seed15-thinking.md",
-    "wiki/sources/papers/search-r1.md",
-    "wiki/sources/papers/react.md",
-    "wiki/sources/papers/rag-original.md"
+    "wiki/index.md",
+    "Untitled.canvas"
   ]
 }
