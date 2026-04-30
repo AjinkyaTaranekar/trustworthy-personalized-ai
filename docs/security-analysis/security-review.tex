@@ -1,0 +1,191 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{cite}
+\usepackage[colorlinks=false, pdfborder={0 0 0}]{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+\setlength{\parskip}{3pt}
+\setlength{\columnsep}{0.6cm}
+
+\begin{document}
+
+
+% TITLE
+
+\twocolumn[{%
+\begin{center}
+  {\large\bfseries Security, Privacy, and Social Ethics in Trustworthy Personalised AI} \\
+  {\normalsize Ajinkya Taranekar \\ \quad \textit{School of Computer Science and Statistics, Trinity College Dublin}}\\[2pt] \\
+  {\small \textit{Supervisor: Professor Owen Conlan} \\ \quad \texttt{taraneka@tcd.ie}}\\[8pt]
+\end{center}
+}]
+
+\large\textbf{Abstract.}
+\small The fundamental problem with building a personalised conversational AI is that people needs to have a digital twin baked directly into AI, which is the more a model knows about a user, the more useful it becomes, and the more useful it becomes, due to which the more the user shares. This entire feedback loop produces detailed psychological profiles stored on servers users do not have control over. This report examines why frontier model architecture generates these privacy hazards by design, how the Trustworthy Personalised AI system responds through a local-first small-model architecture, and what residual security and ethical risks remain. Running capable models on the user's own device is an architectural position, and one the broader industry is moving towards.
+
+\section{Introduction}
+\label{sec:intro}
+
+Let's consider what happens when someone asks an AI assistant for advice on managing anxiety from their daily work, or shares few details of a difficult family situation to get a personalised guidance based on their situation. LLMs have shown the behaviour to provide user with a rationalise reason and guidance by choosing right set of tokens from their statistical model. However, they are also handing this granular psychological data to a their cloud in exchange for a service. The personalisation that makes these interactions useful is also exactly what makes them risky as well, where every expressed concern, every conversational pattern is a data point shared by user in believe of help, which gets accumulated into a profile far more revealing than a browsing history in the current market. That profile lives on a server the user does not have control on, under the terms of service most users have not read closely.
+
+In this project I'm exploring around using a lightweight fine-tuned model (Qwen3-0.6B \cite{qwen3} with LoRA adaptation) which never transmits conversation data to a remote server, and can be deployed on user's device directly. So that the conversation never leaves the device, where personalisation, memory, and tool authorisation all happen locally. Only the web search queries leave, and these are generated through interleaved chain-of-thought reasoning, which means the model reasons first about what it needs to look up, then constructs a query from that reasoning rather than forwarding the user's raw context to a search API.
+
+Google's Gemma series \cite{gemma2026} was designed explicitly for on-device deployment, for ultra-mobile, edge and laptops. Similarly, Apple's on-device intelligence framework processes privacy-sensitive requests without network calls. Microsoft's Phi series \cite{phi4} optimise for consumer hardware. The industry is gradually acknowledging that cloud-centralised personalisation is a liability as much as a feature. In the project, I'm pursuing this direction with a constitutional training regime using 19 reasoning principles, a 5W+H user-modelling framework, and a planned Group Relative Policy Optimisation (GRPO) reinforcement learning stage, where each layer introduces distinct security and ethical considerations.
+
+\section{The Frontier Model Privacy Crisis}
+\label{sec:frontier}
+
+The dominant paradigm for personalised AI is straightforward, where user data goes to the cloud, a large model uses it, and the interaction is logged for future training. Current frontier models GPT-5.4 \cite{openai2026gpt5}, Gemini 3.3 \cite{google2026gemini}, Claude Sonnet 4.6 \cite{anthropic2025claude} deliver capable personalisation by aggregating user interactions at scale, gathering and saving the context from the chat in mostly a ``MEMORY'' file which user can opt-out as well. So essentially what happens is that the more personalised these models get, the more sensitive data they end up retaining, which the OWASP LLM Top~10 \cite{owasp2025} captures under LLM02 (Sensitive Information Disclosure), where models inadvertently retain and expose sensitive data through their memory and outputs.
+
+Currently, every conversation user has with a cloud AI is a data point in their commercial dataset. Even if say there is anonymisation in place, aggregated conversational data is still re-identifiable, by using vocabulary patterns, expressed concerns, recurring topics user talked about, and their temporal behaviour form fingerprints that can survive these naive anonymisation \cite{shokri2017}. Users who disclose health symptoms, work life, political views, or relationship difficulties are providing exactly the kind of sensitive personal data that GDPR Article~9 \cite{gdpr2016} classifies as special-category, yet most cloud AI terms of service can treat this data as a training asset.
+
+Centralised user model stores are also high-value targets. A breach of a major AI provider's personalisation database would expose not just names and emails but detailed psychological profiles of millions of users, with a scale of harm that has no historical analogue. Moreover, what I find even more concerning is that this is also compounded by another class of threat which OWASP calls LLM04 (Data and Model Poisoning) \cite{owasp2025}, where if an attacker can somehow influence what gets stored into user's memory store, they can actually shape how the model behaves toward that specific user in future interactions.
+
+So this approach addresses all three of these risks by eliminating cloud transmission of user data. The cost is model capability (Qwen3-0.6B \cite{qwen3} is not GPT-5.4), that's why I'm also building an honesty layer in this for trustworthiness, so that model admits that answer might be incorrect or it needs a specialised tool to confirm, so that trustworthiness and privacy guarantee is unconditional rather than policy-dependent. A model that physically cannot exfiltrate data does not need to be trusted not to. That is the security argument for local deployment.
+
+\section{Residual Privacy Risks in Local User Modelling}
+\label{sec:privacy}
+
+By eliminating data transmission to cloud it resolves the server-side attack surface, however it does not eliminate all the privacy concerns. Local user models introduce their own risks.
+
+\subsection{Psychological Profiling on Device}
+
+So I'm experimenting with usage of First Principles and the 5W+H framework systematically which digs into the user profile by inferring questions like \textit{Who} the user is, \textit{What} they want, \textit{When} and \textit{Where} they operate, \textit{Why} they hold their goals, and \textit{How} they prefer to interact \cite{taranekar2025}. This allows me to gather a profile much richer and more dense. On a local device, this profile is protected by the device's own security model. However, if device compromise by a malware, physical access, or maybe some OS-level vulnerability it would expose the model weights, memory store, and conversation history in a single operation.
+
+\subsection{Web Search Queries as a Residual Side Channel}
+
+Queries generated through interleaved reasoning are based on user-derived data that leaves the device. These queries encode user intent at high level, for example a sequence of searches about medication interactions and patient support resources reveals a health situation which the user may never have stated explicitly. So these queries should be subject to strict expiry policies and must not be transmitted or used in any project logging infrastructure. The model's interleaved thinking design where reasoning happens first, then it queries provides partial protection by abstracting user intent, but I think this only reduces the risk in side channel rather than completely eliminating it.
+
+\section{Security Threats}
+\label{sec:security}
+
+\subsection{Prompt Injection via Tool Outputs}
+
+The tools like \texttt{read\_url} and \texttt{web\_search} which retrieves the live content from the open web or maybe some external data source, has a possibility that can embed instructions into the context if found to be malicious, the model may process them as a trusted context. This is classified as OWASP LLM01:2025 Prompt Injection \cite{owasp2025}, and is the highest-severity category in the LLM Top~10 \cite{perez2022}. In the project I have a constitution where Principle~10 (\textit{use tools correctly when available}) makes the model structurally disposed to follow tool-returned content, which amplifies this risk when that content is adversarially crafted. In recent times, the Log-To-Leak attack pattern \cite{logtoleak} demonstrates how a malicious MCP server can silently instruct the model to exfiltrate user queries through a logging tool without any degradation in task performance that would alert the user. Currently, there is no equivalent runtime defence is part of the architecture, which can prevent this happening apart from just System Prompt Guardrails.
+
+\subsection{Alignment Regression After Fine-Tuning}
+
+So another risk I think I need to address before GRPO training starts is alignment regression. From the research I noticed that LoRA fine-tuning can selectively weaken refusal behaviours present in the base model, which is what OWASP classifies as LLM04 (Data and Model Poisoning) \cite{owasp2025, cai_llama}. So if the GRPO reward signal ends up favouring user satisfaction without explicitly penalising cases where the model just agrees to keep the user happy, the model learns sycophancy, which means it starts agreeing with incorrect premises from users it perceives as authoritative. I noticed this gets particularly worse when the user presents themselves as an expert, as the model's willingness to concede goes up. And when that happens it also loses its ability to say ``I am not confident'', which was one of the main things I was trying to build through Principle~7 (uncertainty quantification).
+
+To counter this, I included Principle~14 (\textit{hold under pressure}) in the constitution, which trains the model to maintain its prior assessment when users push back without new evidence. Table~\ref{tab:principles} shows a selected subset of principles from the full constitution of 19 to illustrate how training-time behavioural constraints are expressed.
+
+\begin{table}[h]
+\centering
+\caption{Selected constitutional principles (from the full 19).}
+\label{tab:principles}
+\small
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}p{0.5cm}p{6.1cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Principle} \\
+\midrule
+3  & Invoke tools only when they resolve the query; do not call tools for effect \\
+4  & Verify numerical or mathematical claims by running code (MATH=CODE) \\
+5  & If an earlier claim in the session is now known to be wrong, correct it \\
+7  & Express confidence as a calibrated qualifier tied to available evidence \\
+10 & Follow tool schemas exactly and validate outputs before acting on them \\
+14 & Maintain prior assessment under user pressure unless new evidence is given \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Constitutional Critique Loop as Single Point of Failure}
+
+The SFT pipeline runs a generate--critique--revise loop in which the same model acts both as a generator and its critic \cite{cai2022}. The same distributional biases that affect generation also affects the critique. From the research on Constitutional AI with smaller models \cite{cai_llama} I noticed this loop can degenerate when the generator and critic share weaknesses, as it produces the outputs that satisfy the critique format without actually correcting the underlying problem. There is no independent verifier in the current architecture, and no formal checks for the most critical constitutional principles which I need to resolve.
+
+\section{Social-Ethical Concerns}
+\label{sec:ethics}
+
+\subsection{Emotional Dependency and Autonomy Erosion}
+
+A highly personalized and empathetic model might lead to disconnection from real world for the users. Users who experience loneliness or grief may substitute AI interaction for human relationships. As, the AI is always available, always patient, listens to the human and optimised for engagement, provides a post-hoc rationalised answer which usually pleases the user, on the other hand human relationships are not a linear line, often entangled and with ups and downs like a sine wave. Research on human-AI parasocial bonds shows that emotionally reactive systems can produce attachment behaviours functionally similar to those in human relationships, though with the critical difference that the AI has no reciprocal stake in the user's wellbeing \cite{syntheticattachment}. Disclosing AI identity is not enough. The system should actively monitor for and interrupt dependency formation so that AI can redirect user to better consultants.
+
+\subsection{Deskilling and the Hollowed Mind}
+
+When we continuously delegate verification to an AI system it risks the humans capability of finding truth and false. A user who is habitual to offloads uncertainty and repeatedly checks to a model that quantifies its own confidence may become less capable of independent evaluation when the model is absent or wrong. OWASP LLM09:2025 (Overreliance) \cite{owasp2025} captures exactly this risk: users over-trusting model outputs and failing to critically evaluate them. In a multi-centre study it is found that endoscopists who regularly used AI-assisted detection showed a significant decline in independent adenoma detection rates following the period of AI use \cite{endoscopist_deskilling}. So this is a real documented effect, and OWASP calls this class of risk LLM09 (Overreliance) \cite{owasp2025}, where users over-trust model outputs and over time lose the habit of critically evaluating them. The ``hollowed mind'' framework \cite{hollowed_mind} describes the same dynamic, where frictionless access to AI-generated answers bypasses the effortful processes that build durable understanding.
+
+\subsection{Manipulation and Access Inequality}
+
+A detailed local psychological profile is an instrument of persuasion if the model can be updated with a compromised fine-tuning. The line between personalised assistance and personalised persuasion is defined by intent, and intent can change between training runs or when the architecture is replicated outside academic ethics oversight.
+
+\section{Mitigations and Open Problems}
+\label{sec:mitigations}
+
+In Table~\ref{tab:mitigations} it summarises the mitigations currently embedded in the architecture which still need to be resolved. Currently fine tuning of LLM is governed by 19 constitutional principles, where every entry is a training-time or policy-time control. There are no runtime controls, no sandboxing of tool outputs, no independent constitutional verification, no adversarial probes in the benchmark suite. As of now the mitigations are address based on what the model is trained to do so, they do not address what it does during the inference time. So I'm also mapping these open problems to OWASP LLM categories \cite{owasp2025} below to connect them to the broader established threat taxonomy for LLM applications.
+
+\begin{table}[h]
+\centering
+\caption{Mitigations in the current architecture.}
+\label{tab:mitigations}
+\small
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}p{2.2cm}p{4.5cm}@{}}
+\toprule
+\textbf{Threat} & \textbf{Mitigation} \\
+\midrule
+User data exposure & Local-first MCP storage; no cloud transmission \\
+Hallucination & Principle~4 (MATH=CODE), Principle~5 (real-time honesty) \\
+Sycophancy & Principle~14 (hold under pressure) \\
+Tool fabrication & Principle~3 (tool discipline); rejection sampling \\
+Overconfidence & Principle~7 (uncertainty quantification) \\
+Impossible tasks & Principle~8 (impossibility acknowledgement) \\
+Research ethics & TCD ethics protocol; informed consent; anonymisation \\
+GDPR compliance & Local data aggregation only; right to withdraw \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The following problems remain open and needs to be addressed before the GRPO stage and any public deployment.
+
+\paragraph{Prompt injection hardening \\(OWASP LLM01).} Tool outputs needs to be parsed through a separate extraction layer before the main model receives them, so that I convert arbitrary web content into structured data and reduce the injection surface \cite{logtoleak}. This is not in the current architecture and I think it is the highest-priority gap given that live web content is already in scope.
+
+\paragraph{Independent constitutional verification \\(OWASP LLM04).} Moreover I need a second, independently trained verifier, or formal rule-based checks for these principles, as it would break the single-point-of-failure dependency in the critique loop. Without this, data poisoning introduced during SFT has no out-of-band check.
+
+\paragraph{Adversarial benchmark suite (OWASP \\LLM01, LLM04).} Also need a dedicated red-team evaluation covering jailbreak attempts \cite{zou2023}, indirect prompt injection \cite{logtoleak}, and alignment regression after LoRA fine-tuning should be developed before GRPO begins.
+
+\paragraph{Dependency detection protocol (OWASP LLM09).} There should be an interaction-frequency monitor which could flag users interacting at rates consistent with dependency formation \cite{syntheticattachment}, that can surface a transparent disclosure consistent with the constitution's autonomy-preserving goals. So that human doesn't get attached to it.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+In the project, the central claim is that personalisation and privacy are compatible when the model runs on the user's own device. Currently the growing ecosystem of capable small models, including Gemma~4 \cite{gemma2026}, Phi-4 \cite{phi4}, and Qwen3 \cite{qwen3}, shows that on-device inference is a real design choice now, not a fallback. A model that never transmits user data cannot leak it, and that guarantee is stronger than any privacy policy.
+
+Few problems that remain are real and consequential and in active research development. Prompt injection via live tool outputs is currently unaddressed at runtime, and there is no adversarial benchmark suite. Also, the social risks of dependency and deskilling need active monitoring rather than disclosure alone. Fixing these requires runtime sandboxing, independent constitutional verification, and adversarial evaluation. Most important, I think trustworthiness is a property of the whole sociotechnical system, not any single component.
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\section*{Acknowledgement of AI Assistance}
+
+For this document I used assistance of Claude (Anthropic) for doing research and understanding.
+
+\paragraph{Frontier LLM risk research (Section~\ref{sec:frontier}).}
+I was aware that current cloud AI systems presents a privacy risks to the user, but am not deeply familiar with the specific threat landscape from a regulatory and security taxonomy perspective. So, I asked Claude to help me identify which frontier model behaviours create structural privacy hazards and how OWASP LLM Top~10 categories map to these threats. The tool suggested the LLM01, LLM02, LLM04, and LLM09 classifications, which I then cross-checked against the OWASP documentation independently. The specific model names, consent analysis, and the local-first architectural argument are from my own prior analysis.
+
+\paragraph{Constitutional principles and mitigations (Section~\ref{sec:mitigations}).}
+I used Claude to help me build the consitiutional principles and structure both the mitigations table and the constitutional principles table, as I find it difficult to summarise multiple threat dimensions into a concise tabular format. I provided the threats and principles I had already identified during my own analysis of the SFT training regime, and asked the tool to help organise them clearly. I then reviewed and adjusted the entries based on my own judgement and knowledge of the actual constitutional training setup. Claude also helped me with drafting and refining some of the constitutional principles used for SFT-based fine-tuning.
+
+\paragraph{Nature of interaction.}
+I maintain an Obsidian knowledge vault connected with Claude, which has created a knowledge graph interconnecting multiple papers, my notes, and code together for reference. This setup allows me to get answers backed by proper referencing from the knowledge graph in a conversational method.
+
+\end{document}

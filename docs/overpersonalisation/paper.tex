@@ -1,0 +1,141 @@
+% LLNCS LaTeX template - Springer Computer Science Proceedings
+\documentclass[runningheads]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{float}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+\begin{document}
+
+\title{When Personalisation Becomes a Problem in Conversational LLM Agents}
+
+
+\author{Ajinkya Taranekar}
+
+\authorrunning{A. Taranekar}
+
+\institute{School of Computer Science and Statistics, Trinity College Dublin, Dublin 2, Ireland\\ \email{taranekar@tcd.ie}}
+
+\maketitle
+
+\begin{abstract}
+Frontier Large Language model platforms like ChatGPT, Gemini, and Claude has recently started persisting user memory to every interaction by default, when user opt for them, along with having a personalised system prompt to let platform know how you want your response to be. However, it is noticed that it does without a mechanism for deciding whether a given task actually benefits from it or there is use for it. This review examines what happens when these assumption are broken down by drawing on recent benchmarks for over-personalisation and sycophancy, along with token-cost analyses, and the User Modeling, Adaptation and Personalization (UMAP) tradition of scrutable user modelling, I'm identifying and connecting them based on three connected failure modes: stored preferences that override explicit task intent, context-window inflation that degrades reasoning performance independent of retrieval quality, and opacity that prevents users from inspecting or correcting the model's beliefs about them. I'm comparing the memory architectures of the three commercial systems against these failure modes.
+
+\keywords{over-personalisation \and conversational agents \and scrutability \and LLM memory \and token cost \and user modelling}
+\end{abstract}
+
+
+\section{Introduction}
+\label{sec:intro}
+
+The growing adoption of Conversational AI Platforms in daily life has significantly grown because of the personalised results LLM provides based on the next token prediction. Current personalisation works really well, where the system that the user as a Senior Software developer who works in Go, understands concepts by First Principle breakdown, and say skips definitions which they already understand, that conversational AI system brings in correct examples to the chat which is genuinely more useful than one that treats every conversation as the first. However, here the problem is not personalisation itself. It is that these commercial conversational agents, apply this personalisation and persistent user memory to every interaction without a mechanism for deciding whether the task calls for it, and the research literature has started to document how badly that goes when it fires on a wrong query, because some tasks may not require personalisation at all they can simply be instruction based, which results in wrong output and rerun of the compute.
+
+At present, Hu et al.~\cite{opbench2026} formalises this failure as over-personalisation and build the first benchmark which targets it directly, containing around 1,700 verified instances across three failure categories. Moreover, Feng et al.~\cite{rpeval2026} grounds this irrational personalisation in Rational Speech Acts theory and show that current LLMs operate in a preference-dominating mode rather than a preference-ignoring one when memory is added in the context, even for tasks where preference is irrelevant. Similarly, Jain et al.~\cite{jain2026} runs a study and finds that the personalisation features most commonly deployed in commercial systems, condenses user-profile memory, and the interaction it had with user to produces the largest increases in sycophantic behaviour by these frontier models. 
+
+In this review I'm tracing the three connected threads from these evidence. The first is that over-personalisation degrades task performance and user trust in ways that are now measurable. The second is that personalisation-by-context carries a token cost that is both economically and computationally wasteful, and Anthropic has published numbers that show just how wasteful. The third is that the UMAP community identified the design response, scrutable user models the user can inspect and edit, two decades before LLMs made the problem urgent, and the commercial systems that have converged on something like that design show fewer of these failures. Those three threads are not separate issues. They are the same issue looked at from different angles.
+
+\section{Over-Personalisation and What It Actually Does}
+
+\label{sec:failure}
+
+The clearest way to see the problem of over-personalisation is through the sycophancy in the response, in various literature review and experiments its found that adding a persona increase sycophancy. For example, Sharma et al.~\cite{sharma2024} shows that RLHF structurally trains models to agree, since human raters consistently prefer responses that validate their beliefs, which means the training objective and the personalisation objective point in the same direction for all the wrong reasons. Similarly, Fanous et al.~\cite{syceval2025} tests with ChatGPT-4o, Claude Sonnet, and Gemini 1.5 Pro on mathematics and medical question answering system, now where agreement with a wrong answer has a clear actual cost attached to it, and they find sycophantic responses in 58.19\% of cases, with the model agreeing with a demonstrably incorrect answer in 14.66\% of interactions. Moreover, Jain et al.~\cite{jain2026} connect this directly to memory based on the study with GPT-4.1 Mini under persistent memory, it condenses the user-profile injection and produced the largest sycophancy increases across four of five LLMs tested.
+
+One more promising approach was shown by Zheng et al.~\cite{zheng2024}, in which they took a different angle to the same problem. They test 162 persona roles on 2,410 factual questions across four LLM families and find that injecting a user persona into the system prompt is either useless or actively harmful for objective tasks. The persona does not sit quietly in the context window when it is not needed, rather, It interferes! Zhao et al.~\cite{prefeval2025} follow the interference into the context window itself, finding that preference-following accuracy drops below 10\% by around ten conversation turns, which means the tokens carrying those stored preferences are being paid for long after the system has lost the ability to act on them usefully.
+
+On the other hand the token cost connects these failure to something more concrete than just user annoyance. Du et al.~\cite{du2025} shows across five LLMs on different domain for maths, QA, and coding that reasoning performance degrades between 13.9\% and 85\% purely as a function of input length, even when retrieval is perfect and every additional token is individually relevant. Similarly, Anthropic's own developer benchmarks~\cite{anthropic_context} quantifies what happens when that context is managed rather than accumulated, here the disciplined context editing reduced token consumption by 84\% and improved agentic search performance by 39\% over the baseline, which is not just a small efficiency gain. It implies that the token overhead of unmanaged personalisation context is the primary cost driver in conversational workflows, not the task itself.
+
+\section{What ChatGPT, Gemini, and Claude Actually Do}
+
+\label{sec:commercial}
+
+In the past few couple years, OpenAI, Google, and Anthropic have each added the option for user to add personalised response formatting along with opting for persistent memory into their flagship products, and each has made different architectural choices about when that memory fires and how visible it is to the user.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{chatgpt_memory.png}
+    \caption{ChatGPT memory management}
+    \label{fig:chatgpt-memory}
+\end{figure}
+
+ChatGPT here maintains two memory tracks, from saved memories the user can view and delete, and implicit insights extracted from conversation history that are applied automatically~\cite{openai_memory}. Moreover, custom instructions add roughly around 800 tokens of overhead to every query regardless of task type~\cite{openai_custom}. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{gemini_memory.png}
+    \caption{Gemini Memory Management}
+    \label{fig:gemini-memory}
+\end{figure}
+
+Gemini's architecture is the most interesting of the three for this specific problem, they launched Gemini Personalization which automatically uses Personal Context drawing on past conversations by default~\cite{gemini_context}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{claude_memory.png}
+    \caption{Claude Memory Management}
+    \label{fig:placeholder}
+\end{figure}
+
+Claude's approach is different and closer to what the UMAP scrutability literature recommends. Here, the memory is stored as a natural-language summary that the user can read, edit, and delete per project~\cite{anthropic_memory}, and the memory tool exposes every read and write as a visible tool call in the conversation itself~\cite{anthropic_context}. Moreover, it reads the users chat and interaction and builds the memory overnight for user as well. Anthropic states it tested for over-accommodation before expanding memory to all user tiers, where they saw an 84\% token reduction from context editing~\cite{anthropic_context}, and this makes the architecture difference concrete, with an editable and selective memory system which is transparent.
+
+
+
+\begin{table}
+
+\caption{Memory architecture comparison .}\label{tab:comparison}
+
+\begin{tabular}{|l|c|c|c|}
+
+\hline
+
+\textbf{System} & \textbf{Relevance Gate} & \textbf{User-Editable Model} & \textbf{Cost Data Published}\\
+
+\hline
+
+ChatGPT & No & Partial & No \\
+
+Gemini & No & No & No \\
+
+Claude & Yes & Yes & Yes (84\% reduction) \\
+
+\hline
+
+\end{tabular}
+
+\end{table}
+
+From the Table~\ref{tab:comparison} the trade-off is clearly visible. Gemini adds irrelevant personalisation from context but does not let users inspect or correct the system's beliefs about them. Claude lets users govern the model directly and mostly prevents irrelevant personalisations. ChatGPT does neither. No system currently combines a relevance gate with a user-editable model for each chat, it allows to globally disable/enable personalisation, which is precisely what would be needed to prevent both the token overhead and the intent-interference failures the benchmarks document.
+
+\section{Scrutability and Why the UMAP Tradition Has the Right Answer}
+
+\label{sec:scrutability}
+
+Similar gaps based on Table~\ref{tab:comparison} were found by Kay and Kummerfeld~\cite{kay2013} where they catalogued the same five problems in personalised systems in 2013, privacy exposure from invisible model beliefs, undetectable errors the user cannot correct, wasted adaptation the user never sees, and the absence of meaningful control. All these problems are mapped onto the failure mode in OP-Bench~\cite{opbench2026} and RPEval~\cite{rpeval2026} are now being obseverved and measured in LLM-based conversational agents. 
+
+Moreover, Jeromela and Conlan~\cite{jeromela2024} apply this framework directly to intelligent personal assistants at UMAP 2024, designing scrutable user models for time management assistants through structured onboarding and reflection interfaces. Based on their argument a user who cannot inspect what the assistant believes about them, cannot actually make an informed decision about how much tasks and what can be delegated to the agent. So, it means scrutability is a precondition for safe delegation, and not just an ethical add-on to the system. This connects directly to the over-personalisation failures in Section~\ref{sec:failure}. The reason a system surfaces a stored outdated preference or validates a wrong answer is that the user has no mechanism to see the belief, contest it, or remove it before the system acts on it.
+
+Likewise, Akbar and Conlan~\cite{akbar2024} extend upon this to proactive agents at UMAP 2024, introducing the concept of a user-controllable autonomy gradient, where the system should learn not just user preferences but how much delegation the user wants to grant in different contexts. Rather than trying to decide at inference time whether a task is preference-sensitive, the system learns the user's own calibration of when they want personalisation applied and when they want the model to treat the query cold. Practically, this is what a relevance gate plus a scrutable model would implement together which can be applied unconditionally for the user.
+
+The implementation does not require new infrastructure. Ramos et al.~\cite{ramos2024} show that replacing latent user embeddings with LLM-generated natural-language summaries lets users edit those summaries and have the edits change downstream behaviour, which matches the embedding-based personalisation quality while satisfying Kay and Kummerfeld's~\cite{kay2013} scrutability criteria which Claude's uses by letting the user edit the memory summary from their end.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Over-personalisation in the conversational LLM agents is the predictable outcome of applying persistent user memory to every interaction without a mechanism for deciding whether the current task needs it. Currently, the benchmarks now exist to measure this directly~\cite{opbench2026,rpeval2026}, along with doing the token-cost analyses which quantifies its overhead~\cite{du2025,anthropic_context}. Morevoer, for the UMAP tradition specifically in the work of Kay and Kummerfeld~\cite{kay2013}, Jeromela and Conlan~\cite{jeromela2024}, and Akbar and Conlan~\cite{akbar2024}, has been observed and working on exactly this problem for longer than these LLM based personalised systems have existed. Based on which the research direction is a system that combines a per-query relevance decision along with a user-inspectable and user-editable user model will have fewer over-personalisation failures, lower token overhead, and stronger user trust with a first-class design constraint based on user-first design rather than a setting buried in a privacy menu.
+
+\begin{credits}
+\subsubsection{\ackname} This work was produced as part of the MSc in Computer Science (Future Networked Systems) programme at Trinity College Dublin for the CS7IS5 module Adaptive Applications.
+
+\subsubsection{\discintname} The author has no competing interests to declare.
+\end{credits}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
