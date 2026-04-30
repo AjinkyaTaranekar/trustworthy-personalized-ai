@@ -1,7 +1,7 @@
 ---
 title: Tags Index
 type: meta
-updated: 2026-04-20
+updated: 2026-04-30
 ---
 
 # Tags Index
@@ -25,6 +25,8 @@ Tags that correspond 1:1 with a page in `topics/`.
 | `ontology` | 4 | Ontology-LLM integration — informs [[topics/ontology-integration]] |
 | `foundations` | 8 | Tokenisation / attention / embeddings — informs [[topics/llm-foundations]] |
 | `verification` | 3 | Post-hoc claim verification (incl. ontology) |
+| `security` | 5 | Security threats to LLMs (prompt injection, alignment regression, OWASP taxonomy) — informs [[topics/security-and-privacy]] |
+| `privacy` | 4 | Data privacy, user-data protection, GDPR — informs [[topics/security-and-privacy]] |
 
 ## Techniques
 Named methods or paradigms.
@@ -49,6 +51,9 @@ Named methods or paradigms.
 | `embeddings` | 3 | Word / token / contextual embeddings |
 | `agents` | 2 | Agentic (multi-turn, tool-using) LLMs |
 | `process-rewards` | 1 | RL reward on reasoning process, not outcome |
+| `sycophancy` | 3 | Model over-agreement with user preference; alignment failure — informs [[topics/personalisation]] and [[topics/security-and-privacy]] |
+| `over-personalisation` | 2 | Applying personalisation when it degrades task quality or overrides explicit intent |
+| `scrutability` | 3 | User's ability to inspect, contest, and correct the model's beliefs — informs [[topics/explainability]] and [[topics/personalisation]] |
 
 ## Entities & algorithms
 Concrete artefacts with their own pages in `entities/`.

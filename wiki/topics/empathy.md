@@ -36,11 +36,16 @@ Current LLMs produce "simulated empathy" — surface-level validation that has n
 - **Gricean implicature** — "Can you pass the salt?" is not a yes/no question. Understanding subtext is a prerequisite for emotional support.
 - **Simple over open questions** — when clarity is needed, prefer yes/no.
 
+## Ethical Boundary: Dependency and Deskilling
+
+A highly personalised and empathetic model creates two risks identified in the [[sources/dissertation/security-privacy-social-ethics|security analysis]]. First, **emotional dependency**: the model is always available, always patient, and optimised for engagement — unlike human relationships, which are non-linear and reciprocal. Research on parasocial bonds (Lipin 2025, unacquired) shows emotionally reactive systems produce attachment behaviours functionally similar to human relationships, but with no reciprocal stake in the user's wellbeing. Disclosing AI identity is not enough; the system should actively monitor for and interrupt dependency formation. Second, **deskilling**: users who habitually delegate uncertainty to a confident model may lose independent evaluative capacity — documented empirically in clinical AI settings (endoscopist adenoma detection decline, Budzyń et al. 2025). The empathy design must therefore include an autonomy-preserving constraint: the model should redirect users to better consultants and surface uncertainty rather than provide the most reassuring answer.
+
 ## Related
 
 - [[topics/personalisation]] — empathy conditions on user state
 - [[topics/reasoning]] — "refusal honesty" is the non-empathy axis of honesty
 - [[topics/explainability]] — transparent reasoning traces increase perceived empathy
+- [[topics/security-and-privacy]] — emotional dependency and deskilling are social-ethical risks
 - [[entities/appraisal-theory]] · [[entities/5w-h]]
 - [[experiments/experiment-catalog]] — Experiments 2 + 3
 
@@ -49,6 +54,7 @@ Current LLMs produce "simulated empathy" — surface-level validation that has n
 - [[sources/papers/xai-sentiment-deepseek-r1]] — transparent reasoning for affective classification
 - [[sources/papers/dual-head-reasoning-distillation]] — cheap-inference template for the appraisal tagger
 - [[sources/papers/interleaved-reasoning]] — TTFT win matters for perceived empathy
+- [[sources/dissertation/security-privacy-social-ethics]] — §5 social-ethical concerns (dependency + deskilling)
 
 ## Raw
 

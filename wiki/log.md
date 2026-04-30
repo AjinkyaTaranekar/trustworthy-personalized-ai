@@ -6,6 +6,32 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-04-30] ingest | overpersonalisation paper + security analysis paper (2 dissertation papers)
+- Created [[sources/dissertation/overpersonalisation-paper]] — "When Personalisation Becomes a Problem in Conversational LLM Agents" (CS7IS5, LLNCS format). Covers three failure modes (intent override, context inflation, opacity), sycophancy as the mechanism (Sharma 2025, SycEval, Jain 2026, Zheng 2024), commercial memory comparison table, and UMAP scrutability tradition (Kay & Kummerfeld 2013, Jeromela & Conlan 2024, Akbar & Conlan 2024, Ramos 2024). All 13 cited scholarly papers are unacquired — tracked in [[questions/2026-04-30-asset-acquisition-todo]].
+- Created [[sources/dissertation/security-privacy-social-ethics]] — "Security, Privacy, and Social Ethics in Trustworthy Personalised AI". Covers frontier privacy crisis (re-identification, GDPR Article 9), local-first as the architectural response, residual risks (on-device profiling, search side channel), three security threats (prompt injection via Log-To-Leak, alignment regression, critique-loop SPOF), and social-ethical concerns (dependency, deskilling, manipulation). All 14 cited scholarly papers unacquired.
+- Created [[topics/security-and-privacy]] — new topic page anchoring the security/privacy dimension of the thesis; maps threats to OWASP LLM Top 10 2025 taxonomy.
+- Updated [[topics/personalisation]] — added over-personalisation, sycophancy mechanism, and UMAP scrutability sections; status `stub` → `current`; added new tags.
+- Updated [[topics/tool-use-and-verification]] — added prompt injection security risk section; linked Log-To-Leak; status `stub` → `current`.
+- Updated [[topics/empathy]] — added ethical boundary section (dependency and deskilling); linked security paper.
+- Updated [[entities/constitution]] — added security risks section: Principle 10 amplifying injection, alignment regression risk, critique-loop SPOF.
+- Updated [[entities/mcp]] — added Log-To-Leak attack description and required mitigation.
+- Updated [[wiki/tags.md]] — added `security`, `privacy`, `sycophancy`, `over-personalisation`, `scrutability` with counts and meanings. Pre-existing note: `scrutability`, `xai`, `interpretability` are used in `topics/explainability.md` but were not in tags.md before this entry; now formalised.
+- Regenerated [[index]] — added `topics/security-and-privacy`; updated topic descriptions; moved two dissertation papers from "Not yet ingested" to "Dissertation drafts"; updated date to 2026-04-30.
+- **No contradictions found** between the new papers and existing wiki claims.
+- **Hard cap**: 11 files changed (within the 15-page limit).
+
+## [2026-04-30] lint | overpersonalisation + security papers health check
+- Two new raw sources found and registered in `index.md` under "Not yet ingested": `docs/overpersonalisation/paper.tex` and `docs/security-analysis/security-review.tex`. Neither has a wiki source page yet.
+- ⚠ **Root-level `security-review.tex` is untracked in git** (shown in `git status`) and is distinct from `docs/security-analysis/security-review.tex`. Flagged for user to confirm: duplicate, draft, or symlink?
+- **27 new scholarly references** found across the two papers' `.bib` files with no matching PDF in `docs/Assets/` and no Literature Note. Full acquisition checklist filed at `wiki/questions/2026-04-30-asset-acquisition-todo.md`.
+- **5 papers from previous lint (2026-04-19) still unacquired**: AppraisePLM, Think-on-Graph, LLM-guided ToT, SEAL, Structured Solution Templates — also included in the new checklist.
+- **New concepts appearing for the first time with no wiki page**: "over-personalisation" (central to the LLNCS paper), "sycophancy" (4+ papers cite it), "scrutable user models" (3 UMAP papers), "security / prompt injection" (cross-cutting in security paper), "constitutional AI" (Anthropic CAI framework, distinct from the project constitution at `entities/constitution.md`). These need topic/entity pages when the papers are ingested.
+- **Tag gaps**: new papers would require tags not yet in `wiki/tags.md` — `sycophancy`, `privacy`, `security`, `scrutability`. Add to `tags.md` during the first ingest of these papers.
+- **Stale carry-overs** (no change since last lint): `wiki/tags.md` counts are now under-counted; `IMPROVEMENT_ROADMAP.md` still not ingested; GRPO trainer still on a separate branch.
+- **No contradictions found** between existing wiki pages.
+- **No new orphan pages** — all existing pages remain linked.
+- Files changed: `wiki/index.md` (Not yet ingested + Questions sections updated), `wiki/questions/2026-04-30-asset-acquisition-todo.md` (created).
+
 ## [2026-04-19] bootstrap | wiki initialised
 - Created `CLAUDE.md` schema at repo root.
 - Created `wiki/` scaffolding: `index.md`, `log.md`, `overview.md`, and dirs `topics/`, `entities/`, `sources/{papers,dissertation,code}/`, `experiments/`, `decisions/`, `questions/`, `queries/`.

@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-04-19
+updated: 2026-04-30
 ---
 
 # Index
@@ -19,11 +19,12 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 - [[topics/llm-foundations]] — tokenisation, attention, embeddings; why monolithic LLMs fail
 - [[topics/reasoning]] — trustworthy reasoning across SFT, RL, architecture, evaluation
-- [[topics/personalisation]] — 5W+H, GraphRAG, cold start, privacy paradox
-- [[topics/empathy]] — appraisal theory, Gricean grounding, conversation design
-- [[topics/tool-use-and-verification]] — PAL/ReAct delegation, MCP, ontology verification
+- [[topics/personalisation]] — 5W+H, GraphRAG, cold start; over-personalisation failure modes; scrutability
+- [[topics/empathy]] — appraisal theory, Gricean grounding, conversation design; dependency/deskilling risks
+- [[topics/tool-use-and-verification]] — PAL/ReAct delegation, MCP, ontology verification; prompt injection risk
 - [[topics/explainability]] — citations, honest tool reports, translated latent state
 - [[topics/ontology-integration]] — flagship: ontology as KB (A) or post-hoc verifier (B)
+- [[topics/security-and-privacy]] — local-first privacy argument, OWASP threat taxonomy, Log-To-Leak, alignment regression
 
 ## Entities
 
@@ -94,6 +95,8 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/dissertation/road-towards-trustworthy-empathetic-ai]] — main thesis argument + literature review
 - [[sources/dissertation/experimental-planning-document]] — 6 experiments, 2025-11-10 meeting, timeline
 - [[sources/dissertation/personal-notes]] — Experiment.md + Rough Notes.md + Research Plan Edits.md
+- [[sources/dissertation/overpersonalisation-paper]] — LLNCS paper: three failure modes, sycophancy mechanism, UMAP scrutability tradition, commercial memory architecture comparison
+- [[sources/dissertation/security-privacy-social-ethics]] — security analysis: local-first privacy argument, Log-To-Leak, alignment regression, critique-loop SPOF, dependency/deskilling ethics
 
 ### Code (pipeline summaries)
 - [[sources/code/sft-v2-pipeline]] — constitution-driven data generation
@@ -111,6 +114,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 ## Questions
 
 - [[questions/2026-04-19-initial-questions]] — consolidated TODOs, advisor-prep questions, literature tensions
+- [[questions/2026-04-30-asset-acquisition-todo]] — 27-paper acquisition checklist from overpersonalisation + security papers (+ 5 carry-over from prior lint)
 
 ## Queries
 
@@ -125,7 +129,7 @@ _None yet. Ask me a durable question and I will offer to file the answer here._
 
 ## Cited but not in `docs/Assets/`
 
-Papers referenced in the research plan that we don't hold PDFs for (flagged in [[questions/2026-04-19-initial-questions]]):
+Papers referenced in the research plan that we don't hold PDFs for (flagged in [[questions/2026-04-19-initial-questions]]). Full acquisition checklist now consolidated in [[questions/2026-04-30-asset-acquisition-todo]].
 
 - Debnath et al. 2025 — **AppraisePLM** (blocks Experiment 2)
 - Sun et al. 2024 — **Think-on-Graph** (informs [[entities/graph-rag]])
