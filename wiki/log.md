@@ -6,6 +6,17 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-04-30] lint | cross-layer health check (tags, paths, wikilinks, dates)
+- **Deprecated tag removed**: `none-of-the-others.md` had `benchmarks` (deprecated → use `evaluation`); `evaluation` was already present so tag simply dropped.
+- **Broken source paths fixed** (truncated filenames in frontmatter):
+  - `topics/reasoning.md` → two paths corrected to full filenames (Seed1.5-Thinking + DeepSeek-R1).
+  - `topics/tool-use-and-verification.md` → two paths corrected to full filenames (MCP paper + ReAct).
+- **Dangling wikilink fixed**: `sources/code/training-and-benchmark.md` had `[[entities/qwen3-0.6b\|...]]` (trailing backslash) → corrected to `[[entities/qwen3-0.6b|...]]`.
+- **Stale updated date fixed**: `topics/empathy.md` still showed `updated: 2026-04-19` after today's edits → bumped to `2026-04-30`.
+- **False positive noted**: audit reported 33 PDFs with no Literature Notes. This is incorrect — confirmed 33:33 correspondence from glob output earlier in session; the agent mismatched `.pdf` vs `.md` extensions. All PDFs have Literature Notes.
+- **No unknown tags**: all tags in use are registered in `wiki/tags.md`.
+- **No orphan pages**: all 66+ wiki pages are linked from index or other wiki pages.
+
 ## [2026-04-30] ingest | overpersonalisation paper + security analysis paper (2 dissertation papers)
 - Created [[sources/dissertation/overpersonalisation-paper]] — "When Personalisation Becomes a Problem in Conversational LLM Agents" (CS7IS5, LLNCS format). Covers three failure modes (intent override, context inflation, opacity), sycophancy as the mechanism (Sharma 2025, SycEval, Jain 2026, Zheng 2024), commercial memory comparison table, and UMAP scrutability tradition (Kay & Kummerfeld 2013, Jeromela & Conlan 2024, Akbar & Conlan 2024, Ramos 2024). All 13 cited scholarly papers are unacquired — tracked in [[questions/2026-04-30-asset-acquisition-todo]].
 - Created [[sources/dissertation/security-privacy-social-ethics]] — "Security, Privacy, and Social Ethics in Trustworthy Personalised AI". Covers frontier privacy crisis (re-identification, GDPR Article 9), local-first as the architectural response, residual risks (on-device profiling, search side channel), three security threats (prompt injection via Log-To-Leak, alignment regression, critique-loop SPOF), and social-ethical concerns (dependency, deskilling, manipulation). All 14 cited scholarly papers unacquired.

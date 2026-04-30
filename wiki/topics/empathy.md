@@ -5,7 +5,7 @@ tags: [empathy, appraisal-theory]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md
-updated: 2026-04-19
+updated: 2026-04-30
 status: stub
 ---
 

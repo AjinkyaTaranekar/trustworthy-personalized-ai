@@ -4,7 +4,7 @@ type: source
 arxiv_id: 2502.12896v5
 authors: Sánchez Salido, Gonzalo, Marco (UNED)
 year: 2025
-tags: [evaluation, reasoning, memorisation, benchmarks]
+tags: [evaluation, reasoning, memorisation]
 sources:
   - docs/Assets/None of the Others a General Technique to Distinguish Reasoning from Memorization in Multiple-Choice LLM Evaluation Benchmarks (2502.12896v5).pdf
   - docs/Literature Notes/None of the Others a General Technique to Distinguish Reasoning from Memorization in Multiple-Choice LLM Evaluation Benchmarks (2502.12896v5).md

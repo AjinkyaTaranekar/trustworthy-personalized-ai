@@ -4,8 +4,8 @@ type: topic
 tags: [reasoning, rl, sft, cot, explainability]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
-  - docs/Assets/Seed1.5-Thinking (2504.13914v3).pdf
-  - docs/Assets/DeepSeek-R1 (2501.12948v1).pdf
+  - docs/Assets/Seed1.5-Thinking Advancing Superb Reasoning Models with Reinforcement Learning (2504.13914v3).pdf
+  - docs/Assets/DeepSeek-R1 Incentivizing Reasoning Capability in LLMs via Reinforcement Learning (2501.12948v1).pdf
   - docs/Assets/PAL Program-aided Language Models (2211.10435v2).pdf
 updated: 2026-04-19
 status: stub

@@ -16,6 +16,18 @@
               "icon": "lucide-git-fork",
               "title": "Graph view"
             }
+          },
+          {
+            "id": "352a7d6d463db343",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.12.7"
+              },
+              "icon": "lucide-book-up",
+              "title": "Release Notes 1.12.7"
+            }
           }
         ]
       }
@@ -191,6 +203,12 @@
   },
   "active": "529be4550c8e39db",
   "lastOpenFiles": [
+    "wiki/log.md.tmp.22688.1777559260028",
+    "wiki/topics/empathy.md.tmp.22688.1777559246663",
+    "wiki/sources/code/training-and-benchmark.md.tmp.22688.1777559245989",
+    "wiki/topics/tool-use-and-verification.md.tmp.22688.1777559240676",
+    "wiki/topics/reasoning.md.tmp.22688.1777559238767",
+    "wiki/sources/papers/none-of-the-others.md.tmp.22688.1777559237305",
     "wiki/log.md.tmp.9236.1776697140964",
     "wiki/sources/dissertation/research-plan.md",
     "wiki/sources/code/training-and-benchmark.md",
@@ -199,13 +217,7 @@
     "CLAUDE.md.tmp.9236.1776674629906",
     "scripts/__pycache__/unwrap_markdown.cpython-310.pyc",
     "scripts/__pycache__",
-    "scripts/_preview_unwrap.py",
-    "scripts/unwrap_markdown.py",
-    "scripts/unwrap_markdown.py.tmp.9236.1776674537730",
-    "scripts",
     "docs/Literature Notes/PAL Program-aided Language Models (2211.10435v2).md",
-    "wiki/log.md.tmp.9236.1776674187216",
-    "wiki/entities/qwen3-0.6b.md.tmp.9236.1776674174847",
     "wiki/tags.md",
     "wiki/index.md",
     "docs/Research Plan Edits.md",

@@ -23,7 +23,7 @@ status: current
 | Script | Role |
 | ------ | ---- |
 | `1_dataset_generator.py` | Generates the v1 interleaved training set (`data/train_interleaved.jsonl`). Superseded by the SFT v2 flow for most purposes. |
-| `2_model_trainer.py` | LoRA fine-tune of [[entities/qwen3-0.6b\|Qwen3-0.6B]]. Output: `./models/<output_name>/`. |
+| `2_model_trainer.py` | LoRA fine-tune of [[entities/qwen3-0.6b|Qwen3-0.6B]]. Output: `./models/<output_name>/`. |
 | `3_infererence.py` | Single-prompt inference; optional `--compare` runs base model alongside. Saves timestamped JSON reports. |
 | `4_benchmark.py` | Multi-question benchmark across a model (or `--compare` base vs custom). Per-turn metrics: tokens, generation time, tool calls. Output: `./reports/benchmark_*.json`. |
 | `5_context_degradation.py` | Measures correctness decay as context length grows. Shares TURNS with the dataset builder. |

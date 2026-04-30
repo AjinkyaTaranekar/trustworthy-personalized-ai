@@ -5,9 +5,9 @@ tags: [tool-use, mcp, ontology, verification, security]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md
-  - docs/Assets/Advancing Multi-Agent Systems Through Model Context Protocol (2504.21030v1).pdf
+  - docs/Assets/Advancing Multi-Agent Systems Through Model Context Protocol Architecture, Implementation, and Applications (2504.21030v1).pdf
   - docs/Assets/PAL Program-aided Language Models (2211.10435v2).pdf
-  - docs/Assets/ReAct Synergizing Reasoning and Acting (2210.03629v3).pdf
+  - docs/Assets/ReAct Synergizing Reasoning and Acting in Language Models (2210.03629v3).pdf
   - pipeline/constitution.md
   - docs/security-analysis/security-review.tex
 updated: 2026-04-30
