@@ -6,6 +6,19 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-04-30] ingest | 20 new papers — Literature Notes filled + 12 stubs + 6 wiki source pages
+- **User added 20 PDFs** to `docs/Assets/` (Obsidian auto-created empty Literature Notes for all of them). All 20 Literature Notes filled with key claims, thesis relevance, and open questions.
+- **Papers filled (overpersonalisation/scrutability cluster):** OP-Bench, RPEval (How Does Personalized Memory Shape LLM Behavior), Towards Understanding Sycophancy in Language Models (Sharma 2024), SycEval, Context Length Alone Hurts LLM Performance, PrefEval (Do LLMs Recognize Your Preferences), Transparent and Scrutable Recommendations (UPR), TEARS.
+- **Papers filled (security/alignment cluster):** Constitutional AI: Harmlessness from AI Feedback (Bai 2022), Constitution or Collapse? (Zhang 2025), Membership Inference Attacks (Shokri 2017), Ignore Previous Prompt (Perez 2022), Universal and Transferable Adversarial Attacks (Zou 2023), GPT-5 System Card, Qwen3 Technical Report, Phi-4 Technical Report.
+- **Papers filled (carry-over cluster):** Think-on-Graph (fixed malformed frontmatter from Obsidian parse error), LLM-Guided Tree-of-Thought, Self-Adapting Language Models (SEAL), Can Structured Templates Facilitate LLMs (SST / Scaling Law by Difficulty).
+- **Stub Literature Notes created (12 still-missing papers):** Jain CHI 2026 (memory→sycophancy), Zheng EMNLP 2024 (persona injection), Kay & Kummerfeld 2013 (scrutable UM framework), Jeromela & Conlan UMAP 2024, Akbar & Conlan UMAP 2024, Log-To-Leak (Hu 2026), Lipin 2025 (parasocial bonds), Budzyń 2025 (deskilling), Klein & Klein 2025 (extended hollowed mind), AppraisePLM (Debnath 2025), Claude Sonnet 4.6 System Card, Gemma 4 Technical Report.
+- **Wiki source pages created:** `op-bench.md`, `rpeval.md`, `sycophancy-sharma.md`, `syc-eval.md`, `constitutional-ai-bai.md`, `constitution-or-collapse.md`.
+- **Index updated:** added 7 new Papers subsections (Personalisation, Security/alignment, Context/preference, Knowledge graphs, Adaptation, Security threats, Frontier model references); updated "Cited but not in docs/Assets/" section.
+- **Checklist updated:** header now reflects that all [x] papers have filled Literature Notes; stub notes created for all [ ] papers.
+- **No contradictions found** between new paper content and existing wiki claims.
+- **Noteworthy findings from reading:** (1) Think-on-Graph file had malformed YAML frontmatter (abstract truncated at special LaTeX) — rewritten cleanly. (2) Scaling Law by Difficulty (SST paper) directly informs the thesis's SFT v2 data curation: prioritise hard, curated problems over large synthetic volumes. (3) Constitution or Collapse confirms the 0.6B model is at high model-collapse risk from self-critique — motivates teacher-based critique decoupling.
+- **Hard cap:** 20 Literature Notes + 12 stub notes + 6 wiki pages + index + log + checklist = well within limit.
+
 ## [2026-04-30] lint | cross-layer health check (tags, paths, wikilinks, dates)
 - **Deprecated tag removed**: `none-of-the-others.md` had `benchmarks` (deprecated → use `evaluation`); `evaluation` was already present so tag simply dropped.
 - **Broken source paths fixed** (truncated filenames in frontmatter):

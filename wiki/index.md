@@ -90,6 +90,40 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 ### Papers — Empathy / affect
 - [[sources/papers/xai-sentiment-deepseek-r1]] — transparent sentiment classification
 
+### Papers — Personalisation / over-personalisation
+- [[sources/papers/op-bench]] — first benchmark for over-personalisation; 26–61% degradation from memory augmentation
+- [[sources/papers/rpeval]] — Rational Personalisation framework; 40–90% human-LLM accuracy gap; inverse scaling
+- [[sources/papers/sycophancy-sharma]] — RLHF structurally incentivises sycophancy; foundational mechanism paper (ICLR 2024)
+- [[sources/papers/syc-eval]] — 58.19% sycophancy rate; 78.5% persistence; cross-model measurement (AIES 2025)
+
+### Papers — Security / alignment
+- [[sources/papers/constitutional-ai-bai]] — original CAI paper; generate–critique–revise loop; RLAIF (Anthropic 2022)
+- [[sources/papers/constitution-or-collapse]] — CAI at 8B: 40.8% ASR reduction, 9.8% helpfulness cost, model collapse
+
+### Papers — Context / preference tracking
+- [[sources/papers/context-length-hurts]] (Literature Note only) — 13.9–85% degradation from context length alone despite perfect retrieval
+- [[sources/papers/prefeval]] (Literature Note only) — preference following <10% at 10 turns; ICLR 2025 oral
+- [[sources/papers/transparent-scrutable-recs]] (Literature Note only) — NL user profiles: scrutable + competitive accuracy (UCL/Sheffield, ACL 2024)
+- [[sources/papers/tears]] (Literature Note only) — TEARS: textual representations + optimal transport for scrutable recommenders
+
+### Papers — Knowledge graphs / tool use
+- [[sources/papers/think-on-graph]] — LLM ⊗ KG tight coupling; beam search on KG; SOTA on 6/9 datasets (ICLR 2024)
+- [[sources/papers/llm-guided-tot]] (Literature Note only) — ToT software system with checker module and backtracking controller
+
+### Papers — Adaptation / training
+- [[sources/papers/seal]] (Literature Note only) — SEAL: LLMs generate self-edits for weight updates via RL outer loop (NeurIPS 2025)
+- [[sources/papers/structured-templates]] (Literature Note only) — Scaling Law by Difficulty; SST framework; +6.2 GSM8K pts
+
+### Papers — Security threats
+- [[sources/papers/membership-inference]] (Literature Note only) — shadow-model attack; 94% accuracy on Google ML; re-identification risk
+- [[sources/papers/ignore-previous-prompt]] (Literature Note only) — PromptInject: goal hijacking 58.6%, prompt leaking 23.6%
+- [[sources/papers/adversarial-attacks-zou]] (Literature Note only) — GCG suffix; transfers to ChatGPT/Claude/Bard; black-box jailbreak
+
+### Papers — Frontier model references
+- [[sources/papers/qwen3-tr]] (Literature Note only) — Qwen3 family 0.6B–235B; unified thinking/non-thinking; base model technical report
+- [[sources/papers/phi4-tr]] (Literature Note only) — Phi-4 14B; data quality > scale; surpasses GPT-4o on STEM-QA
+- [[sources/papers/gpt5-system-card]] (Literature Note only) — GPT-5 system card; sycophancy + prompt injection as safety challenges
+
 ### Dissertation drafts (user-authored raw)
 - [[sources/dissertation/research-plan]] — formal CS7CS6 plan: title, 5 objectives, 7 phases, 2 pivots
 - [[sources/dissertation/road-towards-trustworthy-empathetic-ai]] — main thesis argument + literature review
@@ -129,10 +163,17 @@ _None yet. Ask me a durable question and I will offer to file the answer here._
 
 ## Cited but not in `docs/Assets/`
 
-Papers referenced in the research plan that we don't hold PDFs for (flagged in [[questions/2026-04-19-initial-questions]]). Full acquisition checklist now consolidated in [[questions/2026-04-30-asset-acquisition-todo]].
+Papers with stub Literature Notes but no PDF. Full checklist: [[questions/2026-04-30-asset-acquisition-todo]].
 
-- Debnath et al. 2025 — **AppraisePLM** (blocks Experiment 2)
-- Sun et al. 2024 — **Think-on-Graph** (informs [[entities/graph-rag]])
-- Long 2023 — LLM-guided Tree-of-Thought
-- Zweiger 2025 — **SEAL** (Self-Adapting Language Models)
-- Yang 2025 — Structured Solution Templates
+- Debnath et al. 2025 — **AppraisePLM** (blocks Experiment 2; no arXiv found)
+- Jain et al. CHI 2026 — memory injection → sycophancy (DOI: 10.1145/3772318.3791915)
+- Zheng et al. EMNLP 2024 — persona injection useless for objective tasks (ACL Anthology)
+- Kay & Kummerfeld 2013 — scrutable user models framework (ACM, paywalled)
+- Jeromela & Conlan UMAP 2024 — scrutability for IPAs (Conlan is supervisor; ACM)
+- Akbar & Conlan UMAP 2024 — HITL autonomy gradient (Conlan is supervisor; ACM)
+- Hu et al. 2026 — **Log-To-Leak** (OpenReview only; highest-priority security gap)
+- Lipin 2025 — parasocial bonds / dependency (ResearchGate)
+- Budzyń et al. 2025 — endoscopist deskilling (Lancet, paywalled)
+- Klein & Klein 2025 — extended hollowed mind (Frontiers, open access)
+- Anthropic 2026 — Claude Sonnet 4.6 System Card (CDN PDF)
+- Google DeepMind 2026 — Gemma 4 Technical Report (blog/HF)
