@@ -61,17 +61,20 @@ Concrete artefacts with their own pages in `entities/`.
 | Tag | Count | Meaning |
 | --- | ----- | ------- |
 | `grpo` | 5 | Group Relative Policy Optimization |
+| `dapo` | 1 | Decoupled Clip and Dynamic Sampling Policy Optimization — ByteDance improvement to GRPO; fixes entropy collapse and length bias |
 | `ppo` | 1 | Proximal Policy Optimization (value-based RL baseline) |
 | `mcp` | 2 | Model Context Protocol |
 | `constitution` | 3 | The 19-principle constitution |
 | `principles` | 2 | The individual constitution principles |
 | `graph-rag` | 1 | KG-backed RAG for user memory |
+| `graph-memory` | 1 | Graph-based agent memory systems (Mem0g, Cognee, FalkorDB patterns) — distinct from graph-rag in that it covers the write/update pipeline, not just retrieval |
 | `5w-h` | 1 | Who/What/When/Where/Why/How user-modelling schema |
 | `appraisal-theory` | 3 | Appraisal-theoretic emotion framework |
 | `transformers` | 2 | Transformer architecture (as a named family) |
 | `bpe` | 1 | Byte-Pair Encoding |
 | `deepseek` | 2 | DeepSeek model family |
 | `qwen` | 1 | Qwen model family |
+| `gemma` | 1 | Gemma model family (Google) — used as secondary comparison model alongside Qwen in small-model experiments |
 
 ## Modalities
 | Tag | Count | Meaning |

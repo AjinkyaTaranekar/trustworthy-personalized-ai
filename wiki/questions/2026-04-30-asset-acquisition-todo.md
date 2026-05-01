@@ -1,17 +1,35 @@
 ---
 title: Asset Acquisition TODO — Overpersonalisation + Security Papers (2026-04-30)
 type: question
-tags: [todos, personalisation, security, privacy, scrutability, sycophancy]
+tags: [todos, personalisation, security, privacy, scrutability, sycophancy, grpo, dapo, graph-memory, empathy]
 sources:
   - docs/overpersonalisation/references.bib
   - docs/security-analysis/references.bib
-updated: 2026-04-30
+updated: 2026-05-01
 status: current
 ---
 
 # Asset Acquisition TODO
 
 **Status as of 2026-05-01 (third pass):** 7 more PDFs added manually by user. All previously [ ] papers except Budzyń 2025 (Lancet, paywalled) and Gemma 4 TR (no PDF) are now acquired with full Literature Notes. AppraisePLM identified as CoNLL 2025 paper co-authored by supervisor Conlan — Experiment 2 unblocked. Wiki source page created for AppraisePLM.
+
+---
+
+## From: GRPO + Personalisation Master Plan (2026-05-01)
+
+Priority papers identified by cross-referencing the repo's current pipeline against industry practice. Full context in [[queries/grpo-and-personalisation-master-plan]].
+
+- [ ] **DAPO** — ByteDance/Tsinghua SIA 2025 — arXiv:[2503.14476](https://arxiv.org/abs/2503.14476) — Decoupled Clip and Dynamic Sampling Policy Optimization; fixes entropy collapse + length bias for small models; **implement this instead of vanilla GRPO**
+- [ ] **DeepSeekMath** — DeepSeek team 2024 — arXiv:[2402.03300](https://arxiv.org/abs/2402.03300) — original GRPO paper; group size, KL hyperparameters, foundational maths
+- [ ] **LUSPO** — 2025 — arXiv:[2602.05261](https://arxiv.org/abs/2602.05261) — Length-Unbiased Sequence Policy Optimization; explains why token-level normalisation fixes length bias; validates Dr.GRPO approach
+- [ ] **Mem0** — Chhikara et al. 2025 — arXiv:[2504.19413](https://arxiv.org/abs/2504.19413) — production graph memory system; entity extractor + conflict detector write pipeline; 91% latency reduction; blueprint for Track 2 Layer 2
+- [ ] **PersonalAI** — 2025 — arXiv:[2506.17001](https://arxiv.org/abs/2506.17001) — systematic comparison of KG approaches for personalised LLM agents; hybrid graph with hyper-edges; directly relevant to 5W+H schema design
+- [ ] **Simulating Emotions with Appraisal + RL** — CHI 2024 — (search: "Simulating Emotions With an Integrated Computational Model of Appraisal and Reinforcement Learning") — integrates OCC appraisal dimensions with RL; validates Layer 4 appraisal-conditioning approach; directly citable
+- [ ] **Graph-based Agent Memory survey** — 2025 — arXiv:[2602.05665](https://arxiv.org/abs/2602.05665) — taxonomy of graph-based agent memory methods (planning, memory, tool use); places this architecture in the literature
+- [ ] **Avoiding Over-Personalisation (rule-guided KG)** — 2025 — arXiv:[2509.07133](https://arxiv.org/abs/2509.07133) — neuro-symbolic framework; symbolic adaptation strategies (soft reweighting, hard inversion); validates the per-query relevance gate (Layer 3)
+- [ ] **Memory in the Age of AI Agents** — 2026 — arXiv:[2512.13564](https://arxiv.org/abs/2512.13564) — taxonomy of memory transparency; notes token-level memory is more scrutable; explicit transparency-vs-efficiency trade-off recognised in the field
+- [ ] **Forgetful but Faithful** — 2025 — arXiv:[2512.12856](https://arxiv.org/abs/2512.12856) — Memory-Aware Retention Schema (MaRS); privacy-aware forgetting with "transparent failure modes" as a human-centred desideratum; closest paper to the scrutability gap without naming it
+- [ ] **MemMachine** — 2025 — arXiv:[2604.04853](https://arxiv.org/abs/2604.04853) — ground-truth-preserving memory (stores full episodes, not LLM-extracted summaries); addresses lossy compression; contrasts with Mem0's silent summarisation
 
 ---
 

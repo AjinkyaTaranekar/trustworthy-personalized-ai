@@ -50,8 +50,17 @@ Sycophancy — the model agreeing rather than performing — is the proximate fa
 
 The UMAP community's 20-year tradition of scrutable user models provides the design response: the user must be able to inspect, contest, and correct the model's beliefs about them before the system acts on those beliefs. Kay and Kummerfeld (2013) catalogued the same five problems now measurable in LLM agents. Jeromela and Conlan (UMAP 2024) argue scrutability is a precondition for safe delegation, not an ethical add-on. Akbar and Conlan (UMAP 2024) extend this to a user-controllable autonomy gradient — the system should learn how much personalisation the user wants in each context. Both Conlan-supervised. Ramos et al. 2024 show NL user-profile summaries achieve comparable personalisation to latent embeddings while satisfying scrutability criteria — which is precisely how local GraphRAG memory is designed to work.
 
-## Open vehicle: graph tools
-Candidates for the [[entities/graph-rag|GraphRAG]] implementation: **Cognee**, **FalkorDB**, **Neo4J**. Decision deferred — see [[questions/2026-04-19-initial-questions]].
+## Graph backend decision: Cognee + FalkorDB
+
+The three-way candidate decision (Cognee / FalkorDB / Neo4j) is now resolved. **FalkorDB** is the graph backend: it is 500× faster at p99 latency on neighbourhood expansion (the retrieval operation), uses Sparse Matrix Algebra rather than node-crawling, and has native LangChain/LlamaIndex integration. **Cognee** is the orchestration layer on top: it provides LLM-native KG construction, a unified memory abstraction that can switch backends without a code rewrite, and direct LlamaIndex integration for GraphRAG pipelines. The combination (Cognee as the write/construct layer, FalkorDB as the query layer) matches the MCP-local privacy requirement — the entire graph can live on-device behind a local MCP server. Neo4j is deferred for enterprise/multi-user scenarios where transactional guarantees matter more than inference latency.
+
+## User state update: Mem0g pattern (write pipeline only)
+
+The write pipeline for keeping the 5W+H graph current follows the Mem0g architecture (arXiv:2504.19413, production system achieving 91% lower p95 latency vs full-context injection): (1) entity extractor — LLM call extracting typed 5W+H entities from the user turn; (2) relation generator — LLM call inferring typed edges given the entities and existing graph context; (3) conflict detector — rule-based check for contradictions with existing edges; (4) conditional write — only after conflict resolution, using `:DEPRECATED_BY` edges rather than deletion so the audit trail remains intact. This four-stage pipeline is the basis for [[queries/grpo-and-personalisation-master-plan]] Layer 2. **Important:** Mem0's conflict resolution is entirely silent — the LLM Update Resolver decides ADD/UPDATE/DELETE/NOOP with no user notification. The thesis diverges from Mem0 precisely here: contradictions must be surfaced to the user before resolution, not resolved silently.
+
+## The Scrutability Gap — the thesis's named contribution
+
+No current production memory system provides what the UMAP tradition calls scrutability in the full sense. Mem0 is a pure developer API — users cannot inspect, correct, or contest any memory. ChatGPT's "Manage Memories" UI covers only explicitly saved memories; auto-learned chat-history memories are behind an all-or-nothing toggle, not individually auditable. Letta (the most transparent framework) allows agents to edit white-box memory blocks, but is a developer tool. The research literature (2024–2026) documents a "transparency asymmetry" (2025 AI Agent Index, arXiv:2602.17753) but has no formal definition, no design patterns, and no user studies on user-centric memory scrutability as a distinct concept from developer-API transparency. The thesis can claim the first formal definition of user-centric AI memory scrutability for conversational agents, operationalised as five constraints: (1) inspect — the user can read all beliefs the system holds; (2) contest — the user can flag a belief as wrong before the system acts on it; (3) correct — the user can provide the accurate belief; (4) deprecate (not delete) — corrected beliefs are marked `:USER_CORRECTED` and de-prioritised but kept for audit; (5) audit trail — the history of what changed, when, and why is always readable. This is Layer 5 of [[queries/grpo-and-personalisation-master-plan]] and the design response to the gap documented across Mem0, ChatGPT, and Gemini.
 
 ## Related
 
@@ -66,6 +75,13 @@ Candidates for the [[entities/graph-rag|GraphRAG]] implementation: **Cognee**, *
 
 - [[sources/papers/rag-original]] — non-parametric memory foundation
 - [[sources/dissertation/overpersonalisation-paper]] — over-personalisation failure modes + UMAP scrutability tradition
+
+## Sources (to acquire — see [[questions/2026-04-30-asset-acquisition-todo]])
+
+- Mem0 (arXiv:2504.19413) — production graph memory; entity extractor + conflict detector write pipeline; 91% latency reduction
+- PersonalAI (arXiv:2506.17001) — flexible KG for personalised LLM agents; hybrid graph with hyper-edges for 5W+H
+- Avoiding Over-Personalisation (arXiv:2509.07133) — rule-guided KG adaptation; validates the per-query relevance gate (Layer 3)
+- Graph-based Agent Memory survey (arXiv:2602.05665) — taxonomy placing this architecture in the literature
 
 ## Raw
 

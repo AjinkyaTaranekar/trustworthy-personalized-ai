@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-04-30
+updated: 2026-05-01
 ---
 
 # Index
@@ -144,6 +144,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Decisions
 
+- [[decisions/2025-10-01-four-module-architecture]] — **binding** Pivot 1: Reasoning / User Modelling / Tool Integration / Generator modules; Professor Conlan feedback; anchors entire thesis design
 - [[decisions/2025-11-10-ontology-focus-shift]] — primary focus moves to ontology-LLM integration
 
 ## Questions
@@ -153,7 +154,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Queries
 
-_None yet. Ask me a durable question and I will offer to file the answer here._
+- [[queries/grpo-and-personalisation-master-plan]] — two-track implementation roadmap: GRPO trainer (Track 1) + 5W+H graph-memory empathy stack (Track 2); industry benchmarks; 8-paper acquisition list; 6-week sequencing plan
 
 ---
 

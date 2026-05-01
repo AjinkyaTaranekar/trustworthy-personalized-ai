@@ -39,6 +39,7 @@
     "direction": 26,
     "distillation": 27,
     "dr-grpo": 28,
+    "drift-detection": 112,
     "embeddings": 29,
     "empathy": 30,
     "evaluation": 31,
