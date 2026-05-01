@@ -162,6 +162,26 @@ Trigger: user asks for reorganisation.
 
 Always: propose a diff first → wait for approval → execute → log under `refactor`.
 
+### 4.5 Pipeline Code Edit
+Trigger: user asks to modify any file in `pipeline/`.
+
+**Before making any changes**, run this consistency checklist and report findings:
+
+1. **Cross-file API contracts** — does the change affect a function signature, CLI arg, or data format that another pipeline script depends on? Key contracts to check:
+   - `3_infererence.py` tool registry and `TOOL_PROFILES` → `4_benchmark.py` `--compare_url` and probe `tool_profile` fields must match.
+   - `sft_gold_response_generator.py` training JSONL format → `sft_dataset_assembler.py` expects `messages` + `metadata` keys.
+   - `2_model_trainer.py` `messages_to_text` → requires `messages` field from assembler output.
+
+2. **README.md sync** — if a CLI flag is added, removed, or renamed, update `README.md` usage examples in the same edit.
+
+3. **Wiki sync** — if the purpose of a script changes materially, update `wiki/sources/code/training-and-benchmark.md` or the relevant `wiki/sources/code/` page in the same edit. Never leave the wiki describing the old behaviour.
+
+4. **Constitution coverage** — if a new question category, tool, or training scenario is added, verify that `pipeline/constitution.md`'s 19 principles cover the new behaviour. Flag gaps.
+
+5. **Log the change** — append to `wiki/log.md` under kind `refactor` with: what changed, why, and which files were touched.
+
+After changes, state explicitly: which files changed, which README sections were updated, and whether the wiki is in sync.
+
 ---
 
 ## 5. `index.md` Convention

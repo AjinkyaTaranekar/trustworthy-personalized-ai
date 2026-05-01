@@ -1,350 +1,486 @@
+"""
+Inference Server
+================
+FastAPI server that loads a model once on startup and serves it via HTTP.
+Designed like a frontier-lab serving stack: tool registry, server-side tool
+execution loop, per-request metrics, and dynamic tool registration.
+
+Install dependencies:
+    pip install fastapi uvicorn pydantic
+
+Usage:
+    python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
+    python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
+
+Endpoints:
+    GET  /health                   liveness + model name
+    GET  /v1/models                list loaded model
+    GET  /v1/tools                 list registered tools and their schemas
+    POST /v1/tools/register        add a new tool at runtime
+    DELETE /v1/tools/{name}        remove a tool
+    POST /v1/chat/completions      generate (tool loop handled server-side)
+    GET  /metrics                  latency, throughput, tool call counts
+    POST /metrics/reset            zero all counters
+
+Benchmark client (4_benchmark.py) calls POST /v1/chat/completions.
+"""
+
 import argparse
-import re
 import json
+import re
+import subprocess
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
-from unsloth import FastModel
+import torch
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
+# ---------------------------------------------------------------------------
+# Tool registry
+# ---------------------------------------------------------------------------
 
-# Tool implementations
-class Tools:
-    @staticmethod
-    def python_execute(code: str) -> str:
-        """Execute Python code in a subprocess with a 10-second timeout."""
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["python", "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            output = result.stdout.strip() or result.stderr.strip()
-            print(f"Executed code:\n{code}\nOutput:\n{output}")
-            return output if output else "Code executed successfully (no output)"
-        except subprocess.TimeoutExpired:
-            return "Error: Code execution timed out (10s limit)"
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    @staticmethod
-    def get_exchange_rate(**kwargs) -> str:
-        """Mock currency converter."""
-        # Simplified mock rates
-        mock_rates = {"USD": 1.0, "EUR": 0.85, "GBP": 0.73, "JPY": 155.58, "INR": 90.33}
-        from_currency = kwargs.get("from", "").upper()
-        to_currency = kwargs.get("to", "").upper()
-        if from_currency in mock_rates and to_currency in mock_rates:
-            rate = mock_rates[to_currency] / mock_rates[from_currency]
-            return json.dumps({"rate": rate})
-        return json.dumps({"error": "Currency not supported"})
+@dataclass
+class ToolSpec:
+    name: str
+    description: str
+    parameters: Dict[str, Any]   # JSON Schema
+    fn: Callable[..., str]
 
-def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
-    """Extract tool name and arguments from <tool>...</tool> tags."""
-    tool_match = re.search(r'<tool>(.*?)</tool>', text, re.DOTALL)
-    if not tool_match:
-        return None
-    
-    tool_text = tool_match.group(1).strip()
-    
-    # Parse tool call: function_name(arg1='value1', arg2='value2')
-    func_match = re.match(r'(\w+)\((.*)\)', tool_text)
-    if not func_match:
-        return None
-    
-    func_name = func_match.group(1)
-    args_str = func_match.group(2)
-    
-    # Parse arguments
-    kwargs = {}
-    if args_str:
-        # Match key=value pairs, capturing quoted strings properly
-        pattern = r"(\w+)=(?:(['\"])((?:\\.|(?!\2).)*?)\2|([^,\)]+))"
-        for match in re.finditer(pattern, args_str):
-            key = match.group(1)
-            quote_char = match.group(2)
-            quoted_value = match.group(3)
-            unquoted_value = match.group(4)
-            
-            # Use quoted value if present, otherwise unquoted
-            value = quoted_value if quote_char else (unquoted_value.strip() if unquoted_value else "")
-            
-            # Decode escape sequences in quoted strings
-            if quote_char:
-                value = value.encode().decode('unicode_escape')
-            
-            # Try to convert to appropriate type
-            try:
-                if value.replace('.', '').replace('-', '').isdigit():
-                    value = float(value) if '.' in value else int(value)
-            except:
-                pass
-            kwargs[key] = value
-    
-    return {"function": func_name, "kwargs": kwargs}
+    def schema(self) -> Dict[str, Any]:
+        return {"name": self.name, "description": self.description, "parameters": self.parameters}
 
 
-def execute_tool(tool_call: Dict[str, Any], tools: Tools) -> str:
-    """Execute a tool call and return the result."""
-    func_name = tool_call["function"]
-    kwargs = tool_call["kwargs"]
-    
-    if not hasattr(tools, func_name):
-        return f"Error: Unknown tool '{func_name}'"
-    
+_REGISTRY: Dict[str, ToolSpec] = {}
+
+
+def register_tool(name: str, description: str, parameters: Dict[str, Any], fn: Callable) -> None:
+    _REGISTRY[name] = ToolSpec(name=name, description=description, parameters=parameters, fn=fn)
+
+
+# ── Built-in tools ──────────────────────────────────────────────────────────
+
+def _python_execute(code: str = "") -> str:
     try:
-        func = getattr(tools, func_name)
-        result = func(**kwargs)
-        return result
+        result = subprocess.run(
+            ["python", "-c", code], capture_output=True, text=True, timeout=10,
+        )
+        out = (result.stdout or result.stderr).strip()
+        return out if out else "Code executed successfully (no output)"
+    except subprocess.TimeoutExpired:
+        return "Error: execution timed out (10s limit)"
     except Exception as e:
-        return f"Error executing {func_name}: {str(e)}"
+        return f"Error: {e}"
 
 
-def run_inference(model, tokenizer, prompt: str, max_new_tokens: int, max_iterations: int, temperature: float, tools: Tools, model_name: str = "Model", include_tools: bool = True):
-    """Run inference with a given model and return the full conversation."""
-    if include_tools:
-        system_prompt = (
-            "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
-            "Think step by step using <think>, call tools using <tool>, and give your final answer in <answer>. "
-            "You must never guess when tools are needed, always acknowledge uncertainty, ask for missing information "
-            "rather than assuming, deny impossible tasks honestly, and present tradeoffs for subjective questions.\n\n"
-            "Available tools:\n"
-            "1. python_execute(code='...') - Execute Python code and return the output.\n"
-            "   Example: <tool>python_execute(code='print(15 + 27)')</tool>\n\n"
-            "2. get_exchange_rate(from='USD', to='EUR') - Get currency exchange rates between two currencies.\n"
-            "   Example: <tool>get_exchange_rate(from='USD', to='EUR')</tool>\n\n"
-            "To use a tool, wrap your call in <tool></tool> tags with the exact function syntax shown above."
+def _get_datetime(**_) -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _get_exchange_rate(**kwargs) -> str:
+    # `from` is a Python keyword so we must use **kwargs, not a named param
+    rates = {"USD": 1.0, "EUR": 0.85, "GBP": 0.73, "JPY": 155.58, "INR": 90.33, "CAD": 1.36, "AUD": 1.52}
+    fc = kwargs.get("from", "USD").upper()
+    tc = kwargs.get("to", "EUR").upper()
+    if fc in rates and tc in rates:
+        rate = round(rates[tc] / rates[fc], 6)
+        return json.dumps({"from": fc, "to": tc, "rate": rate})
+    return json.dumps({"error": f"Currency not supported: {fc} → {tc}. Supported: {sorted(rates)}."})
+
+
+def _web_search(query: str = "", **_) -> str:
+    try:
+        import urllib.parse, urllib.request
+        url = (
+            "https://api.duckduckgo.com/?q="
+            + urllib.parse.quote(query)
+            + "&format=json&no_html=1&skip_disambig=1"
         )
-    else:
-        system_prompt = (
-            "You are a trustworthy assistant that prioritizes accuracy, transparency, and accountability. "
-            "Think step by step using <think> and give your final answer in <answer>. "
-            "Always acknowledge uncertainty and never guess facts you are not confident about."
-        )
-    
-    conversation = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt}
-    ]
-    
-    print(f"\n{model_name}")
-    print(f"User: {prompt}\n")
-    
-    iteration = 0
-    while iteration < max_iterations:
-        iteration += 1
-        
-        # Generate response
-        prompt_text = tokenizer.apply_chat_template(
-            conversation,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        
-        inputs = tokenizer(prompt_text, return_tensors="pt").to("cuda")
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=temperature,
-            top_p=0.9,
-        )
-        
-        response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-        
-        # Add assistant response to conversation
-        conversation.append({"role": "assistant", "content": response})
-        
-        print(f"Response (iteration {iteration}):\n{response}\n")
-        
-        # Check if we have a final answer
-        if '<answer>' in response.lower():
-            break
-        
-        # Check for tool call
-        tool_call = extract_tool_call(response)
-        if tool_call:
-            print(f"[Executing tool: {tool_call['function']}]")
-            tool_result = execute_tool(tool_call, tools)
-            print(f"[Tool result: {tool_result}]\n")
-            
-            # Add tool result using the same role as training data
-            conversation.append({
-                "role": "tool",
-                "content": f"Tool result: {tool_result}"
-            })
+        with urllib.request.urlopen(url, timeout=8) as r:
+            data = json.loads(r.read())
+        abstract = data.get("Abstract", "").strip()
+        related = [
+            t.get("Text", "")
+            for t in data.get("RelatedTopics", [])[:4]
+            if isinstance(t, dict) and t.get("Text")
+        ]
+        if abstract:
+            return abstract
+        if related:
+            return " | ".join(related)
+        return f"No instant summary found for: {query}. Consider a more specific query."
+    except Exception as e:
+        return f"web_search unavailable: {e}"
+
+
+def _read_url(url: str = "", **_) -> str:
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+        text = re.sub(r"<[^>]+>", " ", raw)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > 4000:
+            text = text[:4000] + " … [truncated]"
+        return text
+    except Exception as e:
+        return f"read_url failed: {e}"
+
+
+register_tool("python_execute", "Execute Python code and return stdout/stderr.", {
+    "type": "object",
+    "properties": {"code": {"type": "string", "description": "Python source code to run"}},
+    "required": ["code"],
+}, _python_execute)
+
+register_tool("get_datetime", "Return the current UTC date and time.", {
+    "type": "object", "properties": {}, "required": [],
+}, _get_datetime)
+
+register_tool("web_search", "Search the web for a query and return a summary.", {
+    "type": "object",
+    "properties": {"query": {"type": "string", "description": "Search query string"}},
+    "required": ["query"],
+}, _web_search)
+
+register_tool("read_url", "Fetch and return the text content of a URL.", {
+    "type": "object",
+    "properties": {"url": {"type": "string", "description": "URL to fetch"}},
+    "required": ["url"],
+}, _read_url)
+
+register_tool("get_exchange_rate", "Convert between currencies using fixed reference rates.", {
+    "type": "object",
+    "properties": {
+        "from": {"type": "string", "description": "Source currency code (e.g. USD)"},
+        "to":   {"type": "string", "description": "Target currency code (e.g. EUR)"},
+    },
+    "required": ["from", "to"],
+}, _get_exchange_rate)
+
+
+# Tool profiles (which tools are active per session)
+TOOL_PROFILES: Dict[str, set] = {
+    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+    "compute_only":       {"python_execute"},
+    "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+    "no_tools":           set(),
+}
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+
+class _Metrics:
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._n = 0
+        self._ok = 0
+        self._err = 0
+        self._latencies: List[float] = []
+        self._tokens_out = 0
+        self._tool_counts: Dict[str, int] = {}
+
+    def record(self, latency: float, tokens: int, tools_used: Dict[str, int], ok: bool) -> None:
+        self._n += 1
+        if ok:
+            self._ok += 1
+            self._latencies.append(latency)
+            self._tokens_out += tokens
+            for t, c in tools_used.items():
+                self._tool_counts[t] = self._tool_counts.get(t, 0) + c
         else:
-            # No tool call and no answer - model might be done
-            break
-    
-    return conversation
+            self._err += 1
+
+    def snapshot(self) -> Dict[str, Any]:
+        lats = sorted(self._latencies)
+
+        def pct(p: float) -> float:
+            if not lats:
+                return 0.0
+            idx = max(0, min(int(len(lats) * p / 100), len(lats) - 1))
+            return round(lats[idx], 3)
+
+        return {
+            "requests_total": self._n,
+            "requests_success": self._ok,
+            "requests_error": self._err,
+            "latency_p50_s": pct(50),
+            "latency_p95_s": pct(95),
+            "latency_p99_s": pct(99),
+            "tokens_generated_total": self._tokens_out,
+            "avg_tokens_per_request": round(self._tokens_out / self._ok, 1) if self._ok else 0,
+            "tool_calls_by_name": dict(self._tool_counts),
+        }
 
 
-def save_report(report_data: Dict[str, Any], output_dir: Path, filename: str):
-    """Save a report to JSON file."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / filename
-    with open(output_path, 'w') as f:
-        json.dump(report_data, f, indent=2)
-    print(f"\n📄 Report saved to: {output_path}")
-    return output_path
+METRICS = _Metrics()
+
+# ---------------------------------------------------------------------------
+# Model state — populated on startup, never mutated at request time
+# ---------------------------------------------------------------------------
+
+_MODEL = None
+_TOKENIZER = None
+_MODEL_LABEL = "not_loaded"
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Inference with tool support for interleaved thinking")
-    parser.add_argument(
-        "--model_dir",
-        default="./models/checkpoint_sft",
-        help="Path to the fine-tuned model checkpoint",
+def _system_prompt_for_profile(profile: str) -> str:
+    available = TOOL_PROFILES.get(profile, set())
+    tool_lines = "\n".join(
+        f"  {t} {'✓' if t in available else '✗'}"
+        for t in ["python_execute", "web_search", "read_url", "get_datetime"]
     )
-    parser.add_argument(
-        "--base_model",
-        default="unsloth/Qwen3-0.6B",
-        help="Base model from Hugging Face Hub (e.g., 'unsloth/Qwen3-0.6B')",
+    call_examples = []
+    if "python_execute" in available:
+        call_examples.append("  <tool>python_execute(code='print(2+2)')</tool>")
+    if "web_search" in available:
+        call_examples.append("  <tool>web_search(query='your query here')</tool>")
+    if "read_url" in available:
+        call_examples.append("  <tool>read_url(url='https://example.com')</tool>")
+    if "get_datetime" in available:
+        call_examples.append("  <tool>get_datetime()</tool>")
+    examples_text = "\n".join(call_examples) if call_examples else "  (no tools available this session)"
+    return (
+        "You are a trustworthy AI assistant. Before answering any question, complete a "
+        "CAPABILITY_CHECK inside your <think> block:\n"
+        "  1. What does this question require?\n"
+        "  2. Which of the session tools can address that need?\n"
+        "  3. Is there a gap? If so, how will you handle it honestly?\n\n"
+        f"Session tools:\n{tool_lines}\n\n"
+        f"Tool call syntax (only call ✓ tools):\n{examples_text}\n\n"
+        "Response format:\n"
+        "<think>CAPABILITY_CHECK ... reasoning ...</think>\n"
+        "<answer>your final answer to the user</answer>"
     )
-    parser.add_argument(
-        "--compare",
-        action="store_true",
-        help="Compare custom model with base model",
-    )
-    parser.add_argument("--prompt", default="What is 15 + 27?", help="User prompt")
-    parser.add_argument("--max_new_tokens", type=int, default=2048, help="Max new tokens to generate")
-    parser.add_argument("--max_iterations", type=int, default=10, help="Max tool call iterations")
-    parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument(
-        "--output_dir",
-        default="./reports",
-        help="Directory to save reports",
-    )
-    parser.add_argument(
-        "--no_tools",
-        action="store_true",
-        help="Run base model without tool instructions (only for comparison mode)",
-    )
+
+
+def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
+    m = re.search(r"<tool>(.*?)</tool>", text, re.DOTALL)
+    if not m:
+        return None
+    inner = m.group(1).strip()
+    fm = re.match(r"(\w+)\((.*)\)", inner, re.DOTALL)
+    if not fm:
+        return None
+    name, args_str = fm.group(1), fm.group(2)
+    kwargs: Dict[str, Any] = {}
+    for km in re.finditer(r"(\w+)=(?:(['\"])((?:\\.|(?!\2).)*?)\2|([^,)]+))", args_str):
+        key = km.group(1)
+        val: Any = km.group(3) if km.group(2) else (km.group(4) or "").strip()
+        if km.group(2):
+            try:
+                val = val.encode().decode("unicode_escape")
+            except Exception:
+                pass
+        try:
+            if str(val).replace(".", "").replace("-", "").isdigit():
+                val = float(val) if "." in str(val) else int(val)
+        except Exception:
+            pass
+        kwargs[key] = val
+    return {"function": name, "kwargs": kwargs}
+
+
+def _generate(conversation: list, max_new_tokens: int, temperature: float,
+              greedy: bool = False) -> tuple:
+    """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s)."""
+    prompt = _TOKENIZER.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
+    inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
+    n_in = inputs["input_ids"].shape[1]
+    t0 = time.perf_counter()
+    gen_kwargs: Dict[str, Any] = dict(inputs, max_new_tokens=max_new_tokens)
+    if greedy:
+        gen_kwargs["do_sample"] = False       # deterministic — required for reproducible context degradation study
+    else:
+        gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+    with torch.no_grad():
+        out = _MODEL.generate(**gen_kwargs)
+    elapsed = time.perf_counter() - t0
+    tokens = out[0][n_in:]
+    return _TOKENIZER.decode(tokens, skip_special_tokens=True), n_in, len(tokens), elapsed
+
+# ---------------------------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Trustworthy AI Inference Server", version="1.0.0")
+
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+
+class CompletionRequest(BaseModel):
+    messages: List[Message]
+    tool_profile: str = "all_tools"
+    system_override: Optional[str] = None   # probes use this to inject custom context
+    max_new_tokens: int = 1024
+    temperature: float = 0.7
+    max_tool_iterations: int = 8
+    greedy: bool = False   # deterministic decoding — set True for reproducible degradation evals
+
+
+class ToolRegistration(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    python_code: str   # must define a callable named `tool_fn`
+
+
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    return {"status": "ok", "model": _MODEL_LABEL, "loaded": _MODEL is not None}
+
+
+@app.get("/v1/models")
+def list_models() -> Dict[str, Any]:
+    return {"models": [{"id": _MODEL_LABEL, "loaded": _MODEL is not None}]}
+
+
+@app.get("/v1/tools")
+def list_tools() -> Dict[str, Any]:
+    return {
+        "tools": [t.schema() for t in _REGISTRY.values()],
+        "profiles": {k: sorted(v) for k, v in TOOL_PROFILES.items()},
+    }
+
+
+@app.post("/v1/tools/register")
+def register_tool_endpoint(req: ToolRegistration) -> Dict[str, Any]:
+    ns: Dict[str, Any] = {}
+    try:
+        exec(req.python_code, ns)  # noqa: S102
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Code compile error: {e}")
+    fn = ns.get("tool_fn")
+    if not callable(fn):
+        raise HTTPException(status_code=400, detail="python_code must define a callable named 'tool_fn'")
+    register_tool(req.name, req.description, req.parameters, fn)
+    return {"registered": req.name, "total_tools": len(_REGISTRY)}
+
+
+@app.delete("/v1/tools/{name}")
+def delete_tool(name: str) -> Dict[str, Any]:
+    if name not in _REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Tool '{name}' not found")
+    del _REGISTRY[name]
+    for profile_set in TOOL_PROFILES.values():
+        profile_set.discard(name)
+    return {"removed": name}
+
+
+@app.post("/v1/chat/completions")
+def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
+    if _MODEL is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    system = req.system_override or _system_prompt_for_profile(req.tool_profile)
+    active_tools = TOOL_PROFILES.get(req.tool_profile, set())
+
+    conv: List[Dict] = [{"role": "system", "content": system}]
+    for m in req.messages:
+        conv.append({"role": m.role, "content": m.content})
+
+    tools_used: Dict[str, int] = {}
+    total_tokens = 0
+    first_input_tokens = 0
+    t_start = time.perf_counter()
+
+    try:
+        for iteration in range(req.max_tool_iterations):
+            response, n_in, n_tok, _ = _generate(conv, req.max_new_tokens, req.temperature, req.greedy)
+            if iteration == 0:
+                first_input_tokens = n_in   # context size at the start of this request
+            total_tokens += n_tok
+            conv.append({"role": "assistant", "content": response})
+
+            if "<answer>" in response.lower():
+                break
+
+            tc = _parse_tool_call(response)
+            if tc:
+                fn_name = tc["function"]
+                if fn_name not in active_tools or fn_name not in _REGISTRY:
+                    result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
+                else:
+                    try:
+                        result = _REGISTRY[fn_name].fn(**tc["kwargs"])
+                    except Exception as e:
+                        result = f"Tool execution error: {e}"
+                tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
+                conv.append({"role": "tool", "content": f"Tool result: {result}"})
+            else:
+                break
+
+        latency = time.perf_counter() - t_start
+        final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
+        METRICS.record(latency, total_tokens, tools_used, ok=True)
+
+        return {
+            "response": final,
+            "conversation": conv,
+            "metrics": {
+                "latency_s": round(latency, 3),
+                "input_tokens": first_input_tokens,          # context size at request start — used by degradation study
+                "tokens_generated": total_tokens,
+                "tokens_per_sec": round(total_tokens / latency, 1) if latency > 0 else 0,
+                "tool_calls": tools_used,
+                "tool_iterations": len([m for m in conv if m["role"] == "tool"]),
+            },
+        }
+
+    except Exception as e:
+        METRICS.record(0, 0, {}, ok=False)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics")
+def get_metrics() -> Dict[str, Any]:
+    return METRICS.snapshot()
+
+
+@app.post("/metrics/reset")
+def reset_metrics() -> Dict[str, Any]:
+    METRICS.reset()
+    return {"status": "reset"}
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Trustworthy AI Inference Server")
+    parser.add_argument("--model_dir", default="./models/checkpoint_sft",
+                        help="Path to fine-tuned LoRA checkpoint")
+    parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
+                        help="HuggingFace model ID used when --model_dir does not exist")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--max_seq_length", type=int, default=4096)
     args = parser.parse_args()
 
-    model_dir = Path(args.model_dir)
-    output_dir = Path(args.output_dir)
-    if not model_dir.exists() and not args.compare:
-        raise FileNotFoundError(f"Model directory not found: {model_dir}")
+    global _MODEL, _TOKENIZER, _MODEL_LABEL
+    from unsloth import FastModel  # deferred so the module imports without GPU
 
-    # Initialize tools
-    tools = Tools()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    if args.compare:
-        print(f"Loading base model: {args.base_model}...")
-        base_model, base_tokenizer = FastModel.from_pretrained(
-            model_name=args.base_model,
-            max_seq_length=4096,
-            load_in_4bit=True,
-            dtype=None,
-        )
-        
-        # Load custom model if exists
-        custom_model, custom_tokenizer = None, None
-        if model_dir.exists():
-            print(f"Loading custom model: {model_dir}...")
-            custom_model, custom_tokenizer = FastModel.from_pretrained(
-                model_name=str(model_dir),
-                max_seq_length=4096,
-                load_in_4bit=True,
-                dtype=None,
-            )
-        
-        # Run inference on base model WITHOUT tools (baseline)
-        base_no_tools_conversation = run_inference(
-            base_model, base_tokenizer, args.prompt, 
-            args.max_new_tokens, args.max_iterations, args.temperature, 
-            tools, model_name="BASE MODEL (No Tools)", include_tools=False
-        )
-        
-        # Run inference on base model WITH tool instructions
-        base_with_tools_conversation = run_inference(
-            base_model, base_tokenizer, args.prompt, 
-            args.max_new_tokens, args.max_iterations, args.temperature, 
-            tools, model_name="BASE MODEL (With Tools)", include_tools=True
-        )
-        
-        # Run inference on custom model if loaded
-        custom_conversation = None
-        if custom_model is not None:
-            custom_conversation = run_inference(
-                custom_model, custom_tokenizer, args.prompt,
-                args.max_new_tokens, args.max_iterations, args.temperature,
-                tools, model_name="CUSTOM MODEL", include_tools=True
-            )
-        
-        # Create and save comparison report
-        comparison_report = {
-            "timestamp": timestamp,
-            "prompt": args.prompt,
-            "config": {
-                "base_model": args.base_model,
-                "custom_model": str(model_dir) if model_dir.exists() else "Not found",
-                "max_new_tokens": args.max_new_tokens,
-                "max_iterations": args.max_iterations,
-                "temperature": args.temperature,
-            },
-            "base_model_no_tools": {
-                "conversation": base_no_tools_conversation,
-                "num_turns": len([m for m in base_no_tools_conversation if m["role"] == "assistant"]),
-            },
-            "base_model_with_tools": {
-                "conversation": base_with_tools_conversation,
-                "num_turns": len([m for m in base_with_tools_conversation if m["role"] == "assistant"]),
-            },
-            "custom_model_output": {
-                "conversation": custom_conversation if custom_conversation else None,
-                "num_turns": len([m for m in custom_conversation if m["role"] == "assistant"]) if custom_conversation else 0,
-            } if custom_conversation else None,
-        }
-        
-        # Save comparison report
-        save_report(
-            comparison_report,
-            output_dir,
-            f"comparison_{timestamp}.json"
-        )
-        
-    else:
-        print("Loading custom model...")
-        model, tokenizer = FastModel.from_pretrained(
-            model_name=str(model_dir),
-            max_seq_length=4096,
-            load_in_4bit=True,
-            dtype=None,
-        )
-        
-        conversation = run_inference(
-            model, tokenizer, args.prompt,
-            args.max_new_tokens, args.max_iterations, args.temperature,
-            tools, model_name="CUSTOM MODEL", include_tools=True
-        )
-        
-        # Save single model report
-        single_report = {
-            "timestamp": timestamp,
-            "prompt": args.prompt,
-            "config": {
-                "model": str(model_dir),
-                "max_new_tokens": args.max_new_tokens,
-                "max_iterations": args.max_iterations,
-                "temperature": args.temperature,
-            },
-            "output": {
-                "conversation": conversation,
-                "num_turns": len([m for m in conversation if m["role"] == "assistant"]),
-            },
-        }
-        
-        save_report(
-            single_report,
-            output_dir,
-            f"inference_{timestamp}.json"
-        )
+    model_path = Path(args.model_dir)
+    source = str(model_path) if model_path.exists() else args.base_model
+    _MODEL_LABEL = source
+    print(f"Loading: {source}")
+    _MODEL, _TOKENIZER = FastModel.from_pretrained(
+        model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
+    )
+    FastModel.for_inference(_MODEL)
+    print(f"Ready. Listening on {args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

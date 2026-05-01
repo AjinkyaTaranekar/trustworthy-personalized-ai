@@ -6,6 +6,32 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-01] refactor | 5_context_degradation.py upgraded to server/client pattern
+- **Decision:** Kept `5_context_degradation.py` as a separate script (not merged into `4_benchmark.py`). Reason: different evaluation mode (greedy/deterministic), different scoring (known expected answers per turn), different thesis question (degradation curve vs capability snapshot).
+- **Server changes (`3_infererence.py`):** Added `greedy: bool = False` to `CompletionRequest`; `_generate()` now accepts `greedy` and uses `do_sample=False` when set. Added `input_tokens` to response metrics so clients can track context growth per turn.
+- **Client rewrite (`5_context_degradation.py`):** Removed model loading entirely. Now calls `3_infererence.py` via HTTP, same pattern as `4_benchmark.py`. Uses `greedy=True` by default. `--compare_url` replaces old `--compare` flag. Retains all 12 TURNS, expected answers, tool-mania detection, and head-to-head comparison table.
+- **Overlap note:** 10 of 12 TURNS also appear in `4_benchmark.py BENCHMARK_QUESTIONS` — this is intentional. The benchmark tests sampled quality; the degradation study tests greedy accuracy-vs-context.
+- **Key degradation turns:** Turn 6 (multi-reference: must retrieve values from turns 3 and 5 simultaneously) and Turn 12 (needle-in-haystack at peak context) are the historically most diagnostic failure points.
+- **README + wiki updated** with new commands.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/5_context_degradation.py`, `README.md`, `wiki/sources/code/training-and-benchmark.md`.
+
+## [2026-05-01] refactor | Post-overhaul consistency pass — five gaps fixed
+- **Gap 1 restored:** `get_exchange_rate` mock tool added back to `3_infererence.py` as a 5th built-in tool. Critical: benchmark question 3 ("Convert 500 USD to EUR") requires it; `web_search` is not a reliable substitute for reproducible tests. Added to `all_tools` and `compute_and_search` profiles.
+- **Gap 2 restored:** `--compare_url` added to `4_benchmark.py`. New workflow: start two servers on different ports (base model on 8001, fine-tuned on 8000), pass both URLs to benchmark. Replaces old in-process comparison which required loading both models simultaneously.
+- **Gap 3 restored:** `--questions` and `--max_tool_iters` CLI args added back to `4_benchmark.py`. Previously removed during overhaul; required by README examples.
+- **Gap 4 restored:** `_print_comparison_table` re-added to `4_benchmark.py`. Shows answer-tag rate, CAPABILITY_CHECK rate, tool calls, latency, throughput side-by-side across runs.
+- **Gap 5 — Docs:** README updated (V1 quickstart commands were broken — pointed to old `--compare` flag that no longer exists); `wiki/sources/code/training-and-benchmark.md` updated to reflect server/client architecture, drift detection workflow, and ablation table. CLAUDE.md updated with §4.5 Pipeline Code Edit — explicit consistency checklist for future pipeline edits.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/4_benchmark.py`, `README.md`, `wiki/sources/code/training-and-benchmark.md`, `CLAUDE.md`.
+
+## [2026-05-01] decision | Inference server + benchmark client split (frontier-lab pattern)
+- **Problem:** Model loading was coupled with benchmarking — every eval required a GPU, reloading the model each run, and tool logic was duplicated across inference and benchmark scripts.
+- **Solution:** Split into server + client, mirroring how Anthropic/OpenAI/DeepSeek operate. `3_infererence.py` is now a FastAPI server; `4_benchmark.py` is a pure HTTP client with zero GPU dependency.
+- **Server (`3_infererence.py`):** Loads model once on startup. Tool registry pattern: 4 built-in tools (`python_execute`, `web_search`, `read_url`, `get_datetime`) plus `POST /v1/tools/register` for runtime additions. Server-side tool execution loop. Endpoints: `/health`, `/v1/models`, `/v1/tools`, `/v1/chat/completions`, `/metrics`, `/metrics/reset`. Metrics: latency p50/p95/p99, tokens/s, tool call counts by name.
+- **Client (`4_benchmark.py`):** Two suites — (1) constitutional drift probes (12 principles, regex-graded, no model judge) and (2) multi-turn conversation benchmark (14 turns + 6 edge cases). Client maintains conversation history across turns; server is stateless per request. Output: structured JSON reports in `reports/`.
+- **Edge cases added:** empty input, single char, prompt injection attempt, tool hallucination (asking for non-existent `send_email`), math-without-tool request, impossible future prediction.
+- **Drift mitigation workflow (when probe detects drift):** (1) Rollback to last good checkpoint. (2) Increase GRPO KL coefficient β. (3) Add SFT replay mixing to GRPO batch.
+- **Files changed:** `pipeline/3_infererence.py` (rewrite), `pipeline/4_benchmark.py` (rewrite).
+
 ## [2026-05-01] decision | Constitutional drift detection — probe suite added to 4_benchmark.py
 - **Problem:** No mechanism existed to detect when RL training was eroding SFT-learned constitutional behaviour. The benchmark only measured generation speed, tool calls, and context length — not constitutional adherence.
 - **Solution:** Added `CONSTITUTIONAL_PROBES` (12 fixed questions, one per detectable principle) to `pipeline/4_benchmark.py`. Each probe uses regex / rule-based automated scoring — no judge model, to avoid the self-referential drift problem.
