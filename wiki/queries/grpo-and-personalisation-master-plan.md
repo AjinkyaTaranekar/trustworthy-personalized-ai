@@ -68,9 +68,9 @@ The thesis has a complete SFT pipeline and a well-designed RL architecture on pa
 
 **This section is drawn directly from `docs/security-analysis/security-review.tex` §5 "Mitigations and Open Problems". The author (Ajinkya) explicitly states: "The following problems remain open and needs to be addressed before the GRPO stage and any public deployment." Skipping these is out of scope.**
 
-### Blocker 1 — Prompt Injection Hardening (OWASP LLM01) — HIGHEST PRIORITY
+### Blocker 1 — Prompt Injection Hardening (OWASP LLM01) — ✅ DONE (2026-05-01)
 
-`read_url` and `web_search` retrieve live web content that may embed adversarial instructions. The model processes tool-returned content as trusted context (Principle 10 makes it structurally disposed to follow tool outputs). The Log-To-Leak attack pattern demonstrates that a malicious MCP server can silently instruct the model to exfiltrate user queries through a logging tool with no visible performance degradation. **Fix required:** Tool outputs must be parsed through a separate extraction layer that converts arbitrary web content into structured data before the main model receives it. No equivalent runtime defence exists in the current architecture. This is the highest-priority gap because live web content is already in scope.
+**Implemented:** AST-based code validator (`_validate_code`) blocks all non-math imports and dangerous builtins before any `subprocess.run` call in `3_infererence.py`, `sft_rejection_sampler.py`, and `sft_math_question_generator.py`. Tool-output sanitiser (`_sanitise_tool_output`) strips prompt-injection patterns (`<tool>`, `<think>`, `ignore previous instructions`, etc.) from web/URL content before it enters the model context, truncates to 3,000 chars, and wraps in a structured `[TOOL_RESULT]` envelope. **Remaining gap:** process-level isolation (seccomp/containers) for a production deployment — current fix is training/research minimum viable hardening. See log `[2026-05-01] refactor | Security Blocker 1`.
 
 ### Blocker 2 — Independent Constitutional Verification (OWASP LLM04)
 

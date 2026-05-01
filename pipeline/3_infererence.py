@@ -26,9 +26,11 @@ Benchmark client (4_benchmark.py) calls POST /v1/chat/completions.
 """
 
 import argparse
+import ast
 import json
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -39,6 +41,65 @@ import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+# ---------------------------------------------------------------------------
+# Code safety validation + tool-output sanitisation (Security Blocker 1 — OWASP LLM01)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_IMPORTS = frozenset({
+    "math", "statistics", "decimal", "fractions", "cmath",
+    "random", "itertools", "functools", "operator", "collections",
+    "numbers", "string", "re",
+})
+
+_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
+
+
+def _validate_code(code: str) -> tuple[bool, str]:
+    """AST-based validator: only math/statistics stdlib imports allowed.
+    Blocks os, sys, subprocess, socket, requests and dangerous builtins."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"syntax_error: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in _ALLOWED_IMPORTS:
+                    return False, f"blocked_import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if top and top not in _ALLOWED_IMPORTS:
+                return False, f"blocked_import: {node.module}"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
+                return False, f"blocked_builtin: {node.func.id}"
+
+    return True, "ok"
+
+
+# Patterns that could hijack the model's instruction context if returned by a tool.
+# Strips XML control tags the model reads, and common injection phrases from web content.
+_INJECTION_RE = re.compile(
+    r"</?tool>|</?think>|</?answer>|CAPABILITY_CHECK"
+    r"|ignore\s+(all\s+)?previous\s+(instructions?|prompts?|context)"
+    r"|disregard\s+previous|you\s+are\s+now\s+|new\s+instructions?\s*:",
+    re.IGNORECASE,
+)
+
+_MAX_TOOL_OUTPUT = 3000  # characters — prevents context flooding via large web pages
+
+
+def _sanitise_tool_output(tool_name: str, raw: str) -> str:
+    """Strip prompt-injection patterns from tool output before injecting into the model context.
+    Wraps result in a structured envelope so the model sees it as data, not instruction."""
+    cleaned = _INJECTION_RE.sub("[FILTERED]", raw)
+    if len(cleaned) > _MAX_TOOL_OUTPUT:
+        cleaned = cleaned[:_MAX_TOOL_OUTPUT] + " … [truncated]"
+    return f"[TOOL_RESULT: {tool_name}]\n{cleaned}\n[/TOOL_RESULT]"
+
 
 # ---------------------------------------------------------------------------
 # Tool registry
@@ -65,9 +126,12 @@ def register_tool(name: str, description: str, parameters: Dict[str, Any], fn: C
 # ── Built-in tools ──────────────────────────────────────────────────────────
 
 def _python_execute(code: str = "") -> str:
+    safe, reason = _validate_code(code)
+    if not safe:
+        return f"Error: code rejected by safety validator ({reason}). Only math/statistics imports are permitted."
     try:
         result = subprocess.run(
-            ["python", "-c", code], capture_output=True, text=True, timeout=10,
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=10,
         )
         out = (result.stdout or result.stderr).strip()
         return out if out else "Code executed successfully (no output)"
@@ -413,11 +477,14 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
                 else:
                     try:
-                        result = _REGISTRY[fn_name].fn(**tc["kwargs"])
+                        raw_result = _REGISTRY[fn_name].fn(**tc["kwargs"])
                     except Exception as e:
-                        result = f"Tool execution error: {e}"
+                        raw_result = f"Tool execution error: {e}"
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
-                conv.append({"role": "tool", "content": f"Tool result: {result}"})
+                # Sanitise before injecting into context — strips prompt-injection
+                # patterns that adversarial web content could embed (OWASP LLM01).
+                result = _sanitise_tool_output(fn_name, str(raw_result))
+                conv.append({"role": "tool", "content": result})
             else:
                 break
 

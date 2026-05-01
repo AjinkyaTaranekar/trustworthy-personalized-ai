@@ -6,6 +6,15 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-01] refactor | Security Blocker 1 — code sandbox + tool-output injection hardening
+- **Trigger:** Pipeline audit revealed LLM-generated Python code was executed via subprocess without import restrictions in three files; web/URL tool output was injected raw into model context (prompt injection surface).
+- **Fix 1 — AST-based code validator added to all three files:** `_validate_code()` parses LLM-generated code with Python's `ast` module before any `subprocess.run` call. Blocks all non-math imports (`os`, `sys`, `subprocess`, `socket`, `requests`, etc.) and dangerous builtins (`exec`, `eval`, `compile`, `__import__`, `open`). Allowed imports: `math`, `statistics`, `decimal`, `fractions`, `cmath`, `random`, `itertools`, `functools`, `operator`, `collections`, `numbers`, `string`, `re`. Returns `(is_safe, reason)` — unsafe code is rejected with a descriptive error rather than executed.
+- **Fix 2 — Tool-output sanitiser added to inference server:** `_sanitise_tool_output(tool_name, raw)` strips prompt-injection patterns from web/URL content before it enters the model's conversation context. Strips `<tool>`, `<think>`, `<answer>`, `CAPABILITY_CHECK`, `ignore previous instructions` variants, and similar hijack phrases using `_INJECTION_RE`. Truncates to 3,000 characters to prevent context flooding. Wraps in structured `[TOOL_RESULT: name]\n...\n[/TOOL_RESULT]` envelope so the model sees it as data, not instruction.
+- **Applied to:** `_python_execute()` in `3_infererence.py`; `execute_code_blocks()` in `sft_rejection_sampler.py`; `verify_answer_with_execution()` in `sft_math_question_generator.py`. Tool loop in `chat_completions()` (`3_infererence.py`) now routes all tool results through `_sanitise_tool_output` before appending to conversation.
+- **OWASP mapping:** Addresses LLM01 (Prompt Injection) at the tool-output boundary and the code-execution boundary. Partial address of LLM04 (Data and Model Poisoning) — adversarially crafted web content can no longer embed instructions into SFT training data via the rejection sampler.
+- **Remaining open (Blocker 1):** The `_python_execute` validator only covers the allowlist approach. A proper sandbox (process isolation, seccomp on Linux) would be the production fix. This is the training/research context minimum viable hardening.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/sft_rejection_sampler.py`, `pipeline/sft_math_question_generator.py`.
+
 ## [2026-05-01] decision | Source-document alignment pass — researchplan.tex + security-review.tex corrections
 - **Trigger:** User asked to strictly adhere to `researchplan.tex` and `docs/security-analysis/security-review.tex` after noticing the master plan diverged from the formal research plan.
 - **Source documents read in full:** `researchplan.tex` (formal CS7CS6 research plan — official research question, 5 objectives, 7 phases, 2 pivots, evaluation strategy) and `docs/security-analysis/security-review.tex` (security paper — local-first architecture, four open security blockers that must be resolved before GRPO).

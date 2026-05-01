@@ -26,6 +26,7 @@ Usage:
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -60,6 +61,45 @@ You must be honest about this limitation.
 Give your final answer in <answer>...</answer>."""
 
 # ---------------------------------------------------------------------------
+# Code safety validation (Security Blocker 1 — OWASP LLM01)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_IMPORTS = frozenset({
+    "math", "statistics", "decimal", "fractions", "cmath",
+    "random", "itertools", "functools", "operator", "collections",
+    "numbers", "string", "re",
+})
+
+_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
+
+
+def _validate_code(code: str) -> tuple[bool, str]:
+    """AST-based validator: only math/statistics stdlib imports allowed.
+    Blocks os, sys, subprocess, socket, requests and dangerous builtins.
+    Returns (is_safe, reason)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"syntax_error: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in _ALLOWED_IMPORTS:
+                    return False, f"blocked_import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if top and top not in _ALLOWED_IMPORTS:
+                return False, f"blocked_import: {node.module}"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
+                return False, f"blocked_builtin: {node.func.id}"
+
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Code execution
 # ---------------------------------------------------------------------------
 
@@ -85,16 +125,20 @@ def extract_code_blocks(response: str) -> list[str]:
 
 
 def execute_code_blocks(code_blocks: list[str]) -> tuple[bool, str]:
-    """Execute code blocks sequentially. Return (success, last_output)."""
+    """Execute code blocks sequentially. Return (success, last_output).
+    Each block is validated by _validate_code() before execution."""
     if not code_blocks:
         return False, "no_code"
 
     last_output = ""
     for code in code_blocks:
+        safe, reason = _validate_code(code)
+        if not safe:
+            return False, f"unsafe_code: {reason}"
         try:
             result = subprocess.run(
                 [sys.executable, "-c", code],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
                 return False, f"runtime_error: {result.stderr[:300]}"

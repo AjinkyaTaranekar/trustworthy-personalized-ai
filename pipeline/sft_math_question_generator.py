@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import ast
 import json
 import os
 import random
@@ -143,6 +144,45 @@ The training goal is: model should say "I don't have code execution available, s
 this precisely. Here is what I can do: [explain manual approach or ask user to run code]"."""
 
 # ---------------------------------------------------------------------------
+# Code safety validation (Security Blocker 1 — OWASP LLM01)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_IMPORTS = frozenset({
+    "math", "statistics", "decimal", "fractions", "cmath",
+    "random", "itertools", "functools", "operator", "collections",
+    "numbers", "string", "re",
+})
+
+_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
+
+
+def _validate_code(code: str) -> tuple[bool, str]:
+    """AST-based validator: only math/statistics stdlib imports allowed.
+    Blocks os, sys, subprocess, socket, requests and dangerous builtins.
+    Returns (is_safe, reason)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"syntax_error: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in _ALLOWED_IMPORTS:
+                    return False, f"blocked_import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if top and top not in _ALLOWED_IMPORTS:
+                return False, f"blocked_import: {node.module}"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
+                return False, f"blocked_builtin: {node.func.id}"
+
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Answer verification via Python execution
 # ---------------------------------------------------------------------------
 
@@ -181,11 +221,15 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
             code = code[6:]
     code = code.strip()
 
-    # Execute the code
+    # Validate then execute the LLM-generated verification code
+    safe, reason = _validate_code(code)
+    if not safe:
+        return False, f"unsafe_code: {reason}"
+
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
             return False, f"execution_error: {result.stderr[:200]}"
