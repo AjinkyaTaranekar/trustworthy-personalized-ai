@@ -6,6 +6,15 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-01] refactor | Pipeline SFT data quality overhaul — multi-turn support + full constitution coverage
+
+- **Problem 1 (single-turn only):** All training data was one-sentence single-turn questions. Real users write paragraphs of context and hold multi-turn dialogues. Fixed by adding two new categories to `sft_question_generator.py`: `verbose_context_behavioral` (200 paragraph-style inputs) and `multi_turn_conversation` (150 three-to-five-turn scaffolds).
+- **Problem 2 (constitution gaps):** `CRITIQUE_PROMPT` only checked principles 1–11. Principles 12–19 (Tool Failure Handling, No Tool Faking, Hold Under Pressure, Explicit Self-Correction, Knowledge Cutoff Awareness, Multi-Step Clarification, Explicit I Don't Know, Search for Entity Facts) were never verified. Fixed: critique prompt now checks all 19 against the full text of each principle.
+- **Problem 3 (tool availability monoculture):** Draft generation always assumed `python_execute` available, `web_search` not. Constitution principles 5, 11, 16, 19 have different correct behaviours depending on which tools are present. Fixed: four `TOOL_PROFILES` introduced; each example is assigned a random profile weighted by category (search-heavy categories get `all_tools`/`compute_only` split; neutral categories get even spread).
+- **Problem 4 (missing `entity_facts_web_search` ideal behaviour):** Category fell back to vague fallback. Fixed: full `IDEAL_BEHAVIORS` entry added for all 11 categories including the two new ones.
+- **Problem 5 (`TRAINING_SYSTEM_PROMPT` incomplete):** Summarised 19 principles into vague bullets. Replaced with `TRAINING_SYSTEM_PROMPT_TEMPLATE` that lists all 19 principles explicitly and injects the actual session tool context.
+- **Files changed:** `pipeline/sft_question_generator.py`, `pipeline/sft_gold_response_generator.py`.
+
 ## [2026-05-01] ingest | 7 more PDFs acquired; 6 stubs upgraded; AppraisePLM identified + wiki source page
 - **User manually added 7 PDFs** with short ACM/CoNLL filenames. Identified contents:
   - `2025.conll-1.16.pdf` = **AppraisePLM** — "An Appraisal Theoretic Approach to Modelling Affect Flow in Conversation Corpora" — Debnath, Graham, **Conlan** (TCD ADAPT Centre), CoNLL 2025. **Supervisor is co-author. Experiment 2 is now unblocked.**

@@ -3,3 +3,5 @@ trl
 transformers
 datasets
 torch
+litellm
+python-dotenv

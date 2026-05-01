@@ -19,10 +19,18 @@ Usage:
 import argparse
 import json
 import os
+import random
 import time
 from pathlib import Path
 
 import litellm
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Retry config — overridden by CLI args in main()
+_MAX_RETRIES: int = 5
+_BASE_DELAY: float = 5.0
 
 # ---------------------------------------------------------------------------
 # Category definitions
@@ -137,6 +145,28 @@ CATEGORIES = {
         ],
         "domains": ["current office holders", "software versions", "sports records", "population statistics", "legal/regulatory info", "company leadership", "product releases"],
     },
+    "verbose_context_behavioral": {
+        "count": 200,
+        "description": "User narrates a paragraph (or several) of personal context before asking a question. Tests whether the model identifies the actual question, picks out the relevant context, and asks for the single remaining critical unknown rather than overwhelming the user with follow-ups or ignoring the context they already gave.",
+        "examples": [
+            "I'm a 34-year-old software engineer, been at the same company 6 years, earning €85k. I have two kids aged 5 and 8, a mortgage with 15 years left, and my company is about to restructure. I've been offered a position at a startup that pays €110k but they only have 6 months runway. My wife is nervous but supportive. Should I take the job?",
+            "So I've been trying to lose weight for 3 months. I've cut down on sugar, I'm walking 30 minutes a day, and I've reduced my portions. I've only lost 2kg. I'm 47, 5'9\", about 95kg. Desk job, sleep 5-6 hours because of deadlines. Tried low-carb twice before with mixed results. What am I doing wrong?",
+            "Hi, bit of a long one sorry. I'm finishing my undergrad in computer science, first in my family to go to college. I've got a graduate job offer for €42k from a large bank doing internal tooling. I also got accepted to an MSc in ML at a decent university — full-time, €12k fees, no scholarship. I have €8k saved and some student debt. I'm 22. My parents think I should take the job. What would you do?",
+        ],
+        "domains": ["career decisions with rich context", "health and fitness after failed attempts", "financial decisions under constraints", "education vs employment dilemmas", "housing decisions with family context", "relationship advice with backstory"],
+        "format": "verbose_single_turn",
+    },
+    "multi_turn_conversation": {
+        "count": 150,
+        "description": "A 3-5 turn user-side scaffold where the user progressively reveals context across turns. The model must ask good clarifying questions, track what it already knows, and converge on useful advice as context fills in — not repeat questions it already asked or ignore information already given.",
+        "examples": [
+            '{"turns": ["I want to start investing.", "I have about €500 a month I can put away.", "I\'m 29, no dependents, emergency fund is sorted.", "I\'m comfortable with medium risk, I\'d be upset but not panicked by a 20% dip."]}',
+            '{"turns": ["Help me plan a birthday dinner for my friend.", "She\'s vegetarian and has a nut allergy.", "We\'re in Dublin, budget is around €40 per person.", "About 8 people — mix of her close friends and some people she doesn\'t know that well."]}',
+            '{"turns": ["I\'m thinking about doing a PhD.", "In computer science, probably focusing on NLP or ML.", "I have a first-class undergrad and a distinction in my MSc.", "I\'m 26, no partner, no mortgage. The academic job market worries me though."]}',
+        ],
+        "domains": ["financial planning", "event planning", "career advice", "learning paths", "health consultation", "travel planning", "technology choices"],
+        "format": "multi_turn",
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -169,6 +199,12 @@ TWO_TURN_FORMAT = """For the adversarial_pressure category, each item should be 
 {"turn_1": "the initial question", "turn_2": "the follow-up pressure after model correctly refuses"}
 Return an array of these objects."""
 
+MULTI_TURN_FORMAT = """For the multi_turn_conversation category, each item is a JSON object with a "turns" array containing 3-5 user messages that progressively reveal context. Only user messages — do NOT write assistant responses.
+Example: {"turns": ["opening message", "adds more context", "answers the model's implied question", "final constraint"]}
+Return an array of these objects. Make turns feel natural — the user is typing messages in a real chat, not filling out a form."""
+
+VERBOSE_SINGLE_TURN_FORMAT = """For the verbose_context_behavioral category, each question is a long paragraph (3-8 sentences) where the user provides rich personal context before asking. Return a plain JSON array of these paragraph-style question strings."""
+
 SINGLE_TURN_FORMAT = "Return a plain JSON array of question strings."
 
 # ---------------------------------------------------------------------------
@@ -186,20 +222,46 @@ def generate_questions_for_category(
     spec = CATEGORIES[category_name]
     is_two_turn = spec.get("format") == "two_turn"
 
+    fmt = spec.get("format", "single_turn")
+    if fmt == "two_turn":
+        format_instruction = TWO_TURN_FORMAT
+    elif fmt == "multi_turn":
+        format_instruction = MULTI_TURN_FORMAT
+    elif fmt == "verbose_single_turn":
+        format_instruction = VERBOSE_SINGLE_TURN_FORMAT
+    else:
+        format_instruction = SINGLE_TURN_FORMAT
+
     prompt = QUESTION_GENERATION_PROMPT.format(
         category_name=category_name,
         description=spec["description"],
         domains=", ".join(spec["domains"]),
         examples="\n".join(f"- {e}" for e in spec["examples"]),
         count=count,
-        format_instruction=TWO_TURN_FORMAT if is_two_turn else SINGLE_TURN_FORMAT,
+        format_instruction=format_instruction,
     )
 
     kwargs = dict(model=model, max_tokens=4096, messages=[{"role": "user", "content": prompt}])
     if api_base:
         kwargs["api_base"] = api_base
 
-    response = litellm.completion(**kwargs)
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = litellm.completion(**kwargs)
+            break
+        except litellm.RateLimitError:
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 2)
+            print(f"  Rate limit. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
+            time.sleep(wait)
+        except (litellm.APIConnectionError, litellm.Timeout):
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _BASE_DELAY * (2 ** attempt)
+            print(f"  Connection error. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
+            time.sleep(wait)
+
     raw = response.choices[0].message.content.strip()
 
     # Strip markdown code fences if present
@@ -212,21 +274,29 @@ def generate_questions_for_category(
     questions = json.loads(raw)
 
     # Normalise to list of dicts with consistent schema
+    fmt = spec.get("format", "single_turn")
     result = []
     for q in questions:
         if isinstance(q, str):
             result.append({
                 "question": q,
                 "category": category_name,
-                "format": "single_turn",
+                "format": fmt if fmt == "verbose_single_turn" else "single_turn",
             })
         elif isinstance(q, dict):
-            result.append({
-                "question": q.get("turn_1", ""),
-                "follow_up": q.get("turn_2", ""),
-                "category": category_name,
-                "format": "two_turn",
-            })
+            if "turns" in q:
+                result.append({
+                    "turns": q["turns"],
+                    "category": category_name,
+                    "format": "multi_turn",
+                })
+            elif "turn_1" in q:
+                result.append({
+                    "question": q.get("turn_1", ""),
+                    "follow_up": q.get("turn_2", ""),
+                    "category": category_name,
+                    "format": "two_turn",
+                })
 
     return result
 
@@ -240,10 +310,12 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Part A questions for constitution-based SFT")
     parser.add_argument("--count", type=int, default=None,
                         help="Questions per category (overrides per-category defaults)")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Smoke test: generate 1 question per category and write to data/smoke_questions.jsonl")
     parser.add_argument("--category", type=str, default="all",
                         choices=["all"] + list(CATEGORIES.keys()),
                         help="Which category to generate (default: all)")
-    parser.add_argument("--output", type=str, default="pipeline/data/questions_partA.jsonl",
+    parser.add_argument("--output", type=str, default="data/questions_partA.jsonl",
                         help="Output JSONL file path")
     parser.add_argument("--model", type=str, default="claude-sonnet-4-5",
                         help="Model string for litellm (e.g. claude-sonnet-4-5, gpt-4o-mini, ollama/llama3.2)")
@@ -251,11 +323,20 @@ def main():
                         help="Custom API base URL (e.g. http://localhost:11434 for Ollama)")
     parser.add_argument("--batch_size", type=int, default=50,
                         help="Questions to request per API call (reduce if hitting token limits)")
+    parser.add_argument("--max_retries", type=int, default=5,
+                        help="Max retry attempts on rate limit / connection errors (default: 5)")
+    parser.add_argument("--base_delay", type=float, default=5.0,
+                        help="Base delay in seconds for exponential backoff (default: 5.0)")
     args = parser.parse_args()
 
-    # litellm reads API keys from env vars automatically:
-    # ANTHROPIC_API_KEY, OPENAI_API_KEY, GROQ_API_KEY, etc.
-    # For Ollama: set OLLAMA_API_BASE or pass --api_base
+    global _MAX_RETRIES, _BASE_DELAY
+    _MAX_RETRIES = args.max_retries
+    _BASE_DELAY = args.base_delay
+
+    if args.smoke:
+        args.count = 1
+        args.output = "data/smoke_questions.jsonl"
+        print("Smoke test mode: 1 question per category → data/smoke_questions.jsonl")
 
     categories_to_run = list(CATEGORIES.keys()) if args.category == "all" else [args.category]
 
@@ -265,7 +346,7 @@ def main():
     with open(args.output, "w", encoding="utf-8") as f:
         for cat_name in categories_to_run:
             target_count = args.count or CATEGORIES[cat_name]["count"]
-            print(f"\n[{cat_name}] Generating {target_count} questions...")
+            print(f"\n[{cat_name}] Generating {target_count} question(s)...")
 
             generated = []
             remaining = target_count
@@ -285,29 +366,22 @@ def main():
                     remaining -= len(batch_questions)
                     print(f"  Got {len(batch_questions)} questions. Total so far: {len(generated)}")
 
-                    # Courtesy pause
                     if remaining > 0:
                         time.sleep(1)
 
                 except json.JSONDecodeError as e:
-                    print(f"  Warning: JSON parse error in batch: {e}. Retrying...")
+                    print(f"  JSON parse error: {e}. Retrying...")
                     time.sleep(2)
                     continue
                 except Exception as e:
-                    if "rate" in str(e).lower():
-                        print("  Rate limit hit. Waiting 30s...")
-                        time.sleep(30)
-                    else:
-                        print(f"  Error: {e}. Retrying...")
-                        time.sleep(3)
-                    continue
+                    print(f"  Error: {e}. Skipping category.")
+                    break
 
-            # Write to file
             for item in generated:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
                 total_written += 1
 
-            print(f"  [DONE] {len(generated)} questions written for {cat_name}")
+            print(f"  [DONE] {len(generated)} question(s) written for {cat_name}")
 
     print(f"\nTotal questions written: {total_written}")
     print(f"Output: {args.output}")

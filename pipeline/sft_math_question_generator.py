@@ -28,6 +28,13 @@ import time
 from pathlib import Path
 
 import litellm
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Retry config — overridden by CLI args in main()
+_MAX_RETRIES: int = 5
+_BASE_DELAY: float = 5.0
 
 # ---------------------------------------------------------------------------
 # Question type specifications
@@ -231,7 +238,24 @@ def generate_math_questions(
     kwargs = dict(model=model, max_tokens=4096, messages=[{"role": "user", "content": prompt}])
     if api_base:
         kwargs["api_base"] = api_base
-    response = litellm.completion(**kwargs)
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = litellm.completion(**kwargs)
+            break
+        except litellm.RateLimitError:
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 2)
+            print(f"  Rate limit. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
+            time.sleep(wait)
+        except (litellm.APIConnectionError, litellm.Timeout):
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _BASE_DELAY * (2 ** attempt)
+            print(f"  Connection error. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
+            time.sleep(wait)
+
     raw = response.choices[0].message.content.strip()
 
     if raw.startswith("```"):
@@ -277,10 +301,12 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Part B verifiable math questions")
     parser.add_argument("--count", type=int, default=None,
                         help="Questions per type (overrides per-type defaults)")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Smoke test: generate 1 question per type → data/smoke_questions_partB.jsonl")
     parser.add_argument("--type", type=str, default="all",
                         choices=["all"] + list(MATH_QUESTION_TYPES.keys()),
                         help="Question type (default: all)")
-    parser.add_argument("--output", type=str, default="pipeline/data/questions_partB.jsonl",
+    parser.add_argument("--output", type=str, default="data/questions_partB.jsonl",
                         help="Output JSONL file")
     parser.add_argument("--model", type=str, default="claude-haiku-4-5-20251001",
                         help="litellm model string (any small/fast model works for math gen)")
@@ -292,9 +318,22 @@ def main():
                         help="Skip verification (faster but less quality assurance)")
     parser.add_argument("--batch_size", type=int, default=50,
                         help="Questions per API call")
+    parser.add_argument("--max_retries", type=int, default=5,
+                        help="Max retry attempts on rate limit / connection errors (default: 5)")
+    parser.add_argument("--base_delay", type=float, default=5.0,
+                        help="Base delay in seconds for exponential backoff (default: 5.0)")
     args = parser.parse_args()
 
-    # litellm reads API keys from env vars automatically
+    global _MAX_RETRIES, _BASE_DELAY
+    _MAX_RETRIES = args.max_retries
+    _BASE_DELAY = args.base_delay
+
+    if args.smoke:
+        args.count = 1
+        args.output = "data/smoke_questions_partB.jsonl"
+        args.no_verify = True
+        print("Smoke test mode: 1 question per type → data/smoke_questions_partB.jsonl (verification skipped)")
+
     should_verify = args.verify and not args.no_verify
     types_to_run = list(MATH_QUESTION_TYPES.keys()) if args.type == "all" else [args.type]
 
@@ -331,13 +370,8 @@ def main():
                     time.sleep(2)
                     continue
                 except Exception as e:
-                    if "rate" in str(e).lower():
-                        print("  Rate limit. Waiting 30s...")
-                        time.sleep(30)
-                    else:
-                        print(f"  Error: {e}. Retrying...")
-                        time.sleep(3)
-                    continue
+                    print(f"  Error: {e}. Skipping type.")
+                    break
 
             for item in generated:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")

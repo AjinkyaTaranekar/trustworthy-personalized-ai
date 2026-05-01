@@ -35,6 +35,9 @@ import time
 from pathlib import Path
 
 import litellm
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # System prompt for generation (same as final training, but minimal tools)
