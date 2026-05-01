@@ -6,6 +6,22 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-01] ingest | 7 more PDFs acquired; 6 stubs upgraded; AppraisePLM identified + wiki source page
+- **User manually added 7 PDFs** with short ACM/CoNLL filenames. Identified contents:
+  - `2025.conll-1.16.pdf` = **AppraisePLM** — "An Appraisal Theoretic Approach to Modelling Affect Flow in Conversation Corpora" — Debnath, Graham, **Conlan** (TCD ADAPT Centre), CoNLL 2025. **Supervisor is co-author. Experiment 2 is now unblocked.**
+  - `3772318.3791915.pdf` = **Jain et al. CHI 2026** — "Interaction Context Often Increases Sycophancy in LLMs" — 38-user, 2-week real interaction study; memory profiles +33–45% agreement sycophancy.
+  - `2395123.2395129.pdf` = **Kay & Kummerfeld 2013** — "Creating Personalized Systems that People Can Scrutinize and Control" — foundational scrutability paper (5 problems, 4 principles, Personis framework).
+  - `3631700.3664903.pdf` = **Akbar & Conlan UMAP 2024** — "Towards Integrating Human-in-the-loop Control in Proactive Intelligent Personalised Agents" — HITL activation framework; supervisor Conlan co-author.
+  - `3631700.3665182.pdf` = **Jeromela & Conlan UMAP 2024** — "Devising Scrutable User Models for Time Management Assistants" — 6 IPA challenges, Stages concept; supervisor Conlan co-author.
+  - `Synthetic_Attachment_AI_Psychology.pdf` = **Lipin 2025** — "Synthetic Attachment: Emotional Reactivity, Parasocial Bonds, and the Psychology of Human-AI Relationships" — clinical theory paper; SARRS tool; parasocial bonds claim.
+  - `2024.findings-emnlp.888.pdf` = duplicate of the Zheng EMNLP 2024 paper already downloaded.
+- **6 stub Literature Notes fully rewritten** with content from actual PDFs: AppraisePLM, Jain CHI 2026, Kay & Kummerfeld 2013, Akbar & Conlan UMAP 2024, Jeromela & Conlan UMAP 2024, Lipin 2025.
+- **Wiki source page created**: `sources/papers/appraise-plm.md` — detailed architecture notes + significance for Experiment 2.
+- **Checklist updated**: 7 more papers marked [x]; only 2 remain [ ] (Budzyń 2025 Lancet; Gemma 4 TR).
+- **Index updated**: AppraisePLM added to Papers — Empathy/affect; "Cited but not in docs/Assets/" reduced from 12 to 2 entries.
+- **Key finding**: AppraisePLM code is at https://github.com/alokdebnath/appraise-PLM — integration into the thesis pipeline can proceed.
+- **No contradictions found** with existing wiki content.
+
 ## [2026-04-30] ingest | 20 new papers — Literature Notes filled + 12 stubs + 6 wiki source pages
 - **User added 20 PDFs** to `docs/Assets/` (Obsidian auto-created empty Literature Notes for all of them). All 20 Literature Notes filled with key claims, thesis relevance, and open questions.
 - **Papers filled (overpersonalisation/scrutability cluster):** OP-Bench, RPEval (How Does Personalized Memory Shape LLM Behavior), Towards Understanding Sycophancy in Language Models (Sharma 2024), SycEval, Context Length Alone Hurts LLM Performance, PrefEval (Do LLMs Recognize Your Preferences), Transparent and Scrutable Recommendations (UPR), TEARS.

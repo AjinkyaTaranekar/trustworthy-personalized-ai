@@ -89,6 +89,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ### Papers — Empathy / affect
 - [[sources/papers/xai-sentiment-deepseek-r1]] — transparent sentiment classification
+- [[sources/papers/appraise-plm]] — AppraisePLM: 21-dim appraisal regression + emotion classification; CoNLL 2025; Debnath, Graham, Conlan (TCD); unblocks Experiment 2
 
 ### Papers — Personalisation / over-personalisation
 - [[sources/papers/op-bench]] — first benchmark for over-personalisation; 26–61% degradation from memory augmentation
@@ -165,15 +166,5 @@ _None yet. Ask me a durable question and I will offer to file the answer here._
 
 Papers with stub Literature Notes but no PDF. Full checklist: [[questions/2026-04-30-asset-acquisition-todo]].
 
-- Debnath et al. 2025 — **AppraisePLM** (blocks Experiment 2; no arXiv found)
-- Jain et al. CHI 2026 — memory injection → sycophancy (DOI: 10.1145/3772318.3791915)
-- Zheng et al. EMNLP 2024 — persona injection useless for objective tasks (ACL Anthology)
-- Kay & Kummerfeld 2013 — scrutable user models framework (ACM, paywalled)
-- Jeromela & Conlan UMAP 2024 — scrutability for IPAs (Conlan is supervisor; ACM)
-- Akbar & Conlan UMAP 2024 — HITL autonomy gradient (Conlan is supervisor; ACM)
-- Hu et al. 2026 — **Log-To-Leak** (OpenReview only; highest-priority security gap)
-- Lipin 2025 — parasocial bonds / dependency (ResearchGate)
-- Budzyń et al. 2025 — endoscopist deskilling (Lancet, paywalled)
-- Klein & Klein 2025 — extended hollowed mind (Frontiers, open access)
-- Anthropic 2026 — Claude Sonnet 4.6 System Card (CDN PDF)
-- Google DeepMind 2026 — Gemma 4 Technical Report (blog/HF)
+- Budzyń et al. 2025 — endoscopist deskilling (Lancet, paywalled; institution access needed)
+- Google DeepMind 2026 — Gemma 4 Technical Report (no arXiv; blog only)
