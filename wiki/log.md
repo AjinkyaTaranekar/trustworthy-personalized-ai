@@ -6,6 +6,23 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-01] decision | Constitutional drift detection — probe suite added to 4_benchmark.py
+- **Problem:** No mechanism existed to detect when RL training was eroding SFT-learned constitutional behaviour. The benchmark only measured generation speed, tool calls, and context length — not constitutional adherence.
+- **Solution:** Added `CONSTITUTIONAL_PROBES` (12 fixed questions, one per detectable principle) to `pipeline/4_benchmark.py`. Each probe uses regex / rule-based automated scoring — no judge model, to avoid the self-referential drift problem.
+- **Principles covered:** P1 (CAPABILITY_CHECK present), P2+P3 (tool inventory/discipline), P4 (math=code), P5 (real-time honesty), P6 (user context gate), P8 (impossibility acknowledgment), P9 (tradeoff no winner), P11 (tool avoidance), P14 (hold under pressure), P16 (knowledge cutoff), P17 (single clarification), P18 (explicit I don't know).
+- **Drift threshold:** If `constitution_score` drops ≥ 5 percentage points from the SFT baseline, a `DRIFT WARNING` is printed and `drift_warning: true` is set in the JSON report.
+- **Workflow:** (1) After SFT, run `python 4_benchmark.py --probe_only --save_as_baseline` to record the SFT baseline. (2) After each GRPO checkpoint, run `python 4_benchmark.py --probe_only --baseline reports/constitution_baseline.json` to detect drift.
+- **New CLI flags:** `--probe`, `--probe_only`, `--baseline <path>`, `--save_as_baseline`.
+- **File changed:** `pipeline/4_benchmark.py`.
+
+## [2026-05-01] decision | Constitutional drift mitigation — frozen critic + constitution_score
+- **Problem identified (Ajinkya + Owen discussion):** Constitution principles can drift as training progresses — SFT teaches the behaviour but GRPO reward signal can erode it if constitution adherence is not explicitly enforced.
+- **Three root causes mapped:** (1) Self-referential critique loop where generator and critic are the same model; (2) Multi-turn examples skipped critique entirely; (3) No constitution adherence score in metadata to use as GRPO reward signal.
+- **Fix 1 — `--critic_model` flag in `sft_gold_response_generator.py`:** Separates the draft generator from the constitutional judge. A larger frozen model (e.g. `claude-opus-4-7`) grades every draft; the smaller student model writes. Directly addresses the critique-loop SPOF flagged in `[[entities/constitution]]`.
+- **Fix 2 — Multi-turn critique added:** Each turn in multi-turn examples is now independently critiqued via `critique_turn()`. Violations are counted per turn; `constitution_score` is averaged across all turns.
+- **Fix 3 — `constitution_score` in metadata:** Every training example now carries a `constitution_score` in [0, 1] (1.0 = no violations). This field is the pre-computed signal for the GRPO constitutional reward component in Phase 2.
+- **GRPO design (not yet implemented):** When Phase 2 GRPO begins, reward must be composite: `format_reward + correctness_reward + constitution_score`. KL penalty must use the SFT checkpoint as reference policy. See `[[decisions/2026-05-01-constitutional-drift-mitigation]]`.
+
 ## [2026-05-01] refactor | Pipeline SFT data quality overhaul — multi-turn support + full constitution coverage
 
 - **Problem 1 (single-turn only):** All training data was one-sentence single-turn questions. Real users write paragraphs of context and hold multi-turn dialogues. Fixed by adding two new categories to `sft_question_generator.py`: `verbose_context_behavioral` (200 paragraph-style inputs) and `multi_turn_conversation` (150 three-to-five-turn scaffolds).

@@ -422,6 +422,18 @@ def revise_draft(question: str, category: str, draft: str, violations: str,
     )
 
 
+def critique_turn(question: str, category: str, response: str, tool_profile: dict,
+                  model: str, api_base: str | None = None) -> str:
+    """Critique a single turn of a multi-turn conversation."""
+    return critique_draft(question, category, response, tool_profile, model, api_base)
+
+
+def _count_violations(violations: str) -> int:
+    if violations.strip() == "NO_VIOLATIONS":
+        return 0
+    return len([v for v in violations.strip().split("\n") if v.startswith("PRINCIPLE_")])
+
+
 def build_training_example(question: str, category: str, final_response: str,
                             follow_up: str | None, draft: str,
                             violations: str, tool_profile: dict) -> dict:
@@ -445,13 +457,15 @@ def build_training_example(question: str, category: str, final_response: str,
             {"role": "assistant", "content": turn_2},
         ]
 
+    n_violations = _count_violations(violations)
     return {
         "messages": messages,
         "metadata": {
             "source": "constitution_teacher",
             "category": category,
             "tool_profile": tool_profile["label"],
-            "constitution_violations_in_draft": 0 if violations == "NO_VIOLATIONS" else len(violations.split("\n")),
+            "constitution_violations_in_draft": n_violations,
+            "constitution_score": max(0, 19 - n_violations) / 19,  # 1.0 = perfect; used as GRPO reward signal
             "revised": violations != "NO_VIOLATIONS",
             "pipeline": "part_a",
         },
@@ -459,20 +473,28 @@ def build_training_example(question: str, category: str, final_response: str,
 
 
 def build_multi_turn_example(turns: list[str], responses: list[str], category: str,
-                              tool_profile: dict) -> dict:
+                              tool_profile: dict,
+                              violations_per_turn: list[str] | None = None) -> dict:
     """Build a training example from interleaved user turns and assistant responses."""
     system_prompt = make_system_prompt(tool_profile)
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for user_msg, assistant_msg in zip(turns, responses):
         messages.append({"role": "user", "content": user_msg})
         messages.append({"role": "assistant", "content": assistant_msg})
+
+    total_violations = sum(_count_violations(v) for v in (violations_per_turn or []))
+    n_turns = len(turns)
+    constitution_score = max(0, (n_turns * 19 - total_violations)) / (n_turns * 19) if n_turns > 0 else 1.0
+
     return {
         "messages": messages,
         "metadata": {
             "source": "constitution_teacher",
             "category": category,
             "tool_profile": tool_profile["label"],
-            "num_turns": len(turns),
+            "num_turns": n_turns,
+            "constitution_violations_in_draft": total_violations,
+            "constitution_score": constitution_score,
             "revised": False,
             "pipeline": "part_a_multi_turn",
         },
@@ -500,7 +522,12 @@ def process_questions(
     max_examples: int | None,
     resume: bool,
     api_base: str | None = None,
+    critic_model: str | None = None,
 ) -> None:
+    # Use a separate frozen critic if provided; otherwise fall back to the generator model.
+    # A frozen larger model (e.g. claude-opus-4-7) prevents the self-referential critique SPOF
+    # where the model being trained also sets the grading standard.
+    _critic = critic_model or model
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Load already-processed questions if resuming
@@ -567,7 +594,16 @@ def process_questions(
                         continue
                     print(f"  Generating {len(turns)}-turn conversation...")
                     responses = generate_multi_turn_responses(turns, category, tool_profile, model, api_base)
-                    example = build_multi_turn_example(turns, responses, category, tool_profile)
+
+                    # Critique each turn independently using the (possibly frozen) critic
+                    violations_per_turn: list[str] = []
+                    for t_idx, (turn_q, turn_r) in enumerate(zip(turns, responses)):
+                        v = critique_turn(turn_q, category, turn_r, tool_profile, _critic, api_base)
+                        violations_per_turn.append(v)
+                        n_v = _count_violations(v)
+                        print(f"    Turn {t_idx + 1} critique: {n_v} violation(s)")
+
+                    example = build_multi_turn_example(turns, responses, category, tool_profile, violations_per_turn)
                     out.write(json.dumps(example, ensure_ascii=False) + "\n")
                     out.flush()
                     processed += 1
@@ -582,12 +618,12 @@ def process_questions(
                     draft = generate_draft(question, category, follow_up, tool_profile, model, api_base)
                     print(f"  Draft: {len(draft)} chars")
 
-                    # Step 2: Critique against all 19 principles
-                    violations = critique_draft(question, category, draft, tool_profile, model, api_base)
+                    # Step 2: Critique against all 19 principles (frozen critic if provided)
+                    violations = critique_draft(question, category, draft, tool_profile, _critic, api_base)
                     has_violations = violations != "NO_VIOLATIONS"
                     print(f"  Critique: {'VIOLATIONS FOUND' if has_violations else 'clean'}")
 
-                    # Step 3: Revise if needed
+                    # Step 3: Revise if needed (revision still uses generator model — it writes, critic grades)
                     final = draft
                     if has_violations:
                         final = revise_draft(question, category, draft, violations, tool_profile, model, api_base)
@@ -627,7 +663,11 @@ def main():
     parser.add_argument("--output", type=str, default="pipeline/data/train_partA.jsonl",
                         help="Output training JSONL file")
     parser.add_argument("--model", type=str, default="claude-sonnet-4-5",
-                        help="litellm model string (e.g. claude-sonnet-4-5, gpt-4o-mini, ollama/llama3.2)")
+                        help="litellm model string for draft generation (e.g. claude-sonnet-4-5, gpt-4o-mini)")
+    parser.add_argument("--critic_model", type=str, default=None,
+                        help="Separate model for critique and revision grading. Prevents self-referential "
+                             "constitution drift. Recommended: a larger frozen model (e.g. claude-opus-4-7). "
+                             "Defaults to --model if not set.")
     parser.add_argument("--api_base", type=str, default=None,
                         help="Custom API base URL (e.g. http://localhost:11434 for Ollama)")
     parser.add_argument("--max", type=int, default=None,
@@ -644,6 +684,12 @@ def main():
     _MAX_RETRIES = args.max_retries
     _BASE_DELAY = args.base_delay
 
+    if args.critic_model:
+        print(f"  Generator : {args.model}")
+        print(f"  Critic    : {args.critic_model}  (frozen — prevents self-referential constitution drift)")
+    else:
+        print(f"  Model     : {args.model}  (same model for generation and critique)")
+
     process_questions(
         questions_path=args.questions,
         output_path=args.output,
@@ -651,6 +697,7 @@ def main():
         max_examples=args.max,
         resume=args.resume,
         api_base=args.api_base,
+        critic_model=args.critic_model,
     )
 
 
