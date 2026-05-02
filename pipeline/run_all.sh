@@ -41,6 +41,14 @@ ONLY_STAGES=""
 SERVER_PORT=8000
 SERVER_PORT_BASE=8001  # for base-model comparison runs
 
+# ── Feature flags — read from environment (PIPELINE_* prefix) ─────────────────
+# These mirror pipeline/config.py defaults. Override with env vars, e.g.:
+#   PIPELINE_ENABLE_USER_MODELLING=true bash pipeline/run_all.sh
+ENABLE_USER_MODELLING="${PIPELINE_ENABLE_USER_MODELLING:-false}"
+ENABLE_EMPATHY="${PIPELINE_ENABLE_EMPATHY:-false}"
+ENABLE_GRPO="${PIPELINE_ENABLE_GRPO:-true}"
+ENABLE_ONTOLOGY_VERIF="${PIPELINE_ENABLE_ONTOLOGY_VERIF:-false}"
+
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED=""; GRN=""; YLW=""; CYN=""; RST=""
 if [ -t 1 ] && command -v tput &>/dev/null 2>&1; then
@@ -95,6 +103,10 @@ start_server() {
   if [ -f "$SERVER_PID_FILE" ]; then
     stop_server
   fi
+  # Forward feature flags as env vars so the server inherits the same config
+  env PIPELINE_ENABLE_USER_MODELLING="$ENABLE_USER_MODELLING" \
+      PIPELINE_ENABLE_EMPATHY="$ENABLE_EMPATHY" \
+      PIPELINE_ENABLE_ONTOLOGY_VERIF="$ENABLE_ONTOLOGY_VERIF" \
   python "$PIPELINE/3_infererence.py" --model_dir "$model_path" --port "$port" \
     > "$PIPELINE/.server_${port}.log" 2>&1 &
   echo "$!" > "$SERVER_PID_FILE"
@@ -127,14 +139,76 @@ stop_server() {
 
 trap stop_server EXIT
 
+# ── FalkorDB management ───────────────────────────────────────────────────────
+
+start_falkordb() {
+  if [ "$ENABLE_USER_MODELLING" != "true" ]; then
+    return 0
+  fi
+  log "Starting FalkorDB (docker compose up -d)..."
+  if ! command -v docker &>/dev/null; then
+    fail "docker not found — install Docker to use ENABLE_USER_MODELLING"
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    dry "docker compose up -d  (from $REPO_ROOT)"
+    return 0
+  fi
+  docker compose -f "$REPO_ROOT/docker-compose.yml" up -d || fail "docker compose up -d failed"
+  # Wait for FalkorDB to accept connections (up to 30s)
+  local waited=0
+  while [ $waited -lt 30 ]; do
+    if python -c "import socket; s=socket.create_connection(('localhost',6379),timeout=2); s.close()" 2>/dev/null; then
+      log "FalkorDB ready on port 6379"
+      return 0
+    fi
+    sleep 2; waited=$((waited + 2))
+  done
+  fail "FalkorDB did not start within 30s — check: docker compose logs falkordb"
+}
+
+stop_falkordb() {
+  if [ "$ENABLE_USER_MODELLING" != "true" ]; then
+    return 0
+  fi
+  log "Stopping FalkorDB..."
+  docker compose -f "$REPO_ROOT/docker-compose.yml" stop 2>/dev/null || true
+}
+
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
 mkdir -p "$DATA_DIR" "$MODELS_DIR" "$REPORTS_DIR"
 echo "" >> "$LOG_FILE"
 log "====== run_all.sh started ======"
 [ "$DRY_RUN" -eq 1 ] && info "DRY RUN — no commands will execute"
+info "Feature flags: GRPO=$ENABLE_GRPO | USER_MODELLING=$ENABLE_USER_MODELLING | EMPATHY=$ENABLE_EMPATHY | ONTOLOGY=$ENABLE_ONTOLOGY_VERIF"
 
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+
+# =============================================================================
+# Stage 0 — FalkorDB startup (only when ENABLE_USER_MODELLING=true)
+# =============================================================================
+
+section "Stage 0 — Infrastructure Setup"
+start_falkordb
+
+# =============================================================================
+# Stage 0.5 — Appraisal labelling (only when ENABLE_EMPATHY=true)
+# =============================================================================
+
+APPRAISAL_LABELS="$DATA_DIR/appraisal_labels.jsonl"
+if [ "$ENABLE_EMPATHY" = "true" ]; then
+  if [ -f "$APPRAISAL_LABELS" ]; then
+    NLABELS=$(wc -l < "$APPRAISAL_LABELS" | tr -d ' ')
+    skip "Appraisal labels already exist ($NLABELS examples) — delete to regenerate"
+  else
+    section "Stage 0.5 — Appraisal Labelling (AppraisePLM on EmpatheticDialogues)"
+    run_or_dry "python '$PIPELINE/appraisal_labeller.py' --output '$APPRAISAL_LABELS'" \
+      && ok "Appraisal labels written to $APPRAISAL_LABELS" \
+      || fail "appraisal_labeller.py failed — check AppraisePLM setup (see pipeline/appraisal_labeller.py)"
+  fi
+else
+  info "ENABLE_EMPATHY=false — skipping appraisal labelling"
+fi
 
 # =============================================================================
 # Stage 1 — SFT data check

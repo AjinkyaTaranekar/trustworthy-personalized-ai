@@ -38,6 +38,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+# ---------------------------------------------------------------------------
+# Pipeline modules — imported unconditionally; each degrades gracefully when
+# its flag is off or its optional dependencies are not installed.
+# ---------------------------------------------------------------------------
+
+sys.path.insert(0, str(Path(__file__).parent))
+from config import cfg, PipelineConfig                                    # noqa: E402
+from user_modelling import (                                               # noqa: E402
+    GraphClient, write_pipeline, retrieve_for_query,
+    inspect_memory, contest_belief, correct_belief,
+)
+from empathy import analyse_appraisal, APPRAISAL_SYSTEM_PREFIX            # noqa: E402
+from ontology_verifier import (                                            # noqa: E402
+    OntologyGraph, score_response as _onto_score_response,
+)
+
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -379,6 +395,13 @@ class DependencyMonitor:
 _DEPENDENCY_MONITOR = DependencyMonitor()
 
 # ---------------------------------------------------------------------------
+# Optional module singletons — None until main() initialises them
+# ---------------------------------------------------------------------------
+
+_GRAPH_CLIENT: Optional[Any] = None   # GraphClient — User Modelling
+_ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
+
+# ---------------------------------------------------------------------------
 # Model state — populated on startup, never mutated at request time
 # ---------------------------------------------------------------------------
 
@@ -462,6 +485,44 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
     tokens = out[0][n_in:]
     return _TOKENIZER.decode(tokens, skip_special_tokens=True), n_in, len(tokens), elapsed
 
+def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
+    """
+    Lightweight generation for internal module calls (write pipeline, appraisal
+    analysis, SPARQL generation). No tool loop, no metrics, greedy decoding so
+    the output is deterministic and fast.
+    """
+    if _MODEL is None or _TOKENIZER is None:
+        return ""
+    conversation = [
+        {"role": "system", "content": "Respond only with the requested JSON. No prose, no markdown fences."},
+        {"role": "user", "content": prompt},
+    ]
+    result, _, _, _ = _generate(conversation, max_new_tokens, temperature=0.1, greedy=True)
+    return result
+
+
+def _build_system_prompt(
+    base: str,
+    user_ctx: Optional[Any] = None,
+    appraisal_ctx: Optional[Any] = None,
+) -> str:
+    """
+    Assemble the final system prompt from the base + optional module injections.
+
+    Injection order (when enabled):
+      1. APPRAISAL_SYSTEM_PREFIX  — instructs model to produce <appraisal> blocks
+      2. base system prompt       — CAPABILITY_CHECK + tool inventory
+      3. <user_context> block     — 5W+H graph context (only when relevant slot matched)
+    """
+    parts = []
+    if cfg.ENABLE_EMPATHY:
+        parts.append(APPRAISAL_SYSTEM_PREFIX)
+    parts.append(base)
+    if cfg.ENABLE_PERSONALISATION and user_ctx is not None and not user_ctx.is_empty():
+        parts.append("\n" + user_ctx.to_prompt_block())
+    return "".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # FastAPI
 # ---------------------------------------------------------------------------
@@ -490,6 +551,18 @@ class ToolRegistration(BaseModel):
     description: str
     parameters: Dict[str, Any]
     python_code: str   # must define a callable named `tool_fn`
+
+
+class ContestRequest(BaseModel):
+    session_id: str
+    node_id: str
+
+
+class CorrectRequest(BaseModel):
+    session_id: str
+    old_node_id: str
+    correction: str
+    label: str = "Goal"   # FalkorDB node label of the corrected belief
 
 
 @app.get("/health")
@@ -539,7 +612,36 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     if _MODEL is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    system = req.system_override or _system_prompt_for_profile(req.tool_profile)
+    # ── Extract the most recent user turn for module hooks ─────────────────
+    user_turn = next(
+        (m.content for m in reversed(req.messages) if m.role == "user"), ""
+    )
+
+    # ── User Modelling: run the 4-stage Mem0g write pipeline ───────────────
+    # Triggered before generation so the graph is up-to-date when we retrieve.
+    write_result = None
+    if cfg.ENABLE_USER_MODELLING and _GRAPH_CLIENT is not None:
+        write_result = write_pipeline(
+            user_turn, req.session_id, _GRAPH_CLIENT, _raw_generate
+        )
+
+    # ── Personalisation: retrieve relevant 5W+H subgraph ──────────────────
+    user_ctx = None
+    if cfg.ENABLE_PERSONALISATION and _GRAPH_CLIENT is not None:
+        user_ctx = retrieve_for_query(
+            user_turn, req.session_id, _GRAPH_CLIENT, _raw_generate,
+            max_nodes=cfg.RETRIEVAL_MAX_NODES,
+            subgraph_depth=cfg.RETRIEVAL_SUBGRAPH_DEPTH,
+        )
+
+    # ── Empathy: appraisal analysis of user turn ──────────────────────────
+    appraisal_ctx = None
+    if cfg.ENABLE_EMPATHY:
+        appraisal_ctx = analyse_appraisal(user_turn, _raw_generate)
+
+    # ── Build system prompt (base + optional injections) ──────────────────
+    base_system = req.system_override or _system_prompt_for_profile(req.tool_profile)
+    system = _build_system_prompt(base_system, user_ctx, appraisal_ctx)
     active_tools = TOOL_PROFILES.get(req.tool_profile, set())
 
     conv: List[Dict] = [{"role": "system", "content": system}]
@@ -555,7 +657,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         for iteration in range(req.max_tool_iterations):
             response, n_in, n_tok, _ = _generate(conv, req.max_new_tokens, req.temperature, req.greedy)
             if iteration == 0:
-                first_input_tokens = n_in   # context size at the start of this request
+                first_input_tokens = n_in
             total_tokens += n_tok
             conv.append({"role": "assistant", "content": response})
 
@@ -573,8 +675,6 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     except Exception as e:
                         raw_result = f"Tool execution error: {e}"
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
-                # Sanitise before injecting into context — strips prompt-injection
-                # patterns that adversarial web content could embed (OWASP LLM01).
                 result = _sanitise_tool_output(fn_name, str(raw_result))
                 conv.append({"role": "tool", "content": result})
             else:
@@ -584,24 +684,45 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
         METRICS.record(latency, total_tokens, tools_used, ok=True)
 
-        # Dependency monitoring — appends a non-blocking wellbeing disclosure when
-        # interaction patterns match dependency formation (OWASP LLM09 / Blocker 4).
+        # ── Dependency monitoring (OWASP LLM09 / Blocker 4) ───────────────
         dep_disclosure = _DEPENDENCY_MONITOR.record(req.session_id)
         if dep_disclosure:
             final = final + DependencyMonitor._DISCLOSURE
 
+        # ── Ontology verification: post-hoc claim scoring ─────────────────
+        onto_score = None
+        if cfg.ENABLE_ONTOLOGY_VERIF and _ONTO_GRAPH is not None:
+            onto_score = _onto_score_response(
+                final, _ONTO_GRAPH, _raw_generate,
+                max_claims=cfg.ONTOLOGY_MAX_CLAIMS,
+            )
+
+        # ── Surface any memory conflicts to the caller ─────────────────────
+        memory_meta: Optional[Dict] = None
+        if cfg.ENABLE_USER_MODELLING and write_result is not None:
+            memory_meta = {
+                "nodes_written":  write_result.entities_written,
+                "edges_written":  write_result.edges_written,
+                "conflicts":      [c.reason for c in write_result.conflicts],
+                "conflict_count": len(write_result.conflicts),
+            }
+
         return {
-            "response": final,
+            "response":             final,
             "dependency_disclosure": dep_disclosure,
-            "conversation": conv,
+            "conversation":         conv,
             "metrics": {
-                "latency_s": round(latency, 3),
-                "input_tokens": first_input_tokens,          # context size at request start — used by degradation study
+                "latency_s":        round(latency, 3),
+                "input_tokens":     first_input_tokens,
                 "tokens_generated": total_tokens,
-                "tokens_per_sec": round(total_tokens / latency, 1) if latency > 0 else 0,
-                "tool_calls": tools_used,
-                "tool_iterations": len([m for m in conv if m["role"] == "tool"]),
+                "tokens_per_sec":   round(total_tokens / latency, 1) if latency > 0 else 0,
+                "tool_calls":       tools_used,
+                "tool_iterations":  len([m for m in conv if m["role"] == "tool"]),
             },
+            # Optional module metadata — None when the module is disabled
+            "user_modelling":  memory_meta,
+            "appraisal":       appraisal_ctx.to_dict() if (appraisal_ctx and appraisal_ctx.present) else None,
+            "ontology_score":  onto_score.to_dict() if onto_score else None,
         }
 
     except Exception as e:
@@ -632,6 +753,64 @@ def dependency_reset(session_id: str) -> Dict[str, Any]:
     _DEPENDENCY_MONITOR.reset_session(session_id)
     return {"status": "reset", "session_id": session_id}
 
+
+# ---------------------------------------------------------------------------
+# Scrutability endpoints (User Modelling — ENABLE_USER_MODELLING)
+#
+# These implement the five scrutability constraints defined in the thesis:
+#   inspect  — read all beliefs the system holds about the user
+#   contest  — flag a belief as wrong before the system acts on it
+#   correct  — supply the accurate belief (archived with USER_CORRECTED edge)
+# ---------------------------------------------------------------------------
+
+@app.get("/memory/inspect/{session_id}")
+def memory_inspect(session_id: str) -> Dict[str, Any]:
+    """
+    Return a human-readable NL summary of all non-deprecated beliefs the system
+    holds for this session, plus the raw structured graph for developers.
+    """
+    if not cfg.ENABLE_USER_MODELLING or _GRAPH_CLIENT is None:
+        return {"available": False, "message": "ENABLE_USER_MODELLING is off."}
+    return inspect_memory(session_id, _GRAPH_CLIENT)
+
+
+@app.post("/memory/contest")
+def memory_contest(req: ContestRequest) -> Dict[str, Any]:
+    """
+    Mark a belief node as contested. The retrieval gate will not inject it
+    into future responses until it is resolved via /memory/correct.
+    """
+    if not cfg.ENABLE_USER_MODELLING or _GRAPH_CLIENT is None:
+        return {"ok": False, "reason": "ENABLE_USER_MODELLING is off."}
+    return contest_belief(req.session_id, req.node_id, _GRAPH_CLIENT)
+
+
+@app.post("/memory/correct")
+def memory_correct(req: CorrectRequest) -> Dict[str, Any]:
+    """
+    Apply a user-supplied correction. Creates a new belief node, archives the
+    old one with a USER_CORRECTED edge — full audit trail is preserved.
+    """
+    if not cfg.ENABLE_USER_MODELLING or _GRAPH_CLIENT is None:
+        return {"ok": False, "reason": "ENABLE_USER_MODELLING is off."}
+    return correct_belief(
+        req.session_id, req.old_node_id, req.correction,
+        req.label, _GRAPH_CLIENT, _raw_generate,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config introspection endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/config")
+def get_config() -> Dict[str, Any]:
+    """Return the active feature-flag state (for debugging and preflight checks)."""
+    from dataclasses import fields as _fields  # noqa: PLC0415
+    bool_flags = {f.name: getattr(cfg, f.name) for f in _fields(cfg) if f.type == "bool"}
+    return {"flags": bool_flags, "model": _MODEL_LABEL}
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -645,19 +824,48 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--max_seq_length", type=int, default=4096)
+    parser.add_argument("--config", default=None,
+                        help="Path to a YAML config file (overrides PIPELINE_* env vars)")
     args = parser.parse_args()
 
-    global _MODEL, _TOKENIZER, _MODEL_LABEL
+    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH
+
+    # Load YAML config if provided (overrides env-var defaults)
+    if args.config:
+        cfg = PipelineConfig.from_yaml(args.config)
+        print(f"Config loaded from: {args.config}")
+
+    # Surface any dependency-rule violations as warnings (not hard errors —
+    # the server starts anyway so dry-run / smoke-test modes work without all deps)
+    issues = cfg.validate()
+    for issue in issues:
+        print(f"[CONFIG WARNING] {issue}")
+
+    print(f"Pipeline flags:\n{cfg.summary()}")
+
+    # ── Load model ──────────────────────────────────────────────────────────
     from unsloth import FastModel  # deferred so the module imports without GPU
 
     model_path = Path(args.model_dir)
     source = str(model_path) if model_path.exists() else args.base_model
     _MODEL_LABEL = source
-    print(f"Loading: {source}")
+    print(f"Loading model: {source}")
     _MODEL, _TOKENIZER = FastModel.from_pretrained(
         model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
     )
     FastModel.for_inference(_MODEL)
+
+    # ── Initialise optional modules ─────────────────────────────────────────
+    _GRAPH_CLIENT = GraphClient(cfg)
+    _ONTO_GRAPH   = OntologyGraph(cfg)
+
+    if cfg.ENABLE_USER_MODELLING:
+        status = "connected" if _GRAPH_CLIENT.available else "UNAVAILABLE (check docker compose up -d)"
+        print(f"User Modelling: {status}")
+    if cfg.ENABLE_ONTOLOGY_VERIF:
+        status = "loaded" if _ONTO_GRAPH.available else "UNAVAILABLE (check ONTOLOGY_PATH / ONTOLOGY_SPARQL_ENDPOINT)"
+        print(f"Ontology Verifier: {status}")
+
     print(f"Ready. Listening on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

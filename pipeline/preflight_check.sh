@@ -178,6 +178,12 @@ check_file() {
   fi
 }
 
+check_file "$PIPELINE/config.py"                     "config.py — feature flags singleton"
+check_file "$PIPELINE/user_modelling.py"             "user_modelling.py — 5W+H graph + Mem0g write pipeline"
+check_file "$PIPELINE/empathy.py"                    "empathy.py — appraisal-conditioned generation"
+check_file "$PIPELINE/appraisal_labeller.py"         "appraisal_labeller.py — offline AppraisePLM labeller"
+check_file "$PIPELINE/ontology_verifier.py"          "ontology_verifier.py — post-hoc SPARQL claim scorer"
+check_file "$REPO_ROOT/docker-compose.yml"           "docker-compose.yml — FalkorDB service"
 check_file "$PIPELINE/constitution.md"               "constitution.md — 19 constitutional principles"
 check_file "$PIPELINE/3_infererence.py"              "3_infererence.py — inference server"
 check_file "$PIPELINE/4_benchmark.py"                "4_benchmark.py — benchmark + adversarial suite"
@@ -397,6 +403,78 @@ elif [ "$STAGES_DONE" -lt 7 ]; then
 else
   info "Full training pipeline complete."
 fi
+
+# =============================================================================
+section "13. Feature Flag State"
+# =============================================================================
+# Read active flags from config.py via env overrides, then surface what each
+# enabled flag still needs before it is runnable.
+
+if python -c "from config import cfg; print(cfg.summary())" 2>/dev/null; then
+  :
+else
+  warn "Could not import config.py — run from repo root or pipeline/"
+fi
+
+# Per-flag readiness checks (only fire when the flag is on)
+FLAG_CHECK=$(python -c "
+import sys, os
+sys.path.insert(0, '$PIPELINE')
+try:
+    from config import cfg
+    checks = []
+
+    if cfg.ENABLE_GRPO:
+        import pathlib
+        if not pathlib.Path(cfg.SFT_CHECKPOINT_DIR).exists():
+            checks.append('WARN|ENABLE_GRPO: checkpoint_sft not found at ' + cfg.SFT_CHECKPOINT_DIR + ' — run SFT first')
+        else:
+            checks.append('PASS|ENABLE_GRPO: checkpoint_sft found at ' + cfg.SFT_CHECKPOINT_DIR)
+
+    if cfg.ENABLE_USER_MODELLING:
+        import socket
+        try:
+            s = socket.create_connection((cfg.FALKORDB_HOST, cfg.FALKORDB_PORT), timeout=2)
+            s.close()
+            checks.append('PASS|ENABLE_USER_MODELLING: FalkorDB reachable at ' + cfg.FALKORDB_HOST + ':' + str(cfg.FALKORDB_PORT))
+        except OSError:
+            checks.append('FAIL|ENABLE_USER_MODELLING: FalkorDB not reachable at ' + cfg.FALKORDB_HOST + ':' + str(cfg.FALKORDB_PORT) + ' — run: docker compose up -d')
+
+    if cfg.ENABLE_EMPATHY:
+        import pathlib
+        if pathlib.Path(cfg.APPRAISAL_LABELS_PATH).exists():
+            n = sum(1 for _ in open(cfg.APPRAISAL_LABELS_PATH))
+            checks.append('PASS|ENABLE_EMPATHY: appraisal_labels.jsonl found (' + str(n) + ' examples)')
+        else:
+            checks.append('FAIL|ENABLE_EMPATHY: ' + cfg.APPRAISAL_LABELS_PATH + ' not found — run: python pipeline/appraisal_labeller.py')
+
+    if cfg.ENABLE_PERSONALISATION and not cfg.ENABLE_USER_MODELLING:
+        checks.append('FAIL|ENABLE_PERSONALISATION: requires ENABLE_USER_MODELLING=True')
+
+    if cfg.ENABLE_ONTOLOGY_VERIF:
+        import pathlib
+        if pathlib.Path(cfg.ONTOLOGY_PATH).exists():
+            checks.append('PASS|ENABLE_ONTOLOGY_VERIF: ontology file found at ' + cfg.ONTOLOGY_PATH)
+        else:
+            checks.append('FAIL|ENABLE_ONTOLOGY_VERIF: ' + cfg.ONTOLOGY_PATH + ' not found')
+
+    if not checks:
+        checks.append('INFO|All optional modules disabled (flags default to False)')
+
+    print('\n'.join(checks))
+except Exception as e:
+    print('WARN|Could not evaluate flags: ' + str(e))
+" 2>/dev/null || echo "WARN|config.py not importable from current directory")
+
+while IFS= read -r line; do
+  level="${line%%|*}"; msg="${line#*|}"
+  case "$level" in
+    PASS) pass  "$msg" ;;
+    FAIL) fail  "$msg" ;;
+    WARN) warn  "$msg" ;;
+    INFO) info  "$msg" ;;
+  esac
+done <<< "$FLAG_CHECK"
 
 # =============================================================================
 section "SUMMARY"

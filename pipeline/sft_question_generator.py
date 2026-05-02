@@ -167,6 +167,32 @@ CATEGORIES = {
         "domains": ["financial planning", "event planning", "career advice", "learning paths", "health consultation", "travel planning", "technology choices"],
         "format": "multi_turn",
     },
+    # ── Empathy category ─────────────────────────────────────────────────────
+    # This category does NOT call the LLM to generate questions.
+    # Instead it loads from data/appraisal_labels.jsonl (produced by
+    # appraisal_labeller.py).  The special "loader" key signals that
+    # generate_questions_for_category() should read from file rather than prompt.
+    "appraisal_empathy": {
+        "count": 300,
+        "description": (
+            "User utterances from EmpatheticDialogues labelled with 21-dim OCC "
+            "appraisal vectors by AppraisePLM. The model must produce an <appraisal> "
+            "block inside <think> that identifies the dominant dimensions, then give "
+            "an empathetically conditioned <answer>."
+        ),
+        "examples": [
+            "I finally got the promotion I've been working towards for three years!",
+            "My dog passed away last night. I can't stop crying.",
+            "I got rejected from every grad school I applied to.",
+            "My partner and I had a huge fight and I don't know what to do.",
+            "I just found out I'm pregnant — it wasn't planned.",
+        ],
+        "domains": ["personal achievement", "loss and grief", "rejection", "relationship conflict",
+                    "unexpected life events", "anxiety", "excitement", "frustration"],
+        "format": "appraisal_empathy",
+        "loader": "appraisal_labels",           # load from file, not LLM generation
+        "labels_path": "data/appraisal_labels.jsonl",
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -212,14 +238,64 @@ SINGLE_TURN_FORMAT = "Return a plain JSON array of question strings."
 # ---------------------------------------------------------------------------
 
 
+def load_appraisal_questions(category_name: str, count: int) -> list:
+    """
+    Load appraisal_empathy questions from data/appraisal_labels.jsonl.
+    Each row in the labels file becomes one training question entry with
+    appraisal_meta attached so the gold-response generator can use it.
+    """
+    spec = CATEGORIES[category_name]
+    labels_path = Path(spec.get("labels_path", "data/appraisal_labels.jsonl"))
+
+    if not labels_path.exists():
+        raise FileNotFoundError(
+            f"Appraisal labels file not found: {labels_path}\n"
+            "Run:  python pipeline/appraisal_labeller.py\n"
+            "Or:   python pipeline/appraisal_labeller.py --mock_model  (for testing)"
+        )
+
+    rows = []
+    with labels_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+
+    random.shuffle(rows)
+    rows = rows[:count]
+
+    result = []
+    for row in rows:
+        result.append({
+            "question":       row["utterance"],
+            "category":       category_name,
+            "format":         "appraisal_empathy",
+            "appraisal_meta": {
+                "emotion":           row.get("emotion", ""),
+                "top3":              row.get("top3", []),
+                "appraisal_reading": row.get("appraisal_reading", ""),
+                "valence":           row.get("valence", 0.5),
+                "appraisal_named":   row.get("appraisal_named", {}),
+            },
+        })
+
+    return result
+
+
 def generate_questions_for_category(
     category_name: str,
     count: int,
     model: str = "claude-sonnet-4-5",
     api_base: str | None = None,
 ) -> list:
-    """Generate `count` questions for a single category via litellm (any provider)."""
+    """Generate `count` questions for a single category via litellm (any provider).
+    For the appraisal_empathy category the questions are loaded from file instead."""
     spec = CATEGORIES[category_name]
+
+    # File-loader path: skip LLM generation entirely
+    if spec.get("loader") == "appraisal_labels":
+        return load_appraisal_questions(category_name, count)
+
     is_two_turn = spec.get("format") == "two_turn"
 
     fmt = spec.get("format", "single_turn")

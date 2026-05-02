@@ -58,7 +58,9 @@ def passes_quality_filter(example: dict) -> tuple[bool, str]:
         if tag not in last_response:
             return False, f"missing_tag_{tag}"
 
-    # Check CAPABILITY_CHECK is present in think block
+    # Check CAPABILITY_CHECK is present in think block.
+    # appraisal_empathy examples also require an <appraisal> block.
+    category = example.get("metadata", {}).get("category", "")
     if CAPABILITY_CHECK_REQUIRED:
         think_match = last_response.find("<think>")
         think_end = last_response.find("</think>")
@@ -66,6 +68,8 @@ def passes_quality_filter(example: dict) -> tuple[bool, str]:
             think_content = last_response[think_match:think_end]
             if "CAPABILITY_CHECK" not in think_content:
                 return False, "missing_capability_check"
+            if category == "appraisal_empathy" and "<appraisal>" not in think_content:
+                return False, "missing_appraisal_block"
 
     # Check system message is present
     system_msgs = [m for m in messages if m.get("role") == "system"]

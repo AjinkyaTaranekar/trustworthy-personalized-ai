@@ -2,16 +2,22 @@
 title: Training and Benchmark Scripts
 type: source
 kind: code
-tags: [code, training, lora, grpo, dapo, benchmark, context-degradation, constitution, drift-detection, small-model]
+tags: [code, training, lora, grpo, dapo, benchmark, context-degradation, constitution, drift-detection, small-model, personalisation, empathy, ontology, tool-use]
 sources:
+  - pipeline/config.py
   - pipeline/1_dataset_generator.py
   - pipeline/2_model_trainer.py
   - pipeline/3_infererence.py
   - pipeline/4_benchmark.py
   - pipeline/5_context_degradation.py
   - pipeline/experiment0_reasoning_comparison.py
+  - pipeline/user_modelling.py
+  - pipeline/empathy.py
+  - pipeline/appraisal_labeller.py
+  - pipeline/ontology_verifier.py
   - pipeline/run_all.sh
   - pipeline/preflight_check.sh
+  - docker-compose.yml
   - README.md
 updated: 2026-05-02
 status: current
@@ -19,20 +25,25 @@ status: current
 
 # Training & Benchmark Scripts
 
-**The entry-point scripts covering SFT data generation → SFT training → GRPO RL training → inference server → Experiment 0 reasoning comparison → constitutional probe suite → adversarial probe suite → context degradation study. All orchestrated by `run_all.sh`.**
+**The full four-module pipeline: SFT data generation → SFT training → GRPO RL training → User Modelling (FalkorDB + 5W+H + scrutability) → Appraisal-conditioned empathy → Ontology post-hoc verifier → Experiment 0 reasoning comparison → constitutional and adversarial probe suites → context degradation study. All feature-flag gated; all orchestrated by `run_all.sh`.**
 
 ## Scripts at a glance
 
 | Script | Role |
 | ------ | ---- |
-| `preflight_check.sh` | Pre-flight validation: Python version, packages, API key, file integrity, all 10 security blocker symbols, 7-stage training status. Run first on any new machine. |
-| `run_all.sh` | Master orchestration: runs all 8 pipeline stages in order, resumable via `--from N`. |
-| `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype; superseded by `sft_*.py` for dissertation. |
-| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]]. **Phase 2: GRPO** — DAPO-improved RL training with composite constitutional reward. CLI: `--mode {sft,grpo}`, `--reward_type {c,d}`. |
-| `3_infererence.py` | **FastAPI inference server.** Loads model once on startup; all evaluation scripts call it over HTTP. 5 built-in tools. Security: AST code sandbox + tool-output injection sanitiser (Blocker 1). Dependency monitor with wellbeing disclosure (Blocker 4). Endpoints: `/health`, `/v1/chat/completions`, `/metrics`, `/dependency/status/{id}`. |
-| `4_benchmark.py` | **Benchmark client.** Zero GPU dependency. Three suites: (1) 12-probe constitutional drift suite, (2) 14-turn multi-turn conversation + 6 edge cases, (3) 14-probe adversarial suite (Blocker 3). CLI: `--probe_only`, `--adversarial_only`, `--compare_url`. |
-| `experiment0_reasoning_comparison.py` | **Experiment 0** (researchplan.tex Phase 3): compares baseline / CoT / interleaved / ToT on GSM8K + 10 logic puzzles. Must run before GRPO to determine which reasoning format to use. |
-| `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers, plots accuracy-vs-context-token-count. |
+| `config.py` | Feature flags singleton — six `ENABLE_*` flags read from `PIPELINE_*` env vars; `validate()` enforces dependency rules; `summary()` for startup logs. |
+| `preflight_check.sh` | Pre-flight: Python version, packages, API key, file integrity, security blockers, feature-flag state, 7-stage training status. Run first on any new machine. |
+| `run_all.sh` | Master orchestration: Stage 0 (FalkorDB), Stage 0.5 (appraisal labelling), Stages 1–8 (SFT + GRPO + evaluation). Fully resumable. Forwards `PIPELINE_*` env vars to every subprocess. |
+| `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
+| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]]. **Phase 2: GRPO** — DAPO RL training. CLI: `--mode {sft,grpo}`, `--reward_type {c,d}`. |
+| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Five built-in tools. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. New endpoints: `/memory/inspect\|contest\|correct`, `/config`. |
+| `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. |
+| `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
+| `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers. |
+| `user_modelling.py` | 5W+H FalkorDB graph client; Mem0g 4-stage write pipeline; retrieval gating; scrutability handlers. Loaded by `3_infererence.py` when `ENABLE_USER_MODELLING=true`. |
+| `empathy.py` | Runtime appraisal helpers: `analyse_appraisal()`, `format_appraisal_block()`, `parse_appraisal_block()`, `APPRAISAL_SYSTEM_PREFIX`. |
+| `appraisal_labeller.py` | **Offline one-time script.** Runs AppraisePLM over EmpatheticDialogues → `data/appraisal_labels.jsonl`. AppraisePLM used as labeller only; not a runtime dependency. |
+| `ontology_verifier.py` | Post-hoc claim scorer (Experiment 6 Approach B). Dual backend: local OWL via rdflib or remote SPARQL endpoint. Loaded by `3_infererence.py` when `ENABLE_ONTOLOGY_VERIF=true`. |
 
 ## Architecture: server + client
 
@@ -140,18 +151,43 @@ The primary thesis argument: D outperforms A on constitutional adherence, accura
 **SFT**: LoRA r=16 α=32, 3 epochs, lr=2e-4, batch=2, grad_accum=4, bf16, adamw_8bit.
 **GRPO**: G=8, β=0.001, lr=1e-6, ε_low=0.2, ε_high=0.28, rollout temp=1.0, max_new_tokens=512, 1 epoch.
 
+## Feature flags and module lifecycle
+
+All optional modules are gated by `config.py`. The inference server reads flags at startup via `PIPELINE_*` env vars or a `--config yaml` file. Each module degrades to a neutral stub when its flag is off — the server never crashes on a missing dependency.
+
+Dependency rules enforced by `cfg.validate()`:
+- `ENABLE_GRPO` → `checkpoint_sft` must exist
+- `ENABLE_PERSONALISATION` → `ENABLE_USER_MODELLING` must be true
+- `ENABLE_EMPATHY` → `data/appraisal_labels.jsonl` must exist
+- `ENABLE_ONTOLOGY_VERIF` → `ONTOLOGY_PATH` file or `ONTOLOGY_SPARQL_ENDPOINT` must be set
+
+`run_all.sh` forwards all flags to every subprocess so the server, trainer, and benchmark client always run with a consistent configuration.
+
+## `run_all.sh` stage map (updated)
+
+| Stage | Condition | Output |
+|---|---|---|
+| 0 | `ENABLE_USER_MODELLING=true` | FalkorDB on port 6379 |
+| 0.5 | `ENABLE_EMPATHY=true` | `data/appraisal_labels.jsonl` |
+| 1–8 | always | SFT data, SFT checkpoint, baselines, GRPO C/D, ablation |
+
 ## Related
 
 - [[sources/code/sft-v2-pipeline]] — data source for SFT training
-- [[entities/grpo]] — GRPO + DAPO algorithm notes and hyperparameters
+- [[entities/grpo]] — GRPO + DAPO algorithm notes
 - [[entities/qwen3-0.6b]] — base model
 - [[entities/constitution]] — 19 constitutional principles
-- [[decisions/2025-10-01-four-module-architecture]] — why SFT+GRPO trains only the Reasoning Module
-- [[queries/grpo-and-personalisation-master-plan]] — full build plan including User Modelling stack
-- [[experiments/experiment-catalog]] — ablation A/B/C/D + Experiment 0 context
+- [[topics/personalisation]] — 5W+H schema + Mem0g design + scrutability gap
+- [[topics/empathy]] — appraisal-conditioned generation design
+- [[topics/ontology-integration]] — Experiment 6 design; Approach A vs B
+- [[decisions/2025-10-01-four-module-architecture]] — why the pipeline is split this way
+- [[queries/grpo-and-personalisation-master-plan]] — detailed module design rationale
+- [[queries/full-pipeline-implementation-plan]] — phase-by-phase build plan for all modules
 
 ## Raw
 
+- `pipeline/config.py`, `pipeline/user_modelling.py`, `pipeline/empathy.py`
+- `pipeline/appraisal_labeller.py`, `pipeline/ontology_verifier.py`
 - `pipeline/2_model_trainer.py`, `3_infererence.py`, `4_benchmark.py`, `5_context_degradation.py`
 - `pipeline/experiment0_reasoning_comparison.py`, `run_all.sh`, `preflight_check.sh`
-- `README.md`
+- `docker-compose.yml`, `README.md`

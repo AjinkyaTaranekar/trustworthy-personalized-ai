@@ -72,7 +72,8 @@ PREFER_SEARCH_CATEGORIES = {"entity_facts_web_search", "real_time_dependent", "k
 # Categories where tool availability doesn't matter much
 TOOL_NEUTRAL_CATEGORIES = {"user_context_behavioral", "impossible_tasks", "subjective_tradeoffs",
                             "multi_step_clarification", "ambiguous_underspecified",
-                            "verbose_context_behavioral", "multi_turn_conversation"}
+                            "verbose_context_behavioral", "multi_turn_conversation",
+                            "appraisal_empathy"}
 
 
 def pick_tool_profile(category: str) -> dict:
@@ -205,6 +206,60 @@ Format violations as: PRINCIPLE_N: [brief description of what's wrong and what t
 
 Do not rewrite the response yet. Only list violations."""
 
+APPRAISAL_DRAFT_PROMPT = """You are demonstrating ideal empathetic AI behaviour for training purposes.
+
+The user says: {question}
+
+Ground-truth appraisal from AppraisePLM:
+  Emotion:  {emotion}
+  Top dims: {top3}
+  Reading:  {appraisal_reading}
+  Valence:  {valence:.2f}  (0=very negative, 1=very positive)
+
+Write a response that exemplifies empathetically conditioned AI behaviour. Your response MUST:
+1. Start <think> with CAPABILITY_CHECK (what does this require? what do I have? any gap?)
+2. Then include an <appraisal> block matching the ground-truth dimensions above:
+   <appraisal>
+     {top3_str}
+     reading: {short_reading}
+     → <one sentence on how this shapes your response>
+   </appraisal>
+3. Give the empathetic <answer> conditioned on the appraisal reading.
+   - Validate the emotional state BEFORE any advice.
+   - Match tone to valence ({valence_label}).
+   - Do not project emotions not expressed. Do not jump to problem-solving.
+
+Write the complete response now:"""
+
+APPRAISAL_CRITIQUE_PROMPT = """You are reviewing an empathetic AI response against two criteria.
+
+USER MESSAGE: {question}
+GROUND-TRUTH APPRAISAL:
+  Emotion: {emotion} | Top dims: {top3} | Valence: {valence:.2f}
+  Reading: {appraisal_reading}
+
+RESPONSE TO REVIEW:
+{response}
+
+Check BOTH:
+
+A. APPRAISAL BLOCK QUALITY
+   A1. Is an <appraisal> block present inside <think>?
+   A2. Do the dimensions match or approximate the ground-truth top3 ({top3})?
+   A3. Is the reading qualitatively accurate given the emotion and valence?
+   A4. Does the → implication logically follow from the reading?
+
+B. EMPATHETIC RESPONSE QUALITY
+   B1. Does the <answer> validate the emotional state before giving advice?
+   B2. Is the tone matched to the valence? ({valence_label} → {tone_guidance})
+   B3. Does it avoid projecting unexpressed emotions?
+   B4. Does it avoid jumping straight to problem-solving without acknowledging the feeling?
+
+Also check the standard constitution principles (CAPABILITY_CHECK present? format correct?).
+
+List ONLY the violations found. If none: NO_VIOLATIONS
+Format: ISSUE_X: [description and correct behaviour]"""
+
 REVISION_PROMPT = """You are revising an AI response to fix constitution violations.
 
 QUESTION: {question}
@@ -292,6 +347,17 @@ IDEAL_BEHAVIORS = {
         "As context fills in across turns, converge toward concrete, specific advice. "
         "Final turns should produce actionable recommendations, not more questions."
     ),
+    "appraisal_empathy": (
+        "The user has shared an emotionally significant message. "
+        "After CAPABILITY_CHECK, include an <appraisal> block that names the top 3 OCC appraisal "
+        "dimensions most relevant to this message (e.g. pleasantness, goal_relevance, coping_potential), "
+        "gives each a 0–1 value, provides a one-line qualitative reading, and concludes with a "
+        "'→ implication' sentence about how this should shape the response. "
+        "The <answer> must be empathetically conditioned on that reading — validate the emotional state "
+        "BEFORE giving any advice or information. Match the tone to the valence: warm and celebratory "
+        "for positive events, gentle and grounding for distress, steady and practical for mixed signals. "
+        "Do not project emotions the user hasn't expressed. Never skip straight to problem-solving."
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -328,7 +394,37 @@ def _call(messages: list, model: str, max_tokens: int, api_base: str | None = No
 
 
 def generate_draft(question: str, category: str, follow_up: str | None,
-                   tool_profile: dict, model: str, api_base: str | None = None) -> str:
+                   tool_profile: dict, model: str, api_base: str | None = None,
+                   appraisal_meta: dict | None = None) -> str:
+    # Appraisal empathy category uses a specialised prompt
+    if category == "appraisal_empathy" and appraisal_meta:
+        top3     = appraisal_meta.get("top3", [])
+        named    = appraisal_meta.get("appraisal_named", {})
+        top3_str = " | ".join(
+            f"{d}: {named.get(d, 0.5):.2f}" for d in top3
+        ) if top3 else "pleasantness: 0.50 | goal_relevance: 0.50 | coping_potential: 0.50"
+        reading  = appraisal_meta.get("appraisal_reading", "")
+        valence  = float(appraisal_meta.get("valence", 0.5))
+        short_reading = reading.split("→")[0].strip()
+
+        prompt = APPRAISAL_DRAFT_PROMPT.format(
+            question=question,
+            emotion=appraisal_meta.get("emotion", "unknown"),
+            top3=", ".join(top3),
+            appraisal_reading=reading,
+            valence=valence,
+            top3_str=top3_str,
+            short_reading=short_reading,
+            valence_label="positive" if valence >= 0.6 else ("negative" if valence <= 0.4 else "mixed"),
+        )
+        return _call(
+            messages=[
+                {"role": "system", "content": make_system_prompt(tool_profile)},
+                {"role": "user", "content": prompt},
+            ],
+            model=model, max_tokens=2048, api_base=api_base,
+        )
+
     follow_up_context = ""
     if follow_up:
         follow_up_context = (
@@ -401,11 +497,31 @@ def generate_multi_turn_responses(turns: list[str], category: str,
 
 
 def critique_draft(question: str, category: str, draft: str, tool_profile: dict,
-                   model: str, api_base: str | None = None) -> str:
-    prompt = CRITIQUE_PROMPT.format(
-        question=question, category=category, response=draft,
-        tool_context=tool_profile["context"],
-    )
+                   model: str, api_base: str | None = None,
+                   appraisal_meta: dict | None = None) -> str:
+    if category == "appraisal_empathy" and appraisal_meta:
+        valence = float(appraisal_meta.get("valence", 0.5))
+        valence_label = "positive" if valence >= 0.6 else ("negative" if valence <= 0.4 else "mixed")
+        tone_guidance = {
+            "positive": "warm, celebratory, affirming",
+            "negative": "gentle, grounding, validating",
+            "mixed":    "steady, empathetic, balanced",
+        }[valence_label]
+        prompt = APPRAISAL_CRITIQUE_PROMPT.format(
+            question=question,
+            emotion=appraisal_meta.get("emotion", "unknown"),
+            top3=", ".join(appraisal_meta.get("top3", [])),
+            valence=valence,
+            appraisal_reading=appraisal_meta.get("appraisal_reading", ""),
+            response=draft,
+            valence_label=valence_label,
+            tone_guidance=tone_guidance,
+        )
+    else:
+        prompt = CRITIQUE_PROMPT.format(
+            question=question, category=category, response=draft,
+            tool_context=tool_profile["context"],
+        )
     return _call(
         messages=[{"role": "user", "content": prompt}],
         model=model, max_tokens=768, api_base=api_base,

@@ -10,19 +10,22 @@ The thesis claim: a small model with the right **modular architecture** (constit
 
 ## Before you start — preflight check
 
-Always run this first. It checks Python version, packages, API keys, file integrity, security blockers, and training status in one pass:
+Always run this first. It checks Python version, packages, API keys, file integrity, security blockers, feature-flag state, and training status in one pass:
 
 ```bash
 bash pipeline/preflight_check.sh
 ```
 
-If any `[FAIL]` lines appear, fix them before continuing. `[WARN]` lines are safe to proceed on a development machine; fix them before running on a GPU cluster.
+If any `[FAIL]` lines appear, fix them before continuing. `[WARN]` lines are safe on a development machine; fix before GPU cluster runs.
 
-**Two hard dependencies you will need to install:**
+**Core Python dependencies:**
 
 ```bash
-pip install datasets trl
+pip install datasets trl fastapi uvicorn pydantic requests litellm python-dotenv
 pip install unsloth accelerate bitsandbytes  # GPU training only
+pip install rdflib                           # Ontology Verifier (local OWL)
+pip install SPARQLWrapper                    # Ontology Verifier (remote endpoint)
+pip install falkordb                         # User Modelling graph backend
 ```
 
 **API key** (needed for SFT data generation with a critic model):
@@ -34,29 +37,104 @@ cp .env.example .env
 
 ---
 
+## Feature flags
+
+All optional modules are off by default. Enable them via environment variables (prefix `PIPELINE_`) or a YAML config file before running the server or `run_all.sh`.
+
+| Flag | Default | Controls |
+|---|---|---|
+| `PIPELINE_ENABLE_SFT` | `true` | Phase 1 SFT training — always on, the constitutional baseline |
+| `PIPELINE_ENABLE_GRPO` | `false` | Phase 2 GRPO/DAPO RL training; requires `checkpoint_sft` first |
+| `PIPELINE_ENABLE_USER_MODELLING` | `false` | FalkorDB 5W+H graph + Mem0g write pipeline + scrutability endpoints |
+| `PIPELINE_ENABLE_EMPATHY` | `false` | Appraisal-conditioned generation; requires `data/appraisal_labels.jsonl` |
+| `PIPELINE_ENABLE_PERSONALISATION` | `false` | Per-query retrieval gating; requires `ENABLE_USER_MODELLING` |
+| `PIPELINE_ENABLE_ONTOLOGY_VERIF` | `false` | Post-hoc SPARQL claim scoring against a loaded OWL ontology |
+
+```bash
+# Enable flags inline for a single run
+PIPELINE_ENABLE_USER_MODELLING=true \
+PIPELINE_ENABLE_EMPATHY=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
+
+# Or via a YAML config file
+python pipeline/3_infererence.py --config my_config.yaml
+```
+
+**Dependency rules (enforced at startup):**
+- `ENABLE_GRPO` requires `ENABLE_SFT` to have produced `models/checkpoint_sft/`
+- `ENABLE_PERSONALISATION` requires `ENABLE_USER_MODELLING`
+- `ENABLE_EMPATHY` requires `data/appraisal_labels.jsonl` (run `appraisal_labeller.py` first)
+- `ENABLE_ONTOLOGY_VERIF` requires an OWL file at `PIPELINE_ONTOLOGY_PATH` or a remote SPARQL endpoint at `PIPELINE_ONTOLOGY_SPARQL_ENDPOINT`
+
+---
+
+## Module prerequisites
+
+### User Modelling (FalkorDB)
+
+Requires Docker. Start before launching the inference server:
+
+```bash
+docker compose up -d          # starts FalkorDB on port 6379
+docker compose down           # stop (graph data persists)
+docker compose down -v        # stop + wipe all graph data
+```
+
+### Empathy (AppraisePLM labels)
+
+One-time offline step on CPU. Run before SFT data generation:
+
+```bash
+# Clone AppraisePLM (supervisor co-authored paper — Debnath, Graham, Conlan, CoNLL 2025)
+git clone https://github.com/alokdebnath/appraise-PLM
+
+# Label EmpatheticDialogues (generates data/appraisal_labels.jsonl)
+python pipeline/appraisal_labeller.py --appraise_plm_path appraise-PLM
+
+# Smoke test without the model (pipeline testing only — random vectors)
+python pipeline/appraisal_labeller.py --mock_model --smoke
+```
+
+### Ontology Verifier (Experiment 6 Approach B)
+
+Either place a valid OWL/RDF file at `data/ontology.owl`, or point to a remote endpoint:
+
+```bash
+# Local OWL file (pip install rdflib)
+# Place file at: data/ontology.owl
+
+# Remote SPARQL endpoint (pip install SPARQLWrapper)
+export PIPELINE_ONTOLOGY_SPARQL_ENDPOINT=https://dbpedia.org/sparql
+```
+
+---
+
 ## Architecture overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FOUR-MODULE ARCHITECTURE                      │
-│  (Pivot 1, October 2025 — Professor Conlan feedback)            │
-│                                                                  │
-│  ┌──────────────────┐   ┌──────────────────────────────────┐   │
-│  │  Reasoning       │   │  User Modelling Module           │   │
-│  │  Module          │   │  5W+H graph (FalkorDB+Cognee)    │   │
-│  │  Qwen3-0.6B      │   │  local MCP server                │   │
-│  │  SFT + GRPO      │   │  NOT a neural network            │   │
-│  └──────────────────┘   └──────────────────────────────────┘   │
-│                                                                  │
-│  ┌──────────────────┐   ┌──────────────────────────────────┐   │
-│  │  Tool Integration│   │  Generator Module                │   │
-│  │  Layer           │   │  Base LLM + prompting + RAG      │   │
-│  │  MCP + full logs │   │  No fine-tuning on user data     │   │
-│  └──────────────────┘   └──────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                     FOUR-MODULE ARCHITECTURE                         │
+│   (Pivot 1, October 2025 — Professor Conlan feedback)               │
+│                                                                      │
+│  ┌────────────────────┐    ┌──────────────────────────────────┐    │
+│  │  Reasoning Module  │    │  User Modelling Module           │    │
+│  │  Qwen3-0.6B        │    │  5W+H graph — FalkorDB           │    │
+│  │  SFT + GRPO/DAPO   │    │  Mem0g write pipeline            │    │
+│  │  Constitution: 19P │    │  Scrutability layer              │    │
+│  │  ENABLE_GRPO       │    │  ENABLE_USER_MODELLING           │    │
+│  └────────────────────┘    └──────────────────────────────────┘    │
+│                                                                      │
+│  ┌────────────────────┐    ┌──────────────────────────────────┐    │
+│  │  Tool Integration  │    │  Generator Module                │    │
+│  │  Layer             │    │  Appraisal-conditioned empathy   │    │
+│  │  MCP + full logs   │    │  Ontology post-hoc verifier      │    │
+│  │  Dep. monitor      │    │  ENABLE_EMPATHY                  │    │
+│  │  Adversarial probes│    │  ENABLE_ONTOLOGY_VERIF           │    │
+│  └────────────────────┘    └──────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-The **Reasoning Module** is what this pipeline trains. The other three modules are the next build phase (User Modelling stack — see `wiki/queries/grpo-and-personalisation-master-plan.md`).
+All four modules are now implemented. Feature flags control which are active at runtime — see the **Feature flags** section above.
 
 ---
 
@@ -66,36 +144,44 @@ The **Reasoning Module** is what this pipeline trains. The other three modules a
 pipeline/
 ├── preflight_check.sh              Pre-flight validation (run this first)
 ├── run_all.sh                      Master orchestration — runs every stage in order
+├── config.py                       Feature flags singleton — single source of truth
 │
 │   ─── Data generation ───
-├── sft_question_generator.py       SFT step 1a — behavioural questions (11 categories)
+├── sft_question_generator.py       SFT step 1a — 12 categories incl. appraisal_empathy
 ├── sft_gold_response_generator.py  SFT step 1b — teacher generates + critiques (19 principles)
 ├── sft_math_question_generator.py  SFT step 2a — math/code questions (7 types)
 ├── sft_rejection_sampler.py        SFT step 2b — keep only correct code executions
 ├── sft_dataset_assembler.py        SFT step 3  — merge, filter, train/eval split
 ├── 1_dataset_generator.py          V1 template-based generator (legacy prototype)
+├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
 ├── 2_model_trainer.py              Phase 1: SFT  |  Phase 2: GRPO (DAPO improvements)
 │
 │   ─── Inference + evaluation ───
-├── 3_infererence.py                FastAPI inference server — loads model once, serves HTTP
-├── 4_benchmark.py                  Benchmark client — constitutional probes + adversarial suite
+├── 3_infererence.py                FastAPI server — model + all four module hooks
+├── 4_benchmark.py                  Constitutional probes + adversarial suite
 ├── 5_context_degradation.py        Context-length degradation study (greedy decoding)
-├── experiment0_reasoning_comparison.py  Experiment 0 — CoT/ToT/interleaved/baseline comparison
+├── experiment0_reasoning_comparison.py  Experiment 0 — CoT/ToT/interleaved/baseline
+│
+│   ─── Runtime modules (loaded by 3_infererence.py via feature flags) ───
+├── user_modelling.py               FalkorDB 5W+H graph + Mem0g write + scrutability
+├── empathy.py                      Appraisal-conditioned generation helpers
+├── ontology_verifier.py            Post-hoc SPARQL claim scorer (Experiment 6 Approach B)
 │
 │   ─── Reference ───
-├── constitution.md                 The 19 constitutional principles the model is trained on
-├── .env.example                    Copy to .env and add your API keys
-├── data/                           Generated JSONL datasets (git-ignored)
-├── models/                         Saved checkpoints (git-ignored)
-└── reports/                        Benchmark JSON + HTML viewer
+├── constitution.md                 19 constitutional principles
+├── .env.example                    Copy to .env and add API keys
+├── data/                           Datasets + appraisal_labels.jsonl (git-ignored)
+├── models/                         Checkpoints (git-ignored)
+└── reports/                        Benchmark JSON reports
 
+docker-compose.yml                  FalkorDB service (required for ENABLE_USER_MODELLING)
 wiki/                               Living research wiki (Obsidian vault)
 docs/                               PDFs, dissertation drafts, literature notes
 ```
 
-> **3 and 4 are server/client.** Start `3_infererence.py` first (it loads the GPU model), then every other script calls it over HTTP. You never reload the model between runs.
+> **3 and 4 are server/client.** Start `3_infererence.py` first, then every other script calls it over HTTP. You never reload the model between runs.
 
 ---
 
@@ -199,16 +285,27 @@ bash pipeline/run_all.sh --stages 3,4,5
 
 **Stages:**
 
-| # | Stage | Output |
-|---|---|---|
-| 1 | SFT data check | `data/train_interleaved.jsonl` |
-| 2 | SFT training | `models/checkpoint_sft/` |
-| 3 | SFT constitutional baseline | `reports/constitution_baseline.json` |
-| 4 | Experiment 0 (reasoning comparison) | `reports/experiment0_*.json` |
-| 5 | Adversarial baseline | `reports/adversarial_baseline.json` |
-| 6 | GRPO Condition C + drift check | `models/checkpoint_grpo_c/` |
-| 7 | GRPO Condition D + drift check | `models/checkpoint_grpo_d/` |
-| 8 | Final ablation A/B/C/D | `reports/ablation_*_*.json` |
+| # | Stage | Flag condition | Output |
+|---|---|---|---|
+| 0 | Infrastructure setup (FalkorDB) | `ENABLE_USER_MODELLING=true` | FalkorDB running on port 6379 |
+| 0.5 | Appraisal labelling | `ENABLE_EMPATHY=true` | `data/appraisal_labels.jsonl` |
+| 1 | SFT data check | always | `data/train_interleaved.jsonl` |
+| 2 | SFT training | always | `models/checkpoint_sft/` |
+| 3 | SFT constitutional baseline | always | `reports/constitution_baseline.json` |
+| 4 | Experiment 0 (reasoning comparison) | always | `reports/experiment0_*.json` |
+| 5 | Adversarial baseline | always | `reports/adversarial_baseline.json` |
+| 6 | GRPO Condition C + drift check | `ENABLE_GRPO=true` | `models/checkpoint_grpo_c/` |
+| 7 | GRPO Condition D + drift check | `ENABLE_GRPO=true` | `models/checkpoint_grpo_d/` |
+| 8 | Final ablation A/B/C/D | always | `reports/ablation_*_*.json` |
+
+Enable optional modules for a full run:
+
+```bash
+PIPELINE_ENABLE_USER_MODELLING=true \
+PIPELINE_ENABLE_EMPATHY=true \
+PIPELINE_ENABLE_GRPO=true \
+bash pipeline/run_all.sh
+```
 
 ---
 
@@ -309,20 +406,57 @@ python pipeline/5_context_degradation.py \
 `3_infererence.py` is the central serving component. All other scripts call it over HTTP.
 
 ```bash
-# Start server
+# Start server (base flags only)
 python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
 
-# Key endpoints
-GET  /health                       → liveness + model name
-GET  /v1/tools                     → list registered tools
-POST /v1/chat/completions          → generate (tool loop handled server-side)
-GET  /metrics                      → latency p50/p95/p99, throughput, tool call counts
-POST /metrics/reset                → reset counters
+# Start with optional modules enabled
+PIPELINE_ENABLE_USER_MODELLING=true \
+PIPELINE_ENABLE_EMPATHY=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
+
+# Or via YAML config
+python pipeline/3_infererence.py --config pipeline_config.yaml --port 8000
+```
+
+**Endpoints:**
+
+```
+GET  /health                            liveness + model name
+GET  /config                            active feature-flag state
+GET  /v1/models                         list loaded model
+GET  /v1/tools                          list registered tools
+POST /v1/tools/register                 add a tool at runtime
+DELETE /v1/tools/{name}                 remove a tool
+POST /v1/chat/completions               generate (tool loop server-side)
+GET  /metrics                           latency p50/p95/p99, throughput, tool counts
+POST /metrics/reset                     reset counters
 
 # Dependency monitoring (Blocker 4 — OWASP LLM09)
-GET  /dependency/status/{session_id}    → interaction frequency + disclosure state
-POST /dependency/reset/{session_id}     → reset session monitor
+GET  /dependency/status/{session_id}    interaction frequency + disclosure state
+POST /dependency/reset/{session_id}     reset session monitor
+
+# Scrutability (ENABLE_USER_MODELLING only)
+GET  /memory/inspect/{session_id}       NL summary of user's 5W+H belief graph
+POST /memory/contest                    flag a belief node as wrong
+POST /memory/correct                    apply user-supplied correction (audit trail preserved)
 ```
+
+**`/v1/chat/completions` response envelope** (new fields when modules are active):
+
+```json
+{
+  "response":              "...",
+  "dependency_disclosure": false,
+  "metrics":               { "latency_s": 1.2, "tokens_generated": 180, ... },
+  "user_modelling":        { "nodes_written": 2, "conflicts": [], "conflict_count": 0 },
+  "appraisal":             { "top3": ["pleasantness", "goal_relevance", "coping_potential"],
+                             "valence": 0.91, "reading": "...", "present": true },
+  "ontology_score":        { "ontology_score": 0.85, "total_claims": 4, "verified_count": 3,
+                             "unverified_claims": ["..."] }
+}
+```
+
+All three extra fields are `null` when their flag is off — existing clients are unaffected.
 
 **Add a tool at runtime (no restart required):**
 
@@ -335,6 +469,84 @@ curl -X POST http://localhost:8000/v1/tools/register \
     "parameters": {"type":"object","properties":{"city":{"type":"string"}},"required":["city"]},
     "python_code": "def tool_fn(city=\"Dublin\", **_): return f\"Weather for {city}: 12°C, cloudy (mock)\""
   }'
+```
+
+---
+
+## User Modelling (ENABLE_USER_MODELLING)
+
+Implements the thesis's scrutable 5W+H user graph. After every user turn the write pipeline extracts WHO/WHAT/WHERE/WHY/HOW entities, detects contradictions with existing beliefs, and writes with `:DEPRECATED_BY` edges (never deletes — the full audit trail is always preserved).
+
+```bash
+# Prerequisites
+docker compose up -d   # starts FalkorDB on port 6379
+
+# Start server with user modelling
+PIPELINE_ENABLE_USER_MODELLING=true \
+PIPELINE_ENABLE_PERSONALISATION=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
+
+# Scrutability API
+curl http://localhost:8000/memory/inspect/my_session_id
+curl -X POST http://localhost:8000/memory/contest \
+     -H "Content-Type: application/json" \
+     -d '{"session_id": "my_session_id", "node_id": "abc123"}'
+curl -X POST http://localhost:8000/memory/correct \
+     -H "Content-Type: application/json" \
+     -d '{"session_id": "my_session_id", "old_node_id": "abc123",
+          "correction": "I am an intermediate Python developer, not a beginner",
+          "label": "Skill"}'
+```
+
+The scrutability layer is the thesis's named contribution: **no current production system** (Mem0, ChatGPT memory, Gemini) exposes inspect/contest/correct/audit to end users. See `wiki/topics/personalisation.md` for the design rationale.
+
+---
+
+## Empathy (ENABLE_EMPATHY)
+
+Qwen is fine-tuned on AppraisePLM-labelled EmpatheticDialogues data to produce an `<appraisal>` block inside its `<think>` chain — no external model at inference time. AppraisePLM (Debnath, Graham, Conlan — CoNLL 2025) is used **offline as a labeller only**.
+
+```bash
+# Step 1 (one-time, CPU, ~30 min for 5000 examples)
+git clone https://github.com/alokdebnath/appraise-PLM
+python pipeline/appraisal_labeller.py --appraise_plm_path appraise-PLM
+# Output: data/appraisal_labels.jsonl
+
+# Step 2: include appraisal_empathy category in SFT data generation
+# (sft_question_generator.py reads from data/appraisal_labels.jsonl automatically)
+python sft_question_generator.py --category appraisal_empathy \
+       --output data/questions_empathy.jsonl
+
+# Step 3: run server with empathy enabled
+PIPELINE_ENABLE_EMPATHY=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
+```
+
+The model's `<think>` block will include:
+```xml
+<appraisal>
+  pleasantness: 0.91 | goal_relevance: 0.85 | coping_potential: 0.23
+  reading: high pleasantness, high goal relevance, low coping potential
+  → user achieved something important but feels they barely held it together
+</appraisal>
+```
+
+---
+
+## Ontology Verifier (ENABLE_ONTOLOGY_VERIF)
+
+Implements Experiment 6 Approach B. After each assistant response, the verifier extracts atomic factual claims and checks them against a SPARQL-queryable knowledge base. Returns an `ontology_score` (mean confidence) per response.
+
+```bash
+# Option A — local OWL file (pip install rdflib)
+# Place an OWL/RDF file at: data/ontology.owl
+PIPELINE_ENABLE_ONTOLOGY_VERIF=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
+
+# Option B — remote SPARQL endpoint (pip install SPARQLWrapper)
+PIPELINE_ENABLE_ONTOLOGY_VERIF=true \
+PIPELINE_ONTOLOGY_SPARQL_ENDPOINT=https://dbpedia.org/sparql \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
 ```
 
 ---
