@@ -6,6 +6,14 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-02] query | Full pipeline implementation plan
+- Created `wiki/queries/full-pipeline-implementation-plan.md` — phase-by-phase build plan for all six modules.
+- Six feature flags defined: `ENABLE_SFT`, `ENABLE_GRPO`, `ENABLE_USER_MODELLING`, `ENABLE_EMPATHY`, `ENABLE_PERSONALISATION`, `ENABLE_ONTOLOGY_VERIF`.
+- Parallel tracks: Phase 1 (User Modelling), Phase 2 (Empathy), Phase 3 (Ontology Verifier) all independent; Phase 4 (Integration) sequential after all three.
+- GPU work (Phase 6) starts Monday; Phases 0–5 are pre-GPU coding work.
+- Key decisions recorded: Mem0g write pattern without Mem0 SDK; AppraisePLM as offline labeller only (not runtime dependency); FalkorDB direct via `falkordb` Python package without Cognee.
+- Updated `wiki/index.md` — new entry under Queries.
+
 ## [2026-05-02] lint | Health check — full wiki audit
 - **No orphan pages found.** All files in `wiki/**/*.md` are reachable from `wiki/index.md`.
 - **Missing inbound source — `docs/meetings-notes/`.** All 7 meeting files (Sep 2025 – Apr 2026) were unindexed. Fixed in the ingest entry below.

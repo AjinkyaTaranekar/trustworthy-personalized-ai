@@ -164,6 +164,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 ## Queries
 
 - [[queries/grpo-and-personalisation-master-plan]] — two-track implementation roadmap: GRPO trainer (Track 1) + 5W+H graph-memory empathy stack (Track 2); industry benchmarks; 8-paper acquisition list; 6-week sequencing plan
+- [[queries/full-pipeline-implementation-plan]] — phase-by-phase build plan for all six modules (SFT, GRPO, User Modelling, Empathy, Ontology Verifier, Retrieval Gating) with feature flags; parallel/sequential dependency map; GPU-day checklist
 
 ---
 
