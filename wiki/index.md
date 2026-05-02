@@ -134,9 +134,9 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/dissertation/security-privacy-social-ethics]] — security analysis: local-first privacy argument, Log-To-Leak, alignment regression, critique-loop SPOF, dependency/deskilling ethics
 
 ### Code (pipeline summaries)
-- [[sources/code/sft-v2-pipeline]] — constitution-driven data generation
+- [[sources/code/sft-v2-pipeline]] — SFT data generation pipeline with security blockers 1+2
 - [[sources/code/constitution-document]] — full 19-principle source
-- [[sources/code/training-and-benchmark]] — v1 scripts + LoRA + GRPO + benchmark + context degradation
+- [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + Experiment 0 + adversarial suite + run_all.sh + preflight
 
 ## Experiments
 

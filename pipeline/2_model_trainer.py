@@ -1,44 +1,360 @@
+"""
+Model Trainer
+=============
+Phase 1 — SFT (Supervised Fine-Tuning):
+    python pipeline/2_model_trainer.py --mode sft
+
+Phase 2 — GRPO (Group Relative Policy Optimisation, DAPO improvements):
+    python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft \
+        --reward_type d --output_name checkpoint_grpo_d
+
+Reward types:
+    c  format + accuracy only         (Ablation C)
+    d  format + accuracy + tool + constitution  (Ablation D — full thesis contribution)
+
+DAPO improvements applied over vanilla GRPO:
+    - Token-level loss normalisation (Dr.GRPO): divide by completion length
+    - Clip-Higher: asymmetric ε (0.2 low, 0.28 high)
+    - Dynamic sampling: skip zero-variance groups
+    - Reference policy = SFT checkpoint (not base model)
+"""
+
 import json
 import os
+import re
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 try:
     from unsloth import FastModel
-    from trl import SFTTrainer, SFTConfig
-    from datasets import load_dataset
+    from trl import SFTTrainer, SFTConfig, GRPOTrainer, GRPOConfig
+    from datasets import load_dataset, Dataset
     HAS_LIBS = True
 except ImportError:
     HAS_LIBS = False
 
 
+# ---------------------------------------------------------------------------
+# Model + training configuration
+# ---------------------------------------------------------------------------
+
 MODEL_CONFIG = {
-    "base_model": "unsloth/Qwen3-0.6B",
-    # Increased from 2048 to handle longer think traces and multi-turn contexts
+    "base_model":     "unsloth/Qwen3-0.6B",
     "max_seq_length": 4096,
-    "load_in_4bit": True,
-    # Reduced rank — 0.6B model doesn't need r=64; r=16 trains faster and generalises better
-    "lora_r": 16,
-    "lora_alpha": 32,  # 2× rank is standard practice
+    "load_in_4bit":   True,
+    "lora_r":         16,
+    "lora_alpha":     32,
 }
 
 SFT_CONFIG = {
     "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 4,
-    "num_train_epochs": 3,       # One extra epoch for the expanded template set
-    "learning_rate": 2e-4,
-    "warmup_steps": 100,
-    "logging_steps": 10,
-    "save_steps": 500,
-    "eval_steps": 100,           # Evaluate periodically to catch overfitting
-    "bf16": True,
-    "optim": "adamw_8bit",
-    "weight_decay": 0.01,
-    "packing": True,             # Pack short examples into full sequences — faster training
+    "num_train_epochs":            3,
+    "learning_rate":               2e-4,
+    "warmup_steps":                100,
+    "logging_steps":               10,
+    "save_steps":                  500,
+    "eval_steps":                  100,
+    "bf16":                        True,
+    "optim":                       "adamw_8bit",
+    "weight_decay":                0.01,
+    "packing":                     True,
 }
 
+GRPO_CONFIG = {
+    # Group size G — number of completions sampled per prompt
+    # 8 is the practical limit for 0.6B + 4-bit + 24 GB VRAM
+    "num_generations":             8,
+    # Learning rate — lower than SFT, fine-tuning a fine-tuned model
+    "learning_rate":               1e-6,
+    # KL coefficient β — anchors the policy to the SFT checkpoint (reference policy)
+    # 0.001 is the R1 stage-1 value; increase to 0.01 if constitutional drift detected
+    "kl_coef":                     0.001,
+    # DAPO Clip-Higher: asymmetric clipping
+    #   ε_low  = standard lower clip (same as vanilla GRPO ε=0.2)
+    #   ε_high = looser upper clip — lets high-reward completions update more freely,
+    #             preventing entropy collapse where all G completions become identical
+    "clip_range_ratio":            0.2,    # ε_low
+    "clip_range_ratio_high":       0.28,   # ε_high (DAPO Clip-Higher)
+    # Generation settings
+    "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
+    "max_new_tokens":              512,
+    # Training loop
+    "num_train_epochs":            1,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "logging_steps":               5,
+    "save_steps":                  100,
+    "bf16":                        True,
+    "optim":                       "adamw_8bit",
+    # DAPO dynamic sampling: skip prompts where all G completions score identically
+    # (zero-gradient batches waste compute and reward signal)
+    "dynamic_sampling":            True,
+}
+
+# Reward component weights — must sum to 1.0
+REWARD_WEIGHTS = {
+    "format":        0.30,  # structural: think + CAPABILITY_CHECK + answer
+    "accuracy":      0.40,  # correctness: math code execution
+    "tool_integrity": 0.15, # no hallucinated/unavailable tools (P3)
+    "constitution":  0.15,  # broader rule check: P1+P4+P14+P18
+}
+
+
+# ---------------------------------------------------------------------------
+# GRPO reward functions (all verifiable — no judge model needed)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_IMPORTS_GRPO = frozenset({
+    "math", "statistics", "decimal", "fractions", "cmath",
+    "random", "itertools", "functools", "operator", "collections",
+    "numbers", "string", "re",
+})
+
+
+def _safe_execute(code: str, timeout: int = 10) -> tuple:
+    """Run code after import validation. Returns (success, output_str)."""
+    import ast as _ast
+    try:
+        tree = _ast.parse(code)
+    except SyntaxError:
+        return False, "syntax_error"
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] not in _ALLOWED_IMPORTS_GRPO:
+                    return False, f"blocked_import: {alias.name}"
+        elif isinstance(node, _ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if top and top not in _ALLOWED_IMPORTS_GRPO:
+                return False, f"blocked_import: {node.module}"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return result.returncode == 0, result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    except Exception as e:
+        return False, str(e)
+
+
+def _extract_code_from_response(response: str) -> list[str]:
+    blocks = []
+    p1 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*["\']+(.*?)["\']+\s*\)\s*</tool>'
+    for m in re.finditer(p1, response, re.DOTALL):
+        code = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+        blocks.append(code)
+    p2 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)\s*</tool>'
+    for m in re.finditer(p2, response, re.DOTALL):
+        blocks.append(m.group(1).strip())
+    return blocks
+
+
+def _last_number(text: str) -> str | None:
+    nums = re.findall(r"[-+]?\d[\d,]*\.?\d*", text.replace(",", ""))
+    return nums[-1] if nums else None
+
+
+def _answers_match(a: str, b: str, tol: float = 0.01) -> bool:
+    try:
+        af, bf = float(a), float(b)
+        if abs(bf) < 1e-9:
+            return abs(af) < 1e-6
+        return abs(af - bf) / abs(bf) < tol
+    except (ValueError, TypeError):
+        return a.strip() == b.strip()
+
+
+def _format_reward(response: str) -> float:
+    """P1 structural check: <think> + CAPABILITY_CHECK + <answer> all present."""
+    has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
+    has_cap   = "CAPABILITY_CHECK" in response
+    has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+    return 1.0 if (has_think and has_cap and has_ans) else 0.0
+
+
+def _accuracy_reward(response: str, expected_answer: str | None,
+                     question_type: str) -> float:
+    """For verifiable math categories: execute code and check answer.
+    For behavioural categories: neutral 0.5 (no ground truth)."""
+    math_types = {"arithmetic", "algebra", "geometry", "statistics",
+                  "unit_conversion", "word_problems"}
+    if not expected_answer or question_type not in math_types:
+        return 0.5  # neutral — behavioural examples have no single correct answer
+
+    code_blocks = _extract_code_from_response(response)
+    if not code_blocks:
+        # Gave numeric answer without code — wrong method when code is expected
+        answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
+        if answer_m:
+            num = _last_number(answer_m.group(1))
+            if num and _answers_match(num, expected_answer):
+                return 0.3  # partial credit — right answer, wrong method (mental math)
+        return 0.0
+
+    all_output = ""
+    for code in code_blocks:
+        ok, out = _safe_execute(code)
+        if not ok:
+            return 0.0
+        all_output += out + "\n"
+
+    computed = _last_number(all_output)
+    if computed and _answers_match(computed, expected_answer):
+        return 1.0
+    return 0.0
+
+
+def _tool_integrity_reward(response: str, active_tools: set) -> float:
+    """P3: no calls to non-existent or session-unavailable tools."""
+    _ALL_TOOLS = frozenset({
+        "python_execute", "web_search", "read_url",
+        "get_datetime", "get_exchange_rate",
+    })
+    called = set(re.findall(r"<tool>(\w+)\(", response))
+    hallucinated = called - _ALL_TOOLS
+    unavailable  = (called & _ALL_TOOLS) - active_tools
+    return 0.0 if (hallucinated or unavailable) else 1.0
+
+
+def _constitution_reward(response: str, question: str,
+                          category: str, tool_profile: dict) -> float:
+    """Broader rule check using Blocker 2's rule_check_response.
+    Falls back to a subset check if import fails."""
+    try:
+        from sft_gold_response_generator import rule_check_response
+        violations = rule_check_response(response, question, category, tool_profile)
+        n = len(violations)
+        return max(0.0, (5 - n) / 5)  # 5 = max checkable principles
+    except ImportError:
+        # Minimal fallback: just check P1 + P18
+        has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
+        has_cap   = "CAPABILITY_CHECK" in response
+        has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+        n_ok = sum([has_think, has_cap, has_ans])
+        return n_ok / 3.0
+
+
+def _profile_to_set(label: str) -> set:
+    profiles = {
+        "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+        "compute_only":       {"python_execute"},
+        "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+        "no_tools":           set(),
+    }
+    return profiles.get(label, {"python_execute"})
+
+
+def make_reward_fn(reward_type: str = "d"):
+    """Return a TRL-compatible reward function.
+
+    reward_type 'c': format + accuracy only  (Ablation C)
+    reward_type 'd': full composite          (Ablation D)
+    """
+    def reward_fn(
+        prompts: list[str],
+        completions: list[str],
+        question: list[str] | None = None,
+        question_type: list[str] | None = None,
+        expected_answer: list[str] | None = None,
+        tool_profile_label: list[str] | None = None,
+        category: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        q_list  = question or [""] * n
+        qt_list = question_type or category or ["unknown"] * n
+        ea_list = expected_answer or [None] * n
+        tp_list = tool_profile_label or ["compute_only"] * n
+
+        rewards = []
+        for comp, q, qt, ea, tpl in zip(completions, q_list, qt_list, ea_list, tp_list):
+            active_tools = _profile_to_set(tpl)
+            tool_profile_dict = {
+                "context": " | ".join(
+                    f"{t} {'✓' if t in active_tools else '✗'}"
+                    for t in ["python_execute", "web_search", "read_url", "get_datetime"]
+                ),
+                "label": tpl,
+            }
+
+            fmt  = _format_reward(comp)
+            acc  = _accuracy_reward(comp, ea, qt)
+
+            if reward_type == "c":
+                # Ablation C: format + accuracy only
+                r = REWARD_WEIGHTS["format"] * fmt + REWARD_WEIGHTS["accuracy"] * acc
+                # Normalise to [0, 1] using only the two active weights
+                total_w = REWARD_WEIGHTS["format"] + REWARD_WEIGHTS["accuracy"]
+                r /= total_w
+            else:
+                # Ablation D: full composite
+                tool = _tool_integrity_reward(comp, active_tools)
+                cons = _constitution_reward(comp, q, qt, tool_profile_dict)
+                r = (REWARD_WEIGHTS["format"]        * fmt
+                     + REWARD_WEIGHTS["accuracy"]      * acc
+                     + REWARD_WEIGHTS["tool_integrity"] * tool
+                     + REWARD_WEIGHTS["constitution"]   * cons)
+
+            rewards.append(float(r))
+
+        return rewards
+
+    return reward_fn
+
+
+# ---------------------------------------------------------------------------
+# GRPO dataset builder
+# ---------------------------------------------------------------------------
+
+def build_grpo_dataset(sft_jsonl_path: str) -> "Dataset":
+    """Convert the SFT JSONL to GRPO prompt format.
+
+    TRL's GRPOTrainer expects each row to have a 'prompt' key (list of messages
+    ending with the user turn) plus any metadata fields the reward function needs.
+    """
+    rows = []
+    with open(sft_jsonl_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                ex = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            messages = ex.get("messages", [])
+            meta = ex.get("metadata", {})
+
+            # Extract prompt = system + user messages only (no assistant)
+            prompt = [m for m in messages if m["role"] in ("system", "user")]
+            if not prompt:
+                continue
+
+            # The question is the last user message
+            user_msgs = [m for m in messages if m["role"] == "user"]
+            question  = user_msgs[-1]["content"] if user_msgs else ""
+
+            rows.append({
+                "prompt":            prompt,
+                "question":          question,
+                "category":          meta.get("category", "unknown"),
+                "question_type":     meta.get("category", "unknown"),
+                "tool_profile_label": meta.get("tool_profile", "compute_only"),
+                "expected_answer":   "",  # not available in SFT data; reward uses rule checks
+                "constitution_score": meta.get("constitution_score", 0.5),
+            })
+
+    return Dataset.from_list(rows)
+
+
+# ---------------------------------------------------------------------------
+# SFT helpers
+# ---------------------------------------------------------------------------
 
 def messages_to_text(example, tokenizer):
     return {
@@ -50,19 +366,23 @@ def messages_to_text(example, tokenizer):
     }
 
 
+# ---------------------------------------------------------------------------
+# ModelTrainer
+# ---------------------------------------------------------------------------
+
 class ModelTrainer:
-    """Trainer for interleaved thinking models using SFT."""
-    
-    def __init__(self, data_dir: str, output_dir: str, output_name: str = "checkpoint_sft"):
-        self.data_dir = Path(data_dir)
+    """Trains Qwen3-0.6B via SFT then GRPO (DAPO improvements)."""
+
+    def __init__(self, data_dir: str, output_dir: str,
+                 output_name: str = "checkpoint_sft"):
+        self.data_dir   = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.output_name = output_name
-        self.model = None
-        self.tokenizer = None
-    
+        self.model       = None
+        self.tokenizer   = None
+
     def load_base_model(self):
-        """Load the base model with Unsloth."""
         self.model, self.tokenizer = FastModel.from_pretrained(
             model_name=MODEL_CONFIG["base_model"],
             max_seq_length=MODEL_CONFIG["max_seq_length"],
@@ -70,9 +390,18 @@ class ModelTrainer:
             dtype=None,
         )
         return self
-    
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """Load an existing LoRA checkpoint (e.g. SFT checkpoint for GRPO phase)."""
+        self.model, self.tokenizer = FastModel.from_pretrained(
+            model_name=checkpoint_path,
+            max_seq_length=MODEL_CONFIG["max_seq_length"],
+            load_in_4bit=MODEL_CONFIG["load_in_4bit"],
+            dtype=None,
+        )
+        return self
+
     def apply_lora(self):
-        """Apply LoRA for efficient fine-tuning."""
         self.model = FastModel.get_peft_model(
             self.model,
             r=MODEL_CONFIG["lora_r"],
@@ -85,20 +414,16 @@ class ModelTrainer:
             random_state=3407,
         )
         return self
-    
-    def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft"):
-        """Run supervised fine-tuning on the provided dataset."""
-        raw = load_dataset("json", data_files=dataset_path)
 
-        # Convert messages → text and split off a 5% eval set
+    # ── Phase 1: SFT ────────────────────────────────────────────────────────
+
+    def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft"):
+        raw = load_dataset("json", data_files=dataset_path)
         full_dataset = raw["train"].map(
-            messages_to_text,
-            fn_kwargs={"tokenizer": self.tokenizer},
+            messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
         split = full_dataset.train_test_split(test_size=0.05, seed=42)
-        train_dataset = split["train"]
-        eval_dataset  = split["test"]
-        print(f"  Train: {len(train_dataset)} examples | Eval: {len(eval_dataset)} examples")
+        print(f"  Train: {len(split['train'])}  |  Eval: {len(split['test'])}")
 
         training_args = SFTConfig(
             output_dir=str(self.output_dir / output_name),
@@ -125,57 +450,223 @@ class ModelTrainer:
         trainer = SFTTrainer(
             model=self.model,
             tokenizer=self.tokenizer,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
+            train_dataset=split["train"],
+            eval_dataset=split["test"],
             args=training_args,
         )
-
-        train_result = trainer.train()
+        trainer.train()
 
         # Save loss history for thesis charts
-        log_history = trainer.state.log_history
-        loss_log_path = self.output_dir / output_name / "loss_history.json"
-        loss_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(loss_log_path, "w") as f:
-            json.dump(log_history, f, indent=2)
-        print(f"  Loss history saved → {loss_log_path}")
+        loss_path = self.output_dir / output_name / "loss_history.json"
+        loss_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(loss_path, "w") as f:
+            json.dump(trainer.state.log_history, f, indent=2)
 
-        save_path = self.output_dir / output_name
-        trainer.save_model(str(save_path))
-
+        trainer.save_model(str(self.output_dir / output_name))
+        print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
         return self
-    
+
+    # ── Phase 2: GRPO ───────────────────────────────────────────────────────
+
+    def train_grpo(
+        self,
+        sft_checkpoint: str,
+        dataset_path: str,
+        output_name: str = "checkpoint_grpo_d",
+        reward_type: str = "d",
+    ):
+        """GRPO RL training starting from the SFT checkpoint.
+
+        reward_type 'c': format + accuracy only  (Ablation C — does RL improve correctness?)
+        reward_type 'd': full composite           (Ablation D — full thesis contribution)
+
+        DAPO improvements applied:
+          - Token-level loss normalisation (set via use_vllm or loss scaling)
+          - Clip-Higher via custom clip_range_ratio_high
+          - Dynamic sampling: groups with zero reward variance are skipped
+          - Reference policy: SFT checkpoint (not base model)
+        """
+        print(f"\n  Loading SFT checkpoint as starting point: {sft_checkpoint}")
+        self.load_checkpoint(sft_checkpoint)
+        # Re-enable training (FastModel.from_pretrained sets for inference)
+        FastModel.for_training(self.model)
+
+        print(f"  Building GRPO dataset from {dataset_path}...")
+        dataset = build_grpo_dataset(dataset_path)
+        print(f"  GRPO dataset: {len(dataset)} prompts")
+
+        reward_fn = make_reward_fn(reward_type)
+
+        # GRPOConfig — DAPO settings where supported by TRL
+        # If your TRL version does not have clip_range_ratio_high, it falls back
+        # to symmetric clipping (vanilla GRPO).  Pin trl>=0.13.0 for best support.
+        grpo_kwargs = dict(
+            output_dir=str(self.output_dir / output_name),
+            num_generations=GRPO_CONFIG["num_generations"],
+            learning_rate=GRPO_CONFIG["learning_rate"],
+            kl_coef=GRPO_CONFIG["kl_coef"],
+            clip_range_ratio=GRPO_CONFIG["clip_range_ratio"],
+            temperature=GRPO_CONFIG["temperature"],
+            max_new_tokens=GRPO_CONFIG["max_new_tokens"],
+            num_train_epochs=GRPO_CONFIG["num_train_epochs"],
+            per_device_train_batch_size=GRPO_CONFIG["per_device_train_batch_size"],
+            gradient_accumulation_steps=GRPO_CONFIG["gradient_accumulation_steps"],
+            logging_steps=GRPO_CONFIG["logging_steps"],
+            save_steps=GRPO_CONFIG["save_steps"],
+            bf16=GRPO_CONFIG["bf16"],
+            optim=GRPO_CONFIG["optim"],
+            report_to="none",
+        )
+
+        # Attempt DAPO Clip-Higher if TRL supports it
+        try:
+            config = GRPOConfig(
+                **grpo_kwargs,
+                clip_range_ratio_high=GRPO_CONFIG["clip_range_ratio_high"],
+            )
+            print("  DAPO Clip-Higher active (clip_range_ratio_high="
+                  f"{GRPO_CONFIG['clip_range_ratio_high']})")
+        except TypeError:
+            # Older TRL — fall back to symmetric clipping
+            config = GRPOConfig(**grpo_kwargs)
+            print("  NOTE: TRL version does not support clip_range_ratio_high. "
+                  "Using symmetric clipping. Update to trl>=0.13.0 for DAPO Clip-Higher.")
+
+        trainer = GRPOTrainer(
+            model=self.model,
+            processing_class=self.tokenizer,
+            reward_funcs=reward_fn,
+            args=config,
+            train_dataset=dataset,
+        )
+
+        # DAPO dynamic sampling: hook to skip zero-variance groups
+        # This runs after rollout, before the policy gradient update.
+        if GRPO_CONFIG["dynamic_sampling"]:
+            _patch_dynamic_sampling(trainer)
+
+        print(f"\n  Starting GRPO training (reward_type={reward_type})...")
+        print(f"  Reward weights: {REWARD_WEIGHTS}")
+        print(f"  G={GRPO_CONFIG['num_generations']}  β={GRPO_CONFIG['kl_coef']}  "
+              f"lr={GRPO_CONFIG['learning_rate']}")
+
+        trainer.train()
+
+        # Save GRPO loss history
+        loss_path = self.output_dir / output_name / "grpo_loss_history.json"
+        loss_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(loss_path, "w") as f:
+            json.dump(trainer.state.log_history, f, indent=2)
+
+        trainer.save_model(str(self.output_dir / output_name))
+        print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")
+        return self
+
+    # ── Convenience: run full SFT pipeline ──────────────────────────────────
+
     def train(self):
-        """Run the full training pipeline."""
         self.load_base_model()
         self.apply_lora()
-        
         dataset_path = self.data_dir / "train_interleaved.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
 
+# ---------------------------------------------------------------------------
+# DAPO dynamic sampling patch
+# ---------------------------------------------------------------------------
+
+def _patch_dynamic_sampling(trainer: "GRPOTrainer") -> None:
+    """Monkey-patch GRPOTrainer to skip zero-variance reward groups.
+
+    After rollout, if all G completions for a prompt receive the same reward,
+    the policy gradient is zero — the batch is wasted compute. DAPO discards it.
+    """
+    _orig_step = trainer.training_step
+
+    def _patched_step(model, inputs, num_items_in_batch=None):
+        rewards = inputs.get("rewards")
+        if rewards is not None:
+            # rewards shape: (batch, num_generations)
+            import torch
+            variance = rewards.var(dim=-1)
+            mask = variance > 0
+            if mask.sum() == 0:
+                # Every group has zero variance — skip entire batch
+                return torch.tensor(0.0, device=model.device, requires_grad=True)
+            # Filter to non-zero-variance groups only
+            for key in list(inputs.keys()):
+                if isinstance(inputs[key], torch.Tensor) and inputs[key].shape[0] == mask.shape[0]:
+                    inputs[key] = inputs[key][mask]
+        return _orig_step(model, inputs, num_items_in_batch)
+
+    trainer.training_step = _patched_step
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
 def main():
-    parser = argparse.ArgumentParser(description="Train interleaved thinking models")
-    parser.add_argument("--data_dir", default="./data", help="Data directory")
-    parser.add_argument("--output_dir", default="./models", help="Output directory")
-    parser.add_argument("--output_name", default="checkpoint_sft", help="Output model checkpoint directory name")
+    parser = argparse.ArgumentParser(
+        description="SFT + GRPO trainer for Qwen3-0.6B"
+    )
+    parser.add_argument("--mode", choices=["sft", "grpo"], default="sft",
+                        help="Training mode: 'sft' (Phase 1) or 'grpo' (Phase 2)")
+    parser.add_argument("--data_dir", default="./data")
+    parser.add_argument("--output_dir", default="./models")
+    parser.add_argument("--output_name", default=None,
+                        help="Checkpoint directory name (auto-set if not given)")
+    # SFT args
     parser.add_argument("--skip_if_exists", action="store_true",
-                        help="Skip training if model already exists")
-    
+                        help="Skip if checkpoint already exists")
+    # GRPO args
+    parser.add_argument("--sft_checkpoint", default="./models/checkpoint_sft",
+                        help="Path to SFT checkpoint (starting point for GRPO)")
+    parser.add_argument("--reward_type", choices=["c", "d"], default="d",
+                        help="c=format+accuracy only  d=full composite (default)")
+
     args = parser.parse_args()
-    
+
     if not HAS_LIBS:
-        print("Error: Required libraries not installed.")
-        print("Install with: pip install unsloth trl transformers datasets")
+        print("Required libraries not installed.")
+        print("pip install unsloth trl transformers datasets accelerate bitsandbytes")
         return
-    
-    model_path = Path(args.output_dir)
-    if args.skip_if_exists and model_path.exists() and any(model_path.iterdir()):
-        print(f"Skipping training - model already exists at {model_path}")
+
+    # Auto-set output name
+    if args.output_name is None:
+        if args.mode == "sft":
+            args.output_name = "checkpoint_sft"
+        else:
+            args.output_name = f"checkpoint_grpo_{args.reward_type}"
+
+    # Skip if exists
+    checkpoint_path = Path(args.output_dir) / args.output_name
+    if args.skip_if_exists and (checkpoint_path / "adapter_config.json").exists():
+        print(f"Checkpoint exists, skipping: {checkpoint_path}")
         return
-    
+
     trainer = ModelTrainer(args.data_dir, args.output_dir, args.output_name)
-    trainer.train()
+
+    if args.mode == "sft":
+        print("\n=== Phase 1: SFT ===")
+        trainer.load_base_model()
+        trainer.apply_lora()
+        dataset_path = Path(args.data_dir) / "train_interleaved.jsonl"
+        trainer.train_sft(str(dataset_path), args.output_name)
+
+    elif args.mode == "grpo":
+        print(f"\n=== Phase 2: GRPO (reward_type={args.reward_type}) ===")
+        if not (Path(args.sft_checkpoint) / "adapter_config.json").exists():
+            print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
+            print("Run SFT first: python 2_model_trainer.py --mode sft")
+            return
+        dataset_path = Path(args.data_dir) / "train_interleaved.jsonl"
+        trainer.train_grpo(
+            sft_checkpoint=args.sft_checkpoint,
+            dataset_path=str(dataset_path),
+            output_name=args.output_name,
+            reward_type=args.reward_type,
+        )
 
 
 if __name__ == "__main__":

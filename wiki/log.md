@@ -6,6 +6,20 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-02] refactor | README + wiki docs sync — full branch documentation pass
+- **README.md** — complete rewrite to reflect the branch's current state. Added: four-module architecture diagram, updated repo layout (new scripts), preflight check as step 0, Phase 2 GRPO commands, run_all.sh orchestration, Experiment 0 section, adversarial probes section, security hardening table, updated inference server reference (dependency endpoints), corrected V2 CLI commands (old `--data_path` → new `--mode sft --data_dir`). Removed stale content. A general reader can now understand the pipeline and run it end-to-end.
+- **`wiki/sources/code/training-and-benchmark.md`** — complete rewrite. Added: GRPO phase, DAPO improvements table, composite reward breakdown, Experiment 0 strategy table, adversarial probe category table, security blockers summary table, GRPO hyperparameters, updated scripts-at-a-glance table.
+- **`wiki/sources/code/sft-v2-pipeline.md`** — updated flow diagram (now shows Blocker 1+2 in the pipeline), categories updated from 9→11, security hardening section added.
+- **`wiki/index.md`** — code source descriptions updated to reflect new content.
+- **Files changed:** `README.md`, `wiki/sources/code/training-and-benchmark.md`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/index.md`.
+
+## [2026-05-02] refactor | GPU-ready package: GRPO trainer + Experiment 0 + run_all.sh + preflight v2
+- **`pipeline/2_model_trainer.py`** — complete rewrite adding Phase 2 (GRPO). New additions: `GRPO_CONFIG` (DAPO hyperparameters: G=8, β=0.001, ε_low=0.2, ε_high=0.28), `make_reward_fn(reward_type)` (composite reward: format 0.30 + accuracy 0.40 + tool_integrity 0.15 + constitution 0.15), `build_grpo_dataset()` (SFT JSONL → GRPOTrainer prompt format), `train_grpo()` method, `load_checkpoint()` method, `_patch_dynamic_sampling()` (DAPO zero-variance group skip). CLI now supports `--mode {sft,grpo}`, `--reward_type {c,d}`. Reward type c = Ablation C (format+accuracy), reward type d = Ablation D (full composite).
+- **`pipeline/experiment0_reasoning_comparison.py`** — new file. Implements researchplan.tex Phase 3 reasoning paradigm comparison. Four strategies: baseline (direct answer), cot (chain-of-thought), interleaved (native CAPABILITY_CHECK format), tot (simulated Tree-of-Thoughts: N candidates + self-ranking). Evaluates on GSM8K (via `datasets`) + 10 built-in logic puzzles. Metrics: accuracy, CAPABILITY_CHECK rate, tool use rate, answer-tag rate, latency. Saves comparison table + JSON report. CLI: `--strategy all`, `--n 100`, `--smoke`, `--benchmark gsm8k|logic|all`.
+- **`pipeline/run_all.sh`** — new master orchestration script. 8 stages, fully resumable (each stage checks its output checkpoint before running). Stages: data check → SFT → SFT baseline → Experiment 0 → adversarial baseline → GRPO-C → GRPO-D → final ablation A/B/C/D. Server management (start/stop background process with PID file + health check). CLI: `--dry_run`, `--from N`, `--stages N,M`, `--port N`.
+- **`pipeline/preflight_check.sh`** — updated with sections 11 (run scripts present) and 12 (training status: 7-stage progress tracker showing which checkpoints and reports exist). Now reports `$STAGES_DONE / 7 stages complete` and suggests the correct `--from N` resume command.
+- **Files changed:** `pipeline/2_model_trainer.py`, `pipeline/experiment0_reasoning_comparison.py` (new), `pipeline/run_all.sh` (new), `pipeline/preflight_check.sh`.
+
 ## [2026-05-02] refactor | Security Blockers 3 + 4 — adversarial benchmark suite + dependency detection
 - **Trigger:** security-review.tex §5: dedicated red-team evaluation (Blocker 3, OWASP LLM01/LLM04) and interaction-frequency monitor (Blocker 4, OWASP LLM09) required before GRPO.
 
