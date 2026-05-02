@@ -106,6 +106,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `exploration` | 1 | Open exploration items (pre-decision) |
 | `questions` | 1 | Open-question files |
 | `bootstrap` | 1 | Generated at wiki bootstrap — may need later revision |
+| `advisor-meeting` | 7 | Summary pages for Owen Conlan / Ajinkya advisor meetings — source layer for research decision history |
 
 ## Workflow & infrastructure
 | Tag | Count | Meaning |

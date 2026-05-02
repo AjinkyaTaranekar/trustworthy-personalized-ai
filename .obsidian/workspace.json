@@ -11,10 +11,14 @@
             "id": "7a99c76bce193cba",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "wiki/sources/meetings/april2026.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "april2026"
             }
           }
         ]
@@ -49,7 +53,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "tag:#advisor-meeting",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -70,7 +74,8 @@
               "title": "Bookmarks"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -198,17 +203,24 @@
   },
   "active": "7a99c76bce193cba",
   "lastOpenFiles": [
-    "wiki/log.md.tmp.11324.1777684107199",
-    "wiki/index.md.tmp.11324.1777684090370",
-    "wiki/sources/code/sft-v2-pipeline.md.tmp.11324.1777684078176",
-    "wiki/sources/code/sft-v2-pipeline.md.tmp.11324.1777684052706",
-    "wiki/sources/code/training-and-benchmark.md.tmp.11324.1777684036655",
-    "README.md.tmp.11324.1777683971081",
-    "wiki/log.md.tmp.11324.1777683845940",
-    "pipeline/preflight_check.sh.tmp.11324.1777683510487",
-    "pipeline/run_all.sh",
-    "pipeline/run_all.sh.tmp.11324.1777683483742",
-    "pipeline/2_model_trainer.py.tmp.11324.1777683410418",
+    "wiki/log.md.tmp.11324.1777707995079",
+    "wiki/sources/meetings/january2026.md",
+    "wiki/index.md.tmp.11324.1777707958722",
+    "wiki/index.md.tmp.11324.1777707950793",
+    "wiki/tags.md.tmp.11324.1777707936876",
+    "wiki/sources/meetings/april2026.md",
+    "wiki/sources/meetings/april2026.md.tmp.11324.1777707921336",
+    "wiki/sources/meetings/february2026.md",
+    "wiki/sources/meetings/february2026.md.tmp.11324.1777707895703",
+    "wiki/sources/meetings/january2026.md.tmp.11324.1777707873504",
+    "wiki/sources/meetings/december2025.md",
+    "wiki/sources/meetings/december2025.md.tmp.11324.1777707853070",
+    "wiki/sources/meetings/november2025.md",
+    "wiki/sources/meetings/november2025.md.tmp.11324.1777707826546",
+    "wiki/sources/meetings/october2025.md",
+    "wiki/sources/meetings/october2025.md.tmp.11324.1777707799292",
+    "wiki/sources/meetings/september2025.md",
+    "wiki/sources/meetings/september2025.md.tmp.11324.1777707783098",
     "wiki/decisions/2025-10-01-four-module-architecture.md",
     "wiki/queries/grpo-and-personalisation-master-plan.md",
     "sources/papers/context-length-hurts.md",
@@ -227,13 +239,6 @@
     "docs/meetings-notes/december.md",
     "docs/meetings-notes/april.md",
     "wiki/sources/papers/appraise-plm.md",
-    "wiki/index.md",
-    "wiki/sources/papers/constitution-or-collapse.md",
-    "wiki/sources/papers/constitutional-ai-bai.md",
-    "wiki/sources/papers/syc-eval.md",
-    "wiki/sources/papers/sycophancy-sharma.md",
-    "wiki/sources/papers/rpeval.md",
-    "wiki/sources/papers/op-bench.md",
     "Untitled.canvas"
   ]
 }

@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-05-01
+updated: 2026-05-02
 ---
 
 # Index
@@ -124,6 +124,15 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/papers/qwen3-tr]] (Literature Note only) — Qwen3 family 0.6B–235B; unified thinking/non-thinking; base model technical report
 - [[sources/papers/phi4-tr]] (Literature Note only) — Phi-4 14B; data quality > scale; surpasses GPT-4o on STEM-QA
 - [[sources/papers/gpt5-system-card]] (Literature Note only) — GPT-5 system card; sycophancy + prompt injection as safety challenges
+
+### Advisor meetings (supervisor–student)
+- [[sources/meetings/september2025]] — First meeting: scrutability framing, Inside Out multi-agent concept, AI as "sociopath"
+- [[sources/meetings/october2025]] — RL for thought processes, values-interpreter architecture, ethical AI companion risks
+- [[sources/meetings/november2025]] — Ontology-LLM pivot (Nov 11); interleaved thinking + scrutability (late Nov)
+- [[sources/meetings/december2025]] — Research plan refinement; prototype scope defined; ethical/GDPR flags
+- [[sources/meetings/january2026]] — Boolean/math GPT failure → hybrid delegation architecture confirmed
+- [[sources/meetings/february2026]] — Behaviourism lens; post-hoc constraint vs in-model change; focus contraction
+- [[sources/meetings/april2026]] — Constitution drift + probes vs tests; Apple internship June–Sept 2026; dissertation timeline
 
 ### Dissertation drafts (user-authored raw)
 - [[sources/dissertation/research-plan]] — formal CS7CS6 plan: title, 5 objectives, 7 phases, 2 pivots

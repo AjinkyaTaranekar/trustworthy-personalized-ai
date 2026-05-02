@@ -6,6 +6,31 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-02] lint | Health check — full wiki audit
+- **No orphan pages found.** All files in `wiki/**/*.md` are reachable from `wiki/index.md`.
+- **Missing inbound source — `docs/meetings-notes/`.** All 7 meeting files (Sep 2025 – Apr 2026) were unindexed. Fixed in the ingest entry below.
+- **Tag count drift.** `wiki/tags.md` counts last audited 2026-04-20; at least 8 paper pages + 3 code pages added since. Counts on `reasoning`, `security`, `rl`, `constitution` are suspect. Re-audit needed after this session (not auto-fixed — requires a sweep).
+- **Missing decision for constitution-drift concern (April 2026 meeting).** The advisor formally raised constitution drift + probes-vs-tests as a mitigation strategy. This research design choice is not yet a `wiki/decisions/` page. → **Action needed: create `wiki/decisions/2026-04-xx-constitution-drift-probing.md`.**
+- **`IMPROVEMENT_ROADMAP.md` (54 KB at repo root) still not ingested.** Listed in "Not yet ingested" section since bootstrap. User decision needed on whether it is still authoritative.
+- **`wiki/decisions/2025-10-01-four-module-architecture.md` has stale `updated:` date (2025-10-01).** Page content references Qwen3-0.6B, Gemma 4, FalkorDB, Cognee — none of which were in scope in October 2025. Minor metadata drift; not auto-fixed.
+- **13 "Literature Note only" papers** remain without `wiki/sources/papers/` pages. Tracked by `wiki/questions/2026-04-30-asset-acquisition-todo.md`. No action needed here.
+- **Three `wiki/sources/code/` pages not linked from any topic page.** `sft-v2-pipeline`, `training-and-benchmark`, `constitution-document` are in the index but not referenced from `topics/reasoning` or `topics/tool-use-and-verification`. Low-priority cross-reference gap.
+
+## [2026-05-02] ingest | Meeting notes — all advisor meetings Sep 2025 – Apr 2026
+- **Source:** `docs/meetings-notes/` — 7 markdown files (september2025 through april2026).
+- **New pages created (7):**
+  - `wiki/sources/meetings/september2025.md` — First meeting: scrutability framing, Inside Out concept, AI as "sociopath"
+  - `wiki/sources/meetings/october2025.md` — RL for thought processes, values-interpreter architecture, ethical companion risks
+  - `wiki/sources/meetings/november2025.md` — Two meetings: ontology-LLM pivot (Nov 11) + interleaved thinking (late Nov)
+  - `wiki/sources/meetings/december2025.md` — Research plan review (Dec 11 + Dec 16): prototype scope, GDPR flags, pivoting normalised
+  - `wiki/sources/meetings/january2026.md` — Boolean/math GPT failure → hybrid delegation confirmed; context forgetting
+  - `wiki/sources/meetings/february2026.md` — Behaviourism lens; post-hoc constraint vs in-model innovation; focus contraction request
+  - `wiki/sources/meetings/april2026.md` — Constitution drift + probes vs tests; Apple internship June–Sept 2026; dissertation timeline
+- **Updated:** `wiki/index.md` — new "Advisor meetings" subsection under Sources; `updated:` bumped to 2026-05-02.
+- **Updated:** `wiki/tags.md` — added `advisor-meeting` tag (count 7).
+- **Key project fact captured:** Ajinkya accepted an Apple internship in Dublin, June–September 2026. Dissertation experimentation must complete before then or gate the overlap carefully.
+- **No conflicts raised.** Meeting notes are consistent with existing wiki decisions and entity pages.
+
 ## [2026-05-02] refactor | README + wiki docs sync — full branch documentation pass
 - **README.md** — complete rewrite to reflect the branch's current state. Added: four-module architecture diagram, updated repo layout (new scripts), preflight check as step 0, Phase 2 GRPO commands, run_all.sh orchestration, Experiment 0 section, adversarial probes section, security hardening table, updated inference server reference (dependency endpoints), corrected V2 CLI commands (old `--data_path` → new `--mode sft --data_dir`). Removed stale content. A general reader can now understand the pipeline and run it end-to-end.
 - **`wiki/sources/code/training-and-benchmark.md`** — complete rewrite. Added: GRPO phase, DAPO improvements table, composite reward breakdown, Experiment 0 strategy table, adversarial probe category table, security blockers summary table, GRPO hyperparameters, updated scripts-at-a-glance table.
