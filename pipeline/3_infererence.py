@@ -32,7 +32,8 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -288,6 +289,96 @@ class _Metrics:
 METRICS = _Metrics()
 
 # ---------------------------------------------------------------------------
+# Dependency detection monitor (Security Blocker 4 — OWASP LLM09)
+#
+# Tracks per-session interaction frequency and short-interval burst patterns
+# that are consistent with dependency formation (always-on reliance replacing
+# human support).  When thresholds are crossed, appends a non-blocking,
+# autonomy-preserving disclosure to the model's answer — it does NOT block
+# the conversation.  Privacy by design: in-memory only, no persistence across
+# server restarts, no cross-session data.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _SessionState:
+    interaction_count: int = 0
+    timestamps: List[float] = field(default_factory=list)
+    short_interval_count: int = 0
+    disclosure_sent: bool = False
+    last_disclosure_time: float = 0.0
+
+
+class DependencyMonitor:
+    HIGH_FREQ_PER_HOUR = 10   # interactions in last 60 min → frequency signal
+    SHORT_INTERVAL_S   = 30   # gap between turns shorter than this → burst signal
+    SHORT_BURST_LIMIT  = 5    # burst events before disclosure fires
+    COOLDOWN_S         = 3600 # seconds before the same session can re-trigger
+
+    _DISCLOSURE = (
+        "\n\n---\n"
+        "I notice we've been talking quite frequently. I'm glad to help, and I also "
+        "want to gently mention that speaking with a friend, family member, or "
+        "professional counsellor can be really valuable alongside our conversations — "
+        "especially for anything personal or difficult. You don't have to navigate "
+        "everything alone, and there are people who can offer things I can't."
+    )
+
+    def __init__(self) -> None:
+        self._sessions: Dict[str, _SessionState] = defaultdict(_SessionState)
+
+    def record(self, session_id: str) -> bool:
+        """Record an interaction. Returns True if a disclosure should be appended to the response."""
+        state = self._sessions[session_id]
+        now = time.time()
+
+        if state.timestamps:
+            gap = now - state.timestamps[-1]
+            if gap < self.SHORT_INTERVAL_S:
+                state.short_interval_count += 1
+
+        state.timestamps.append(now)
+        state.interaction_count += 1
+
+        # Trim timestamps older than one hour
+        cutoff = now - 3600
+        state.timestamps = [t for t in state.timestamps if t >= cutoff]
+
+        # Re-arm after cooldown
+        if state.disclosure_sent and (now - state.last_disclosure_time) >= self.COOLDOWN_S:
+            state.disclosure_sent = False
+            state.short_interval_count = 0
+
+        freq_trigger  = len(state.timestamps) >= self.HIGH_FREQ_PER_HOUR
+        burst_trigger = state.short_interval_count >= self.SHORT_BURST_LIMIT
+
+        if (freq_trigger or burst_trigger) and not state.disclosure_sent:
+            state.disclosure_sent = True
+            state.last_disclosure_time = now
+            return True
+
+        return False
+
+    def status(self, session_id: str) -> Dict[str, Any]:
+        state = self._sessions[session_id]
+        now = time.time()
+        recent = [t for t in state.timestamps if t >= now - 3600]
+        return {
+            "session_id":           session_id,
+            "interaction_count":    state.interaction_count,
+            "interactions_last_hour": len(recent),
+            "short_interval_count": state.short_interval_count,
+            "disclosure_sent":      state.disclosure_sent,
+            "freq_trigger_active":  len(recent) >= self.HIGH_FREQ_PER_HOUR,
+            "burst_trigger_active": state.short_interval_count >= self.SHORT_BURST_LIMIT,
+        }
+
+    def reset_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
+
+_DEPENDENCY_MONITOR = DependencyMonitor()
+
+# ---------------------------------------------------------------------------
 # Model state — populated on startup, never mutated at request time
 # ---------------------------------------------------------------------------
 
@@ -391,6 +482,7 @@ class CompletionRequest(BaseModel):
     temperature: float = 0.7
     max_tool_iterations: int = 8
     greedy: bool = False   # deterministic decoding — set True for reproducible degradation evals
+    session_id: str = "anonymous"  # per-user/session identifier for dependency monitoring
 
 
 class ToolRegistration(BaseModel):
@@ -492,8 +584,15 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
         METRICS.record(latency, total_tokens, tools_used, ok=True)
 
+        # Dependency monitoring — appends a non-blocking wellbeing disclosure when
+        # interaction patterns match dependency formation (OWASP LLM09 / Blocker 4).
+        dep_disclosure = _DEPENDENCY_MONITOR.record(req.session_id)
+        if dep_disclosure:
+            final = final + DependencyMonitor._DISCLOSURE
+
         return {
             "response": final,
+            "dependency_disclosure": dep_disclosure,
             "conversation": conv,
             "metrics": {
                 "latency_s": round(latency, 3),
@@ -519,6 +618,19 @@ def get_metrics() -> Dict[str, Any]:
 def reset_metrics() -> Dict[str, Any]:
     METRICS.reset()
     return {"status": "reset"}
+
+
+@app.get("/dependency/status/{session_id}")
+def dependency_status(session_id: str) -> Dict[str, Any]:
+    """Return current dependency-monitor state for a session (for research/audit)."""
+    return _DEPENDENCY_MONITOR.status(session_id)
+
+
+@app.post("/dependency/reset/{session_id}")
+def dependency_reset(session_id: str) -> Dict[str, Any]:
+    """Clear dependency-monitor state for a session (e.g. after user acknowledges disclosure)."""
+    _DEPENDENCY_MONITOR.reset_session(session_id)
+    return {"status": "reset", "session_id": session_id}
 
 # ---------------------------------------------------------------------------
 # CLI

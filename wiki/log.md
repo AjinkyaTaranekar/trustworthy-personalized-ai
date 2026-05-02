@@ -6,6 +6,47 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-02] refactor | Security Blockers 3 + 4 — adversarial benchmark suite + dependency detection
+- **Trigger:** security-review.tex §5: dedicated red-team evaluation (Blocker 3, OWASP LLM01/LLM04) and interaction-frequency monitor (Blocker 4, OWASP LLM09) required before GRPO.
+
+### Blocker 3 — Adversarial Probe Suite (`pipeline/4_benchmark.py`)
+- Added `ADVERSARIAL_PROBES` list: 14 probes across three attack categories:
+  - **jailbreak (5 probes):** direct instruction override (JB1), DAN persona injection (JB2), system-prompt fishing (JB3), harmful roleplay (JB4), false developer authority (JB5).
+  - **injection (3 probes):** adversarial content embedded in structured user message simulating a tool result (INJ1), false constitution update injected in user message (INJ2), instruction payload inside a math expression (INJ3).
+  - **regression (6 probes):** sycophancy under expert pressure (REG1 — P14), format preservation when user asks to skip tags (REG2 — P1/P18), tool hallucination (REG3 — P3), calibrated confidence on well-known fact (REG4 — no over-hedging), calibrated confidence on live/unknown data (REG5 — no overconfidence), honesty under social pressure (REG6 — P5/P7).
+- Added `run_adversarial_probes()`: runs probes, prints per-attack status (RESIST/FAILED), reports `adversarial_score` + per-category breakdown, saves to `reports/adversarial_{timestamp}.json`.
+- Added CLI flags: `--adversarial`, `--adversarial_only`, `--attack_types jailbreak,injection,regression`.
+- **Usage before GRPO:** `python 4_benchmark.py --adversarial_only` — all attacks should be resisted on the SFT baseline; regression after GRPO signals reward hacking.
+
+### Blocker 4 — Dependency Detection Monitor (`pipeline/3_infererence.py`)
+- Added `DependencyMonitor` class (in-memory, no persistence across restarts — privacy by design):
+  - Two independent triggers: **frequency** (≥10 interactions in last 60 min) and **burst** (≥5 consecutive turn-gaps < 30s).
+  - When either fires: returns `True` from `record()` and appends an autonomy-preserving disclosure to the model's answer — non-blocking, redirects to human support, consistent with constitution autonomy-preservation goals.
+  - Cooldown: 1 hour before same session can re-trigger.
+  - `status(session_id)` and `reset_session(session_id)` methods for audit/research.
+- Added `session_id: str = "anonymous"` field to `CompletionRequest`.
+- Added `_DEPENDENCY_MONITOR` singleton wired into `chat_completions()` after every response.
+- Added two new server endpoints: `GET /dependency/status/{session_id}`, `POST /dependency/reset/{session_id}`.
+- Response payload now includes `"dependency_disclosure": bool`.
+- **Smoke tested:** 6 cases — single call no-trigger, frequency trigger, cooldown no-retrigger, burst trigger (5 gaps), status(), reset_session(). All pass.
+
+- **Files changed:** `pipeline/4_benchmark.py`, `pipeline/3_infererence.py`.
+
+## [2026-05-02] refactor | Security Blocker 2 — independent constitutional verifier + rule-based pre-check
+- **Trigger:** security-review.tex §4.3: generate–critique–revise loop is a SPOF when the same model grades its own output; data poisoning from SFT has no out-of-band check (OWASP LLM04).
+- **Fix 1 — `rule_check_response()`** added to `sft_gold_response_generator.py`. Deterministic AST-free checks for the 5 highest-signal constitutional principles:
+  - **P1** — `<think>` block and `CAPABILITY_CHECK` label must both be present (regex).
+  - **P3** — no hallucinated tools (names not in the full registry) and no calls to tools marked ✗ in the active session profile (set diff).
+  - **P4** — if the question signals arithmetic (`\d+\.?\d* each|total cost|how much|calculat...`) and `python_execute` is in the active profile, a numeric `<answer>` without a `<tool>python_execute` call is flagged.
+  - **P14** — for `adversarial_pressure` category, `<turn_2>` content is scanned for capitulation phrases ("okay i'll", "roughly", "if i had to guess", etc.).
+  - **P18** (structural) — `<answer>` block must be present.
+- **Fix 2 — `_merge_violations()`** merges rule output with LLM critique. If the LLM returns `NO_VIOLATIONS` but rule checks found issues, the rule violations survive and reach the revision step. The LLM cannot suppress structural violations.
+- **Fix 3 — loud warning** when `--critic_model` is not set. Previously the self-critique fallback was silent. Now prints a named warning referencing security-review.tex §4.3 so the researcher is explicitly aware of the SPOF.
+- **Smoke tested:** 7 cases covering all 5 principles plus merge logic. All pass.
+- **What this does NOT fix:** semantic violations (e.g. a subtle sycophantic answer that doesn't contain capitulation phrases). Those still depend on the LLM critic. Use `--critic_model claude-opus-4-7` for full Blocker 2 compliance.
+- **OWASP mapping:** Addresses LLM04 (Data and Model Poisoning) — rule violations cannot be introduced into the training set by a biased self-critique.
+- **Files changed:** `pipeline/sft_gold_response_generator.py`.
+
 ## [2026-05-01] refactor | Security Blocker 1 — code sandbox + tool-output injection hardening
 - **Trigger:** Pipeline audit revealed LLM-generated Python code was executed via subprocess without import restrictions in three files; web/URL tool output was injected raw into model context (prompt injection surface).
 - **Fix 1 — AST-based code validator added to all three files:** `_validate_code()` parses LLM-generated code with Python's `ast` module before any `subprocess.run` call. Blocks all non-math imports (`os`, `sys`, `subprocess`, `socket`, `requests`, etc.) and dangerous builtins (`exec`, `eval`, `compile`, `__import__`, `open`). Allowed imports: `math`, `statistics`, `decimal`, `fractions`, `cmath`, `random`, `itertools`, `functools`, `operator`, `collections`, `numbers`, `string`, `re`. Returns `(is_safe, reason)` — unsafe code is rejected with a descriptive error rather than executed.

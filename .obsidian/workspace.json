@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "5c91106b7dce85a0",
+        "id": "b9d0c7689b80d462",
         "type": "tabs",
         "children": [
           {
-            "id": "53d9767f17ff64c6",
+            "id": "7a99c76bce193cba",
             "type": "leaf",
             "state": {
               "type": "empty",
@@ -196,20 +196,20 @@
       "omnisearch:Omnisearch": false
     }
   },
-  "active": "53d9767f17ff64c6",
+  "active": "7a99c76bce193cba",
   "lastOpenFiles": [
-    "wiki/log.md.tmp.11324.1777668371674",
-    "wiki/index.md.tmp.11324.1777668354255",
-    "wiki/queries/grpo-and-personalisation-master-plan.md.tmp.11324.1777668343581",
-    "wiki/queries/grpo-and-personalisation-master-plan.md.tmp.11324.1777668322542",
-    "wiki/queries/grpo-and-personalisation-master-plan.md.tmp.11324.1777668291830",
-    "wiki/experiments/experiment-catalog.md.tmp.11324.1777668264085",
-    "wiki/experiments/experiment-catalog.md.tmp.11324.1777668247613",
-    "wiki/experiments/experiment-catalog.md.tmp.11324.1777668237097",
-    "wiki/overview.md.tmp.11324.1777668224691",
+    "wiki/queries/grpo-and-personalisation-master-plan.md.tmp.11324.1777681980829",
+    "wiki/log.md.tmp.11324.1777681960696",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681909490",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681836189",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681716645",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681669879",
+    "pipeline/__pycache__/3_infererence.cpython-310.pyc",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681631965",
+    "pipeline/__pycache__/4_benchmark.cpython-310.pyc",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681559246",
+    "pipeline/test_blocker3_4.py.tmp.11324.1777681550257",
     "wiki/decisions/2025-10-01-four-module-architecture.md",
-    "wiki/decisions/2025-10-01-four-module-architecture.md.tmp.11324.1777668200026",
-    "wiki/log.md.tmp.11324.1777667629109",
     "wiki/queries/grpo-and-personalisation-master-plan.md",
     "sources/papers/context-length-hurts.md",
     "docs/meetings-notes/september2025.md",

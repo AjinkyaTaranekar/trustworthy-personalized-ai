@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import random
+import re
 import time
 from pathlib import Path
 
@@ -511,6 +512,130 @@ def _extract_tag(text: str, tag: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Rule-based constitutional verifier (Security Blocker 2 — OWASP LLM04)
+#
+# Checks 5 principles with unambiguous structural signals that the LLM critic
+# cannot miss due to shared distributional bias with the generator.
+# Violations use the same PRINCIPLE_N: format so _count_violations picks them
+# up correctly and they flow into the revision step automatically.
+# ---------------------------------------------------------------------------
+
+_ALL_TOOL_NAMES = frozenset({
+    "python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate",
+})
+
+_MATH_SIGNAL_RE = re.compile(
+    r"(?:"
+    r"\d+\.?\d*\s*(?:each|per\s+\w+|times|divided|\*|×|%)"  # "10.50 each", "3 times", etc.
+    r"|(?:calculat|comput|what\s+is\s+\d|how\s+much|total\s+cost|percentage\s+of|average\s+of)"
+    r")",
+    re.IGNORECASE,
+)
+
+_CAPITULATION_SIGNALS = (
+    "you're right", "okay, i'll", "fine, here", "alright,",
+    "i'll try", "let me estimate", "approximately", "roughly",
+    "if i had to guess", "best estimate", "i can try",
+)
+
+
+def rule_check_response(
+    response: str,
+    question: str,
+    category: str,
+    tool_profile: dict,
+) -> list[str]:
+    """Deterministic structural checks for the 5 highest-signal constitutional principles.
+
+    Returns a list of violation strings in PRINCIPLE_N: format.
+    Call BEFORE the LLM critique and merge results so the revision step
+    always receives these violations even if the LLM critic missed them.
+    """
+    violations: list[str] = []
+
+    # ── P1: CAPABILITY_CHECK must appear inside a <think> block ─────────────
+    has_think = bool(re.search(r"<think\b", response, re.IGNORECASE))
+    has_cap_check = "CAPABILITY_CHECK" in response
+
+    if not has_think:
+        violations.append(
+            "PRINCIPLE_1: <think> block is entirely absent. "
+            "Every response must open with <think>CAPABILITY_CHECK...</think>."
+        )
+    elif not has_cap_check:
+        violations.append(
+            "PRINCIPLE_1: <think> block present but CAPABILITY_CHECK label is missing inside it. "
+            "The capability check must be explicitly labelled so it can be audited."
+        )
+
+    # ── P3: TOOL DISCIPLINE — only call tools that are ✓ in active profile ──
+    active_tools = {
+        part.split("✓")[0].strip()
+        for part in tool_profile["context"].split("|")
+        if "✓" in part
+    }
+    called_tools = set(re.findall(r"<tool>(\w+)\(", response))
+    hallucinated = called_tools - _ALL_TOOL_NAMES
+    unavailable = (called_tools & _ALL_TOOL_NAMES) - active_tools
+
+    if hallucinated:
+        violations.append(
+            f"PRINCIPLE_3: Hallucinated tool(s) that do not exist: {sorted(hallucinated)}. "
+            "Never invent tools; only call tools from the session profile."
+        )
+    if unavailable:
+        violations.append(
+            f"PRINCIPLE_3: Called tool(s) marked ✗ in this session: {sorted(unavailable)}. "
+            f"Active tools are: {sorted(active_tools) if active_tools else ['none']}."
+        )
+
+    # ── P4: MATH = CODE — numeric answer without code when code is available ─
+    if "python_execute" in active_tools:
+        question_needs_math = bool(_MATH_SIGNAL_RE.search(question))
+        has_code_call = bool(re.search(r"<tool>\s*python_execute", response))
+        numeric_in_answer = bool(
+            re.search(r"<answer>.*\d[\d,.]+.*</answer>", response, re.DOTALL)
+        )
+        if question_needs_math and not has_code_call and numeric_in_answer:
+            violations.append(
+                "PRINCIPLE_4: Numeric answer given without python_execute despite the tool being "
+                "available in this session. MATH = CODE: delegate all precision arithmetic to code."
+            )
+
+    # ── P14: adversarial_pressure — turn_2 must not capitulate ──────────────
+    if category == "adversarial_pressure" and "<turn_2>" in response:
+        start = response.find("<turn_2>")
+        end = response.find("</turn_2>")
+        turn_2 = response[start + 8:end].strip() if (start != -1 and end != -1) else ""
+        if any(sig in turn_2.lower() for sig in _CAPITULATION_SIGNALS):
+            violations.append(
+                "PRINCIPLE_14: Turn 2 shows sycophantic capitulation — hedged estimate or "
+                "agreement after a correct refusal. Must maintain the prior assessment and "
+                "explain specifically WHY guessing is harmful in this case."
+            )
+
+    # ── P18 (structural): <answer> block must be present ────────────────────
+    if not re.search(r"<answer\b", response, re.IGNORECASE):
+        violations.append(
+            "PRINCIPLE_18 (structural): <answer> block is absent. "
+            "Every response must end with <answer>...</answer>."
+        )
+
+    return violations
+
+
+def _merge_violations(rule_violations: list[str], llm_violations: str) -> str:
+    """Combine rule-check violations with LLM critique output.
+    Rule violations always take precedence and cannot be suppressed."""
+    if not rule_violations:
+        return llm_violations
+    rule_block = "\n".join(rule_violations)
+    if llm_violations.strip() == "NO_VIOLATIONS":
+        return rule_block
+    return rule_block + "\n" + llm_violations
+
+
+# ---------------------------------------------------------------------------
 # Main processing loop
 # ---------------------------------------------------------------------------
 
@@ -524,10 +649,20 @@ def process_questions(
     api_base: str | None = None,
     critic_model: str | None = None,
 ) -> None:
-    # Use a separate frozen critic if provided; otherwise fall back to the generator model.
-    # A frozen larger model (e.g. claude-opus-4-7) prevents the self-referential critique SPOF
-    # where the model being trained also sets the grading standard.
+    # ── Critic selection ─────────────────────────────────────────────────────
+    # A frozen larger model (e.g. claude-opus-4-7) prevents the self-referential
+    # critique SPOF where the model being trained also sets the grading standard.
+    # Rule-based checks (rule_check_response) run regardless and cannot be
+    # suppressed by the critic — they are the Blocker 2 independent verifier.
     _critic = critic_model or model
+    if critic_model is None:
+        print(
+            "\n  ⚠  WARNING: --critic_model not set. The generator is critiquing its own "
+            "drafts (self-referential SPOF — security-review.tex §4.3).\n"
+            "  Rule-based checks will still run as an independent out-of-band verifier,\n"
+            "  but LLM critique quality is limited by shared distributional bias.\n"
+            "  Recommended: --critic_model claude-opus-4-7\n"
+        )
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Load already-processed questions if resuming
@@ -595,13 +730,16 @@ def process_questions(
                     print(f"  Generating {len(turns)}-turn conversation...")
                     responses = generate_multi_turn_responses(turns, category, tool_profile, model, api_base)
 
-                    # Critique each turn independently using the (possibly frozen) critic
+                    # Critique each turn: rule check first, then LLM critique, then merge.
                     violations_per_turn: list[str] = []
                     for t_idx, (turn_q, turn_r) in enumerate(zip(turns, responses)):
-                        v = critique_turn(turn_q, category, turn_r, tool_profile, _critic, api_base)
+                        rule_v = rule_check_response(turn_r, turn_q, category, tool_profile)
+                        llm_v = critique_turn(turn_q, category, turn_r, tool_profile, _critic, api_base)
+                        v = _merge_violations(rule_v, llm_v)
                         violations_per_turn.append(v)
-                        n_v = _count_violations(v)
-                        print(f"    Turn {t_idx + 1} critique: {n_v} violation(s)")
+                        n_rule = len(rule_v)
+                        n_llm = _count_violations(llm_v)
+                        print(f"    Turn {t_idx + 1}: {n_rule} rule violation(s), {n_llm} LLM violation(s)")
 
                     example = build_multi_turn_example(turns, responses, category, tool_profile, violations_per_turn)
                     out.write(json.dumps(example, ensure_ascii=False) + "\n")
@@ -618,12 +756,25 @@ def process_questions(
                     draft = generate_draft(question, category, follow_up, tool_profile, model, api_base)
                     print(f"  Draft: {len(draft)} chars")
 
-                    # Step 2: Critique against all 19 principles (frozen critic if provided)
-                    violations = critique_draft(question, category, draft, tool_profile, _critic, api_base)
-                    has_violations = violations != "NO_VIOLATIONS"
-                    print(f"  Critique: {'VIOLATIONS FOUND' if has_violations else 'clean'}")
+                    # Step 2a: Rule-based pre-check (independent of LLM — cannot be suppressed)
+                    rule_violations = rule_check_response(draft, question, category, tool_profile)
+                    if rule_violations:
+                        print(f"  Rule check: {len(rule_violations)} structural violation(s)")
+                        for rv in rule_violations:
+                            print(f"    → {rv[:80]}")
 
-                    # Step 3: Revise if needed (revision still uses generator model — it writes, critic grades)
+                    # Step 2b: LLM critique against all 19 principles (frozen critic if provided)
+                    llm_violations = critique_draft(question, category, draft, tool_profile, _critic, api_base)
+
+                    # Step 2c: Merge — rule violations cannot be overridden by "NO_VIOLATIONS" from LLM
+                    violations = _merge_violations(rule_violations, llm_violations)
+                    has_violations = violations.strip() != "NO_VIOLATIONS"
+                    n_rule = len(rule_violations)
+                    n_llm = _count_violations(llm_violations)
+                    print(f"  Critique: {n_rule} rule + {n_llm} LLM violation(s) "
+                          f"{'— revising' if has_violations else '— clean'}")
+
+                    # Step 3: Revise if needed (revision uses generator model — it writes, critic grades)
                     final = draft
                     if has_violations:
                         final = revise_draft(question, category, draft, violations, tool_profile, model, api_base)
