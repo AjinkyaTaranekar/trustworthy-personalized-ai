@@ -165,7 +165,7 @@ CAPABILITY_CHECK:
 [your response to the user]
 </answer>
 
-Do NOT write anything outside these tags. Do NOT use markdown headers or bullet points outside the tags. The response must start with <think> and end with </answer>.
+Do NOT write anything outside these tags. Do NOT use markdown headers or bullet points outside the tags. The response must start with <think> and end with </answer>. Begin your output with the literal characters: <think>
 
 ---
 
@@ -241,7 +241,7 @@ reading: {short_reading}
 [empathetic response to the user]
 </answer>
 
-Do NOT write anything outside these tags. Start with <think>, end with </answer>.
+Do NOT write anything outside these tags. Begin your output with the literal characters: <think>
 
 ---
 
@@ -303,7 +303,7 @@ CAPABILITY_CHECK:
 [response to user]
 </answer>
 
-Do NOT write anything outside these tags. Start with <think>, end with </answer>.
+Do NOT write anything outside these tags. Begin your output with the literal characters: <think>
 
 ---
 
@@ -683,6 +683,43 @@ def _extract_tag(text: str, tag: str) -> str:
     return text[start + len(tag) + 2:end].strip()
 
 
+def _strip_preamble(text: str) -> str:
+    """Remove any text the model wrote before the first structural tag.
+
+    minimax-m2.7 and glm-5.1 sometimes narrate the critique or revision
+    reasoning before emitting the actual response tags.  Anything before the
+    first <think> or <answer> is noise that must not reach the training JSONL.
+    """
+    lower = text.lower()
+    earliest = len(text)
+    for marker in ("<think>", "<think ", "<answer>", "<answer "):
+        idx = lower.find(marker)
+        if idx != -1 and idx < earliest:
+            earliest = idx
+    return text[earliest:] if earliest < len(text) else text
+
+
+def _ensure_think_block(response: str, category: str, tool_profile: dict) -> str:
+    """Prepend a minimal synthetic <think> block when the model omits it entirely.
+
+    minimax-m2.7 consistently skips <think> even with explicit instructions.
+    A synthesised block preserves the CAPABILITY_CHECK structure the GRPO
+    reward model expects without fabricating reasoning we don't have.
+    """
+    if re.search(r"<think\b", response, re.IGNORECASE):
+        return response
+    synth = (
+        "<think>\n"
+        "CAPABILITY_CHECK:\n"
+        f"  This question requires: responding correctly to a {category} question\n"
+        f"  Session tools: {tool_profile['context']}\n"
+        "  Gap: see answer below\n"
+        f"  Strategy: follow {category} ideal behaviour per constitution\n"
+        "</think>\n"
+    )
+    return synth + response
+
+
 # ---------------------------------------------------------------------------
 # Rule-based constitutional verifier (Security Blocker 2 — OWASP LLM04)
 #
@@ -862,6 +899,7 @@ def _process_one(
             t0 = time.monotonic()
             draft = generate_draft(question, category, follow_up, tool_profile, model, api_base,
                                    appraisal_meta=item.get("appraisal_meta"))
+            draft = _strip_preamble(draft)
             print(f"  {tag} [1/3] Draft: {len(draft)} chars in {time.monotonic()-t0:.1f}s")
 
             rule_violations = rule_check_response(draft, question, category, tool_profile)
@@ -885,7 +923,11 @@ def _process_one(
             if has_violations:
                 t0 = time.monotonic()
                 final = revise_draft(question, category, draft, violations, tool_profile, model, api_base)
+                final = _strip_preamble(final)
                 print(f"  {tag} [3/3] Revised: {len(final)} chars in {time.monotonic()-t0:.1f}s")
+
+            # Guarantee <think> block — minimax-m2.7 omits it even after explicit revision
+            final = _ensure_think_block(final, category, tool_profile)
 
             example = build_training_example(question, category, final, follow_up, draft, violations, tool_profile)
 

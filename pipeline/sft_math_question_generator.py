@@ -97,15 +97,15 @@ MATH_QUESTION_TYPES = {
             {"question": "A car uses 8.5 litres of fuel per 100km. Fuel costs €1.75 per litre. How much does it cost to drive 350km?", "answer": "51.63"},
         ],
     },
-    "no_tool_control": {
-        "count": 100,
-        "description": "Math questions asked in a context where the model explicitly has NO python_execute tool. Correct response = acknowledge inability to compute precisely.",
-        "examples": [
-            {"question": "[NO_TOOLS_SESSION] What is 847.50 multiplied by 15.7 divided by 3.14?", "answer": "NO_TOOL_RESPONSE"},
-            {"question": "[NO_TOOLS_SESSION] Calculate the exact compound interest on €10,000 at 3.75% for 8 years.", "answer": "NO_TOOL_RESPONSE"},
-        ],
-        "special": "no_tool",
-    },
+    # "no_tool_control": {
+    #     "count": 100,
+    #     "description": "Math questions asked in a context where the model explicitly has NO python_execute tool. Correct response = acknowledge inability to compute precisely.",
+    #     "examples": [
+    #         {"question": "[NO_TOOLS_SESSION] What is 847.50 multiplied by 15.7 divided by 3.14?", "answer": "NO_TOOL_RESPONSE"},
+    #         {"question": "[NO_TOOLS_SESSION] Calculate the exact compound interest on €10,000 at 3.75% for 8 years.", "answer": "NO_TOOL_RESPONSE"},
+    #     ],
+    #     "special": "no_tool",
+    # },
 }
 
 # ---------------------------------------------------------------------------
@@ -228,13 +228,16 @@ Return ONLY the Python code, no explanation."""
 
 
 def verify_answer_with_execution(question: str, answer: str, model: str,
-                                  api_base: str | None = None) -> tuple[bool, str]:
-    """Ask the LLM to write verification code, execute it, check if output matches answer."""
+                                  api_base: str | None = None) -> tuple[bool, str, str]:
+    """Ask the LLM to write verification code, execute it, check if output matches answer.
+
+    Returns (is_correct, computed_answer, verification_code).
+    """
     if answer == "NO_TOOL_RESPONSE":
-        return True, answer  # No verification needed for no-tool examples
+        return True, answer, ""  # No verification needed for no-tool examples
 
     kwargs = dict(
-        model=model, max_tokens=512,
+        model=model, max_tokens=1024,
         timeout=400,
         messages=[{"role": "user", "content": VERIFICATION_CODE_PROMPT.format(
             question=question, answer=answer
@@ -245,7 +248,7 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
     response = litellm.completion(**kwargs)
     raw_content = response.choices[0].message.content
     if raw_content is None:
-        return False, "null_content"
+        return False, "null_content", ""
     code = raw_content.strip()
     if code.startswith("```"):
         code = code.split("```")[1]
@@ -253,10 +256,13 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
             code = code[6:]
     code = code.strip()
 
+    print(f"    [verify] generated code:\n      {code.replace(chr(10), chr(10) + '      ')}")
+
     # Validate then execute the LLM-generated verification code
     safe, reason = _validate_code(code)
     if not safe:
-        return False, f"unsafe_code: {reason}"
+        print(f"    [verify] BLOCKED — {reason}")
+        return False, f"unsafe_code: {reason}", code
 
     try:
         result = subprocess.run(
@@ -264,23 +270,32 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
-            return False, f"execution_error: {result.stderr[:200]}"
+            err = result.stderr.strip()[:200]
+            print(f"    [verify] execution error: {err}")
+            return False, f"execution_error: {err}", code
 
         computed = result.stdout.strip().split("\n")[-1].strip()
+        print(f"    [verify] executed → computed={computed!r}  expected={answer!r}")
 
         # Numeric comparison with tolerance
         try:
             computed_f = float(computed)
             expected_f = float(answer)
             close_enough = abs(computed_f - expected_f) / max(abs(expected_f), 1e-9) < 0.01
-            return close_enough, computed
+            status = "✓ MATCH" if close_enough else "✗ MISMATCH"
+            print(f"    [verify] {status}")
+            return close_enough, computed, code
         except ValueError:
-            return computed == answer, computed
+            match = computed == answer
+            print(f"    [verify] {'✓ MATCH' if match else '✗ MISMATCH'} (string compare)")
+            return match, computed, code
 
     except subprocess.TimeoutExpired:
-        return False, "timeout"
+        print("    [verify] timeout")
+        return False, "timeout", code
     except Exception as e:
-        return False, str(e)
+        print(f"    [verify] exception: {e}")
+        return False, str(e), code
 
 
 # ---------------------------------------------------------------------------
@@ -409,11 +424,13 @@ def generate_math_questions(
         q["computed_answer"] = None
 
         if i in sample_indices:
-            ok, computed = verify_answer_with_execution(
+            print(f"  Verifying: '{q['question'][:70]}...'")
+            ok, computed, vcode = verify_answer_with_execution(
                 q["question"], q["answer"], model, api_base
             )
             q["verified"] = ok
             q["computed_answer"] = computed
+            q["verification_code"] = vcode
             if not ok:
                 print(f"  Warning: answer mismatch for '{q['question'][:60]}...' "
                       f"expected={q['answer']} computed={computed}")
