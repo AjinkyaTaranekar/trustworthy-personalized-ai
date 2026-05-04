@@ -11,7 +11,7 @@ sources:
   - pipeline/sft_dataset_assembler.py
   - pipeline/constitution.md
   - README.md
-updated: 2026-05-02
+updated: 2026-05-03
 status: current
 ---
 
@@ -67,7 +67,18 @@ sft_gold_response_generator.py               sft_rejection_sampler.py
 
 ## LiteLLM design point
 
-All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the `--model` arg swaps providers (Anthropic, OpenAI, Ollama, Groq) without code changes. Estimated cost for 1,500 behavioural examples: ~$10–15 with Claude Sonnet.
+All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the `--model` arg swaps providers without code changes. Confirmed working providers:
+
+| Provider | Model string | Key env var | Notes |
+|---|---|---|---|
+| **NVIDIA NIM** | `nvidia_nim/moonshotai/kimi-k2.6` | `NVIDIA_NIM_API_KEY` | ✅ confirmed; free tier; 1T-param MoE VLM |
+| **NVIDIA NIM** | `nvidia_nim/minimaxai/minimax-m2.7` | `NVIDIA_NIM_API_KEY` | ✅ confirmed; free tier; used as independent critic |
+| Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | Free tier; ~5,100 calls for full run |
+| Groq | `groq/gemma2-9b-it` | `GROQ_API_KEY` | Good independent critic (different family) |
+| Anthropic | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | ~$10–15 for 1,500 examples |
+| Ollama | `ollama/llama3.2` | `OLLAMA_API_BASE` | Fully local; no key needed |
+
+Recommended setup: NVIDIA NIM Kimi K2.6 as generator + Minimax M2.7 as independent critic — both frontier models, both free, different architectures (genuine critic independence). Also used as comparison models in [[experiments/frontier-model-comparison]].
 
 ## Scoring in rejection sampling (Part B)
 

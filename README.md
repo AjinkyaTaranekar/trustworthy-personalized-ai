@@ -31,9 +31,20 @@ pip install falkordb                         # User Modelling graph backend
 **API key** (needed for SFT data generation with a critic model):
 
 ```bash
-cp .env.example .env
-# Edit .env and set: ANTHROPIC_API_KEY=sk-ant-...
+cp pipeline/.env.example pipeline/.env
+# Edit pipeline/.env and set one of the providers below
 ```
+
+Supported providers via [litellm](https://github.com/BerriAI/litellm) — swap with `--model`:
+
+| Provider | Env var | Model string | Cost |
+|---|---|---|---|
+| **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/moonshotai/kimi-k2.6` | Free tier |
+| **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/minimaxai/minimax-m2.7` | Free tier |
+| Groq | `GROQ_API_KEY=gsk_...` | `groq/llama-3.3-70b-versatile` | Free tier |
+| Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | `claude-sonnet-4-6` | ~$10–15 for full run |
+| OpenAI | `OPENAI_API_KEY=sk-...` | `gpt-4o-mini` | Paid |
+| Ollama (local) | `OLLAMA_API_BASE=http://localhost:11434` | `ollama/llama3.2` | Free |
 
 ---
 
@@ -194,13 +205,26 @@ Teaches the model the constitutional format: `<think>CAPABILITY_CHECK...</think>
 ```bash
 cd pipeline
 
-# Step 1: Generate SFT data (~$10–15 with Claude Sonnet as generator + critic)
-python sft_question_generator.py --output data/questions_partA.jsonl
+# Step 1: Generate SFT data
+# Recommended (free): NVIDIA NIM — Kimi K2.6 as generator, Minimax M2.7 as independent critic
+python sft_question_generator.py \
+  --model  nvidia_nim/moonshotai/kimi-k2.6 \
+  --output data/questions_partA.jsonl
 
 python sft_gold_response_generator.py \
-  --questions data/questions_partA.jsonl \
-  --output    data/train_partA.jsonl \
-  --critic_model claude-opus-4-7   # frozen critic prevents self-referential bias
+  --questions   data/questions_partA.jsonl \
+  --output      data/train_partA.jsonl \
+  --model       nvidia_nim/moonshotai/kimi-k2.6 \
+  --critic_model nvidia_nim/minimaxai/minimax-m2.7   # different model family = genuine independence
+
+# Alternative (also free): Groq
+# python sft_question_generator.py --model groq/llama-3.3-70b-versatile --output data/questions_partA.jsonl
+# python sft_gold_response_generator.py --questions data/questions_partA.jsonl \
+#   --model groq/llama-3.3-70b-versatile --critic_model groq/gemma2-9b-it --output data/train_partA.jsonl
+
+# Alternative (paid ~$10–15): Anthropic
+# python sft_gold_response_generator.py --questions data/questions_partA.jsonl \
+#   --model claude-sonnet-4-6 --critic_model claude-opus-4-7 --output data/train_partA.jsonl
 
 python sft_math_question_generator.py --output data/questions_partB.jsonl
 

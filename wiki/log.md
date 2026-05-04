@@ -6,6 +6,21 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-03] refactor | NVIDIA NIM provider confirmed — docs updated
+- Verified NVIDIA NIM support in litellm via official docs (`nvidia_nim/<org>/<model>` prefix, `NVIDIA_NIM_API_KEY` env var, base URL `https://integrate.api.nvidia.com/v1`).
+- Confirmed model IDs: `nvidia_nim/moonshotai/kimi-k2.6` and `nvidia_nim/minimaxai/minimax-m2.7` — both available on NIM free tier.
+- `NVIDIA_NIM_API_KEY` already present in `pipeline/.env`; `.env` confirmed git-ignored.
+- **Files changed:** `README.md` (API key section rewritten as provider table; Phase 1 SFT commands updated to use NIM as primary with Groq + Anthropic as commented alternatives), `pipeline/.env.example` (NIM key + model strings documented), `wiki/sources/code/sft-v2-pipeline.md` (LiteLLM section expanded to provider table with confirmed status).
+
+## [2026-05-03] decision | Research question reframe — psychological grounding, human evaluation rubric, frontier model comparison
+- **Trigger:** Student raised valid concern that LLM-generated training data is circular distillation without external human-judgment ground truth. Also flagged absence of a concrete, falsifiable comparison target.
+- **Resolution — psychological grounding:** Created `wiki/topics/constitution-psychological-grounding.md`. All 19 constitution principles mapped to peer-reviewed citations (Mayer 1995 trust model, Kahneman 2011, Clark & Brennan 1991, Zagzebski 1996, Flavell 1979, Nissenbaum 2004, Cialdini 1984, etc.). This gives the constitution external validity independent of any LLM.
+- **Resolution — human evaluation rubric:** Created `wiki/experiments/human-evaluation-rubric.md`. 12-item Likert instrument. Five dimensions: Ability, Integrity, Benevolence, Cognitive Empathy, Affective Empathy. Inter-rater reliability via Krippendorff's alpha. Evaluators blinded to model identity. This is the ground truth that breaks the distillation circularity.
+- **Resolution — frontier comparison:** Created `wiki/experiments/frontier-model-comparison.md`. 50-prompt study. Models: Qwen3-0.6B (base), Qwen3-0.6B (SFT + GRPO), Claude Sonnet 4.6, Minimax M2.7 (⚠ verify API ID), Kimi K2.6 (⚠ verify API ID). Two tracks: automated constitution compliance + human rubric. Four formal hypotheses (H1–H4).
+- **Operational hypothesis added to overview.md:** On-device 0.6B model achieves within 0.5 points of frontier models on Integrity + Ability dimensions while offering privacy guarantee no API model can match.
+- **Tags updated:** `psychology` re-registered (distinct from `empathy`); `on-device` added.
+- **Files changed:** `wiki/topics/constitution-psychological-grounding.md` (new), `wiki/experiments/human-evaluation-rubric.md` (new), `wiki/experiments/frontier-model-comparison.md` (new), `wiki/decisions/2026-05-03-research-question-reframe.md` (new), `wiki/overview.md` (updated), `wiki/index.md` (updated), `wiki/tags.md` (updated), `wiki/log.md` (appended).
+
 ## [2026-05-02] refactor | Full pipeline build — Phases 0–5 (all four modules implemented)
 - **Phase 0 — Foundation:** `pipeline/config.py` (six `ENABLE_*` flags, `from_env()`, `from_yaml()`, `validate()`, `summary()`). `docker-compose.yml` (FalkorDB on port 6379). `preflight_check.sh` updated with config + new module file checks + feature-flag section 13.
 - **Phase 1 — User Modelling:** `pipeline/user_modelling.py` — `GraphClient` (FalkorDB + 5W+H schema, graceful unavailable mode), 4-stage Mem0g write pipeline (`entity_extractor` → `relation_generator` → `conflict_detector` → `conditional_write`), retrieval gating with slot-relevance classifier, scrutability handlers (`inspect_memory`, `contest_belief`, `correct_belief`). Never deletes — `:DEPRECATED_BY` + `:USER_CORRECTED` edges preserve full audit trail.

@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from datetime import datetime
 
 import litellm
 from dotenv import load_dotenv
@@ -300,15 +301,31 @@ def generate_math_questions(
             print(f"  Connection error. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
             time.sleep(wait)
 
-    raw = response.choices[0].message.content.strip()
+    content = response.choices[0].message.content
+    finish_reason = getattr(response.choices[0], "finish_reason", None)
+    if content is None:
+        raise ValueError(
+            f"Model returned null content (finish_reason={finish_reason!r}). "
+            "Response was likely truncated — reduce --batch_size."
+        )
 
+    raw = content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
     raw = raw.strip()
 
-    questions = json.loads(raw)
+    if finish_reason == "length":
+        try:
+            questions = json.loads(raw)
+        except json.JSONDecodeError:
+            raise ValueError(
+                "Response truncated at token limit (finish_reason='length'). "
+                "Reduce --batch_size and retry."
+            )
+    else:
+        questions = json.loads(raw)
 
     if not verify or is_no_tool:
         return questions
@@ -360,8 +377,10 @@ def main():
                         help="Verify a sample of answers by executing Python (default: True)")
     parser.add_argument("--no_verify", action="store_true",
                         help="Skip verification (faster but less quality assurance)")
-    parser.add_argument("--batch_size", type=int, default=50,
-                        help="Questions per API call")
+    parser.add_argument("--batch_size", type=int, default=15,
+                        help="Questions per API call (15=safe default; up to 30 for simple math types)")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite the output file instead of appending to it")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max retry attempts on rate limit / connection errors (default: 5)")
     parser.add_argument("--base_delay", type=float, default=5.0,
@@ -383,18 +402,34 @@ def main():
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
-    total_written = 0
-    with open(args.output, "w", encoding="utf-8") as f:
-        for qtype in types_to_run:
-            target = args.count or MATH_QUESTION_TYPES[qtype]["count"]
-            print(f"\n[{qtype}] Generating {target} questions...")
+    file_mode = "w" if args.overwrite else "a"
+    if file_mode == "a" and Path(args.output).exists():
+        existing = sum(1 for _ in open(args.output, encoding="utf-8"))
+        print(f"Appending to existing file: {args.output} ({existing} rows already present; use --overwrite to start fresh)")
 
-            generated = []
+    total_written = 0
+    n_types = len(types_to_run)
+    run_start = time.monotonic()
+
+    with open(args.output, file_mode, encoding="utf-8") as f:
+        for type_idx, qtype in enumerate(types_to_run, 1):
+            target = args.count or MATH_QUESTION_TYPES[qtype]["count"]
+            n_batches = -(-target // args.batch_size)
+            print(f"\n[{type_idx}/{n_types}] {qtype} — target {target} questions "
+                  f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {args.batch_size})")
+
+            type_written = 0
             remaining = target
+            current_batch_size = args.batch_size
+            batch_num = 0
+            type_start = time.monotonic()
 
             while remaining > 0:
-                batch = min(args.batch_size, remaining)
-                print(f"  Requesting batch of {batch}...")
+                batch = min(current_batch_size, remaining)
+                batch_num += 1
+                print(f"  [batch {batch_num}] requesting {batch} questions "
+                      f"({remaining} remaining, batch_size={current_batch_size})...")
+                t0 = time.monotonic()
 
                 try:
                     batch_qs = generate_math_questions(
@@ -404,26 +439,46 @@ def main():
                         verify=should_verify,
                         api_base=args.api_base,
                     )
-                    generated.extend(batch_qs)
+                    elapsed = time.monotonic() - t0
+
+                    for item in batch_qs:
+                        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    f.flush()
+
+                    type_written += len(batch_qs)
+                    total_written += len(batch_qs)
                     remaining -= len(batch_qs)
-                    print(f"  Got {len(batch_qs)}. Total: {len(generated)}")
+                    print(f"  [batch {batch_num}] ✓ {len(batch_qs)} written in {elapsed:.1f}s "
+                          f"→ flushed to disk (type total: {type_written}/{target})")
                     time.sleep(0.5)
 
                 except json.JSONDecodeError as e:
-                    print(f"  JSON parse error: {e}. Retrying...")
+                    print(f"  [batch {batch_num}] JSON parse error: {e}. Retrying...")
                     time.sleep(2)
+                    batch_num -= 1
                     continue
+                except ValueError as e:
+                    if "truncated" in str(e).lower() or "null content" in str(e).lower():
+                        new_batch = max(1, current_batch_size // 2)
+                        print(f"  [batch {batch_num}] Truncation/null — halving batch size: "
+                              f"{current_batch_size} → {new_batch}. Retrying...")
+                        current_batch_size = new_batch
+                        batch_num -= 1
+                        continue
+                    print(f"  [batch {batch_num}] Error: {e}. Skipping type.")
+                    break
                 except Exception as e:
-                    print(f"  Error: {e}. Skipping type.")
+                    print(f"  [batch {batch_num}] Unexpected error: {e}. Skipping type.")
                     break
 
-            for item in generated:
-                f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                total_written += 1
+            type_elapsed = time.monotonic() - type_start
+            print(f"  [DONE] {type_written}/{target} written for {qtype} in {type_elapsed:.1f}s")
 
-            print(f"  [DONE] {len(generated)} questions for {qtype}")
-
-    print(f"\nTotal written: {total_written} → {args.output}")
+    total_elapsed = time.monotonic() - run_start
+    print(f"\n{'='*55}")
+    print(f"Run complete in {total_elapsed:.1f}s")
+    print(f"Questions written this run : {total_written}")
+    print(f"Output                     : {args.output}")
 
 
 if __name__ == "__main__":

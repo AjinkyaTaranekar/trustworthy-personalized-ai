@@ -11,14 +11,10 @@
             "id": "7a99c76bce193cba",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "wiki/sources/meetings/april2026.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "april2026"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -203,20 +199,24 @@
   },
   "active": "7a99c76bce193cba",
   "lastOpenFiles": [
-    "wiki/log.md.tmp.11324.1777712234563",
-    "wiki/sources/code/training-and-benchmark.md.tmp.11324.1777712202817",
-    "wiki/sources/code/training-and-benchmark.md.tmp.11324.1777712178286",
-    "wiki/sources/code/training-and-benchmark.md.tmp.11324.1777712141722",
-    "README.md.tmp.11324.1777712114196",
-    "README.md.tmp.11324.1777712086107",
-    "README.md.tmp.11324.1777712061341",
-    "README.md.tmp.11324.1777712045137",
-    "README.md.tmp.11324.1777712016457",
-    "README.md.tmp.11324.1777711990626",
-    "pipeline/__pycache__/config.cpython-310.pyc",
+    "wiki/log.md.tmp.10336.1777834237575",
+    "wiki/index.md.tmp.10336.1777834210467",
+    "wiki/index.md.tmp.10336.1777834203953",
+    "wiki/index.md.tmp.10336.1777834189583",
+    "wiki/overview.md.tmp.10336.1777834167927",
+    "wiki/overview.md.tmp.10336.1777834159276",
+    "wiki/tags.md.tmp.10336.1777834140065",
+    "wiki/decisions/2026-05-03-research-question-reframe.md",
+    "wiki/decisions/2026-05-03-research-question-reframe.md.tmp.10336.1777834082315",
+    "wiki/experiments/frontier-model-comparison.md",
+    "wiki/experiments/frontier-model-comparison.md.tmp.10336.1777834043209",
+    "wiki/experiments/human-evaluation-rubric.md",
+    "wiki/experiments/human-evaluation-rubric.md.tmp.10336.1777833992548",
+    "wiki/topics/constitution-psychological-grounding.md",
+    "wiki/topics/constitution-psychological-grounding.md.tmp.10336.1777833906916",
+    "wiki/sources/meetings/april2026.md",
     "wiki/queries/full-pipeline-implementation-plan.md",
     "wiki/sources/meetings/january2026.md",
-    "wiki/sources/meetings/april2026.md",
     "wiki/sources/meetings/february2026.md",
     "wiki/sources/meetings/december2025.md",
     "wiki/sources/meetings/november2025.md",
@@ -235,10 +235,6 @@
     "docs/meetings-notes/september.md",
     "docs/meetings-notes/october.md",
     "docs/meetings-notes/november.md",
-    "docs/meetings-notes/january.md",
-    "docs/meetings-notes/february.md",
-    "docs/meetings-notes/december.md",
-    "docs/meetings-notes/april.md",
     "Untitled.canvas"
   ]
 }

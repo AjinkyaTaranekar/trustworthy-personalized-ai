@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-05-02
+updated: 2026-05-03
 ---
 
 # Index
@@ -17,6 +17,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Topics
 
+- [[topics/constitution-psychological-grounding]] — all 19 constitution principles mapped to peer-reviewed psychology/HCI theory (Mayer 1995, Kahneman 2011, Clark & Brennan 1991, etc.)
 - [[topics/llm-foundations]] — tokenisation, attention, embeddings; why monolithic LLMs fail
 - [[topics/reasoning]] — trustworthy reasoning across SFT, RL, architecture, evaluation
 - [[topics/personalisation]] — 5W+H, GraphRAG, cold start; over-personalisation failure modes; scrutability
@@ -150,11 +151,14 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 ## Experiments
 
 - [[experiments/experiment-catalog]] — all six experiments + ablation A/B/C/D
+- [[experiments/frontier-model-comparison]] — study design comparing Qwen3-0.6B (base + fine-tuned) vs Claude Sonnet 4.6, Minimax M2.7, Kimi K2.6 across 50 prompts; two evaluation tracks (automated + human)
+- [[experiments/human-evaluation-rubric]] — 12-item Likert rubric from Mayer et al. trust model + Davis empathy index; the external human-judgment ground truth
 
 ## Decisions
 
 - [[decisions/2025-10-01-four-module-architecture]] — **binding** Pivot 1: Reasoning / User Modelling / Tool Integration / Generator modules; Professor Conlan feedback; anchors entire thesis design
 - [[decisions/2025-11-10-ontology-focus-shift]] — primary focus moves to ontology-LLM integration
+- [[decisions/2026-05-03-research-question-reframe]] — operational hypothesis added: on-device 0.6B model vs frontier models; psychological grounding for constitution; human evaluation rubric introduced
 
 ## Questions
 

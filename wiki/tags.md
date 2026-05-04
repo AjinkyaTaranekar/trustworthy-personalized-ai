@@ -83,6 +83,8 @@ Concrete artefacts with their own pages in `entities/`.
 | `vision-language` | 1 | VLMs specifically |
 | `gui` | 1 | GUI-agent tasks |
 | `small-model` | 3 | Sub-7B model work |
+| `on-device` | 1 | Local / edge deployment — model runs on user's device with no persistent internet access; key to the privacy guarantee |
+| `psychology` | 3 | Theoretical grounding in psychology / HCI literature (Mayer trust model, metacognition, conversational theory) — distinct from `empathy` which covers appraisal theory |
 
 ## Evaluation & caveats
 | Tag | Count | Meaning |
@@ -145,7 +147,7 @@ These appeared once or twice in early files and have been normalised away.
 | `framework` | _drop_ | Too broad; use the specific framework tag (`5w-h`, `appraisal-theory`) |
 | `affect` | `empathy` | Redundant |
 | `emotion` | `empathy` | Redundant |
-| `psychology` | `empathy` | Redundant |
+| `psychology` | — | **Re-registered** — now used specifically for pages grounding the constitution or training pipeline in peer-reviewed psychology/HCI theory (trust models, metacognition, conversational theory). Distinct from `empathy` which covers appraisal theory specifically. |
 | `experiment-6` | `ontology` | Don't tag by experiment number — experiments get renumbered |
 | `benchmarks` | `evaluation` | Keep evaluation as the umbrella |
 

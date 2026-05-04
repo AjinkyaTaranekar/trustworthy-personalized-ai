@@ -2,18 +2,25 @@
 SFT Question Generator (Part A)
 ================================
 Generates diverse training questions for the constitution-based SFT pipeline.
-Uses litellm for vendor-agnostic LLM access (Anthropic, OpenAI, Ollama, Groq, etc.)
+Uses litellm for vendor-agnostic LLM access (Anthropic, OpenAI, Ollama, Groq, NVIDIA NIM, etc.)
 
 Model string examples:
-    Anthropic : claude-sonnet-4-5
-    OpenAI    : gpt-4o-mini
-    Ollama    : ollama/llama3.2  (set OLLAMA_API_BASE=http://localhost:11434)
-    Groq      : groq/llama-3.1-70b-versatile
+    NVIDIA NIM : nvidia_nim/minimaxai/minimax-m2.7   (recommended — free, frontier quality)
+    NVIDIA NIM : nvidia_nim/moonshotai/kimi-k2.6
+    Anthropic  : claude-sonnet-4-6
+    Groq       : groq/llama-3.3-70b-versatile
+    Ollama     : ollama/llama3.2  (set OLLAMA_API_BASE=http://localhost:11434)
+
+Batch size guide (--batch_size):
+    15  — safe default; works for all categories including verbose ones (~2,250 output tokens)
+    30  — fine for simple categories (single-turn, real-time, etc.)
+    40  — max recommended for simple categories; avoid for verbose/multi-turn
 
 Usage:
-    python sft_question_generator.py --count 200 --category all --output data/questions_partA.jsonl
-    python sft_question_generator.py --count 10 --category real_time_dependent --output data/sample.jsonl
-    python sft_question_generator.py --count 10 --model ollama/llama3.2 --output data/sample.jsonl
+    python sft_question_generator.py --count 200 --type all --output data/questions_partA.jsonl
+    python sft_question_generator.py --count 30 --type real_time_dependent --output data/sample.jsonl
+    python sft_question_generator.py --count 15 --model nvidia_nim/minimaxai/minimax-m2.7 --output data/questions_partA.jsonl
+    python sft_question_generator.py --count 15 --model nvidia_nim/minimaxai/minimax-m2.7 --type adversarial_pressure --output data/adv.jsonl
 """
 
 import argparse
@@ -22,6 +29,7 @@ import os
 import random
 import time
 from pathlib import Path
+from datetime import datetime
 
 import litellm
 from dotenv import load_dotenv
@@ -338,7 +346,16 @@ def generate_questions_for_category(
             print(f"  Connection error. Retry {attempt + 1}/{_MAX_RETRIES} in {wait:.0f}s...")
             time.sleep(wait)
 
-    raw = response.choices[0].message.content.strip()
+    content = response.choices[0].message.content
+    finish_reason = getattr(response.choices[0], "finish_reason", None)
+
+    if content is None:
+        raise ValueError(
+            f"Model returned null content (finish_reason={finish_reason!r}). "
+            "Response was likely truncated — reduce --batch_size."
+        )
+
+    raw = content.strip()
 
     # Strip markdown code fences if present
     if raw.startswith("```"):
@@ -347,7 +364,17 @@ def generate_questions_for_category(
             raw = raw[4:]
         raw = raw.strip()
 
-    questions = json.loads(raw)
+    if finish_reason == "length":
+        # Response was cut off mid-JSON — try to salvage, else raise so caller retries with smaller batch
+        try:
+            questions = json.loads(raw)
+        except json.JSONDecodeError:
+            raise ValueError(
+                f"Response truncated at token limit (finish_reason='length'). "
+                "Reduce --batch_size and retry."
+            )
+    else:
+        questions = json.loads(raw)
 
     # Normalise to list of dicts with consistent schema
     fmt = spec.get("format", "single_turn")
@@ -388,21 +415,25 @@ def main():
                         help="Questions per category (overrides per-category defaults)")
     parser.add_argument("--smoke", action="store_true",
                         help="Smoke test: generate 1 question per category and write to data/smoke_questions.jsonl")
-    parser.add_argument("--category", type=str, default="all",
+    parser.add_argument("--type", "--category", dest="category", type=str, default="all",
                         choices=["all"] + list(CATEGORIES.keys()),
-                        help="Which category to generate (default: all)")
+                        help="Question category to generate (default: all). "
+                             "E.g. --type appraisal_empathy or --type adversarial_pressure")
     parser.add_argument("--output", type=str, default="data/questions_partA.jsonl",
                         help="Output JSONL file path")
-    parser.add_argument("--model", type=str, default="claude-sonnet-4-5",
-                        help="Model string for litellm (e.g. claude-sonnet-4-5, gpt-4o-mini, ollama/llama3.2)")
+    parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7",
+                        help="litellm model string (e.g. nvidia_nim/minimaxai/minimax-m2.7, claude-sonnet-4-6)")
     parser.add_argument("--api_base", type=str, default=None,
                         help="Custom API base URL (e.g. http://localhost:11434 for Ollama)")
-    parser.add_argument("--batch_size", type=int, default=50,
-                        help="Questions to request per API call (reduce if hitting token limits)")
+    parser.add_argument("--batch_size", type=int, default=15,
+                        help="Questions per API call. 15=safe for all types; 30=fine for simple types; "
+                             "avoid >20 for verbose_context_behavioral/multi_turn (hits token limits)")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max retry attempts on rate limit / connection errors (default: 5)")
     parser.add_argument("--base_delay", type=float, default=5.0,
                         help="Base delay in seconds for exponential backoff (default: 5.0)")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite the output file instead of appending to it")
     args = parser.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
@@ -418,18 +449,35 @@ def main():
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
-    total_written = 0
-    with open(args.output, "w", encoding="utf-8") as f:
-        for cat_name in categories_to_run:
-            target_count = args.count or CATEGORIES[cat_name]["count"]
-            print(f"\n[{cat_name}] Generating {target_count} question(s)...")
+    file_mode = "w" if args.overwrite else "a"
+    if file_mode == "a" and Path(args.output).exists():
+        existing = sum(1 for _ in open(args.output, encoding="utf-8"))
+        print(f"Appending to existing file: {args.output} ({existing} rows already present; use --overwrite to start fresh)")
 
-            generated = []
+    total_written = 0
+    n_cats = len(categories_to_run)
+    run_start = time.monotonic()
+
+    with open(args.output, file_mode, encoding="utf-8") as f:
+        for cat_idx, cat_name in enumerate(categories_to_run, 1):
+            target_count = args.count or CATEGORIES[cat_name]["count"]
+            n_batches = -(-target_count // args.batch_size)  # ceil division
+            print(f"\n[{cat_idx}/{n_cats}] {cat_name} — target {target_count} questions "
+                  f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {args.batch_size})")
+
+            cat_written = 0
             remaining = target_count
+            current_batch_size = args.batch_size
+            batch_num = 0
+            cat_start = time.monotonic()
 
             while remaining > 0:
-                batch = min(args.batch_size, remaining)
-                print(f"  Requesting batch of {batch}...")
+                batch = min(current_batch_size, remaining)
+                batch_num += 1
+                batches_left = -(-remaining // current_batch_size)
+                print(f"  [batch {batch_num}] requesting {batch} questions "
+                      f"({remaining} remaining, batch_size={current_batch_size})...")
+                t0 = time.monotonic()
 
                 try:
                     batch_questions = generate_questions_for_category(
@@ -438,29 +486,49 @@ def main():
                         model=args.model,
                         api_base=args.api_base,
                     )
-                    generated.extend(batch_questions)
+                    elapsed = time.monotonic() - t0
+
+                    # Write immediately — one flush per batch, crash-safe
+                    for item in batch_questions:
+                        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    f.flush()
+
+                    cat_written += len(batch_questions)
+                    total_written += len(batch_questions)
                     remaining -= len(batch_questions)
-                    print(f"  Got {len(batch_questions)} questions. Total so far: {len(generated)}")
+                    print(f"  [batch {batch_num}] ✓ {len(batch_questions)} written in {elapsed:.1f}s "
+                          f"→ flushed to disk (category total: {cat_written}/{target_count})")
 
                     if remaining > 0:
                         time.sleep(1)
 
                 except json.JSONDecodeError as e:
-                    print(f"  JSON parse error: {e}. Retrying...")
+                    print(f"  [batch {batch_num}] JSON parse error: {e}. Retrying same batch...")
                     time.sleep(2)
+                    batch_num -= 1  # don't count the failed attempt
                     continue
+                except ValueError as e:
+                    if "truncated" in str(e).lower() or "null content" in str(e).lower():
+                        new_batch = max(1, current_batch_size // 2)
+                        print(f"  [batch {batch_num}] Truncation/null — halving batch size: "
+                              f"{current_batch_size} → {new_batch}. Retrying...")
+                        current_batch_size = new_batch
+                        batch_num -= 1
+                        continue
+                    print(f"  [batch {batch_num}] Error: {e}. Skipping category.")
+                    break
                 except Exception as e:
-                    print(f"  Error: {e}. Skipping category.")
+                    print(f"  [batch {batch_num}] Unexpected error: {e}. Skipping category.")
                     break
 
-            for item in generated:
-                f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                total_written += 1
+            cat_elapsed = time.monotonic() - cat_start
+            print(f"  [DONE] {cat_written}/{target_count} written for {cat_name} in {cat_elapsed:.1f}s")
 
-            print(f"  [DONE] {len(generated)} question(s) written for {cat_name}")
-
-    print(f"\nTotal questions written: {total_written}")
-    print(f"Output: {args.output}")
+    total_elapsed = time.monotonic() - run_start
+    print(f"\n{'='*55}")
+    print(f"Run complete in {total_elapsed:.1f}s")
+    print(f"Questions written this run : {total_written}")
+    print(f"Output                     : {args.output}")
 
 
 if __name__ == "__main__":

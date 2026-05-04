@@ -7,7 +7,7 @@ sources:
   - docs/Dissertation/Experimental Planning Document.md
   - researchplan.tex
   - README.md
-updated: 2026-05-01
+updated: 2026-05-03
 status: current
 ---
 
@@ -21,6 +21,9 @@ This is the binding research question. All experiments, design decisions, and im
 
 ## Central hypothesis
 Monolithic LLMs cannot simultaneously be empathetic, logically rigorous, and personalised without catastrophic forgetting and hallucination. A **four-module architecture** is required — see [[decisions/2025-10-01-four-module-architecture]] for the binding design decision (Pivot 1, October 2025, Professor Conlan feedback).
+
+## Operational hypothesis (added 2026-05-03)
+A 0.6B model fine-tuned with constitution-guided SFT and GRPO achieves trust and empathy ratings **comparable to frontier models** (within 0.5 points on a 5-point human evaluation scale) on targeted trust-relevant behaviours, while running entirely on-device with local user memory and no persistent internet access — offering a privacy guarantee that API-only frontier models (Claude Sonnet 4.6, Minimax M2.7, Kimi K2.6) cannot match by architectural necessity. See [[decisions/2026-05-03-research-question-reframe]] for the full rationale. The comparison study is specified in [[experiments/frontier-model-comparison]]; the human evaluation instrument in [[experiments/human-evaluation-rubric]]; the psychological grounding of the constitution in [[topics/constitution-psychological-grounding]].
 
 ## Four-module architecture (Pivot 1 — binding)
 
