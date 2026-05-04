@@ -20,11 +20,13 @@ Usage:
 
 import argparse
 import ast
+import concurrent.futures
 import json
 import os
 import random
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from datetime import datetime
@@ -36,7 +38,7 @@ load_dotenv()
 
 # Retry config — overridden by CLI args in main()
 _MAX_RETRIES: int = 5
-_BASE_DELAY: float = 5.0
+_BASE_DELAY: float = 3.0
 
 # ---------------------------------------------------------------------------
 # Question type specifications
@@ -107,8 +109,29 @@ MATH_QUESTION_TYPES = {
 }
 
 # ---------------------------------------------------------------------------
+# Context hints for word problems — cycled per batch to vary cultural settings
+# ---------------------------------------------------------------------------
+
+WORD_PROBLEM_CONTEXTS = [
+    {"setting": "South Asian household (India/Bangladesh)", "currency": "₹ rupees", "contexts": "groceries, school fees, auto-rickshaw fares, cooking gas, mobile recharge"},
+    {"setting": "West African market (Nigeria/Ghana)", "currency": "₦ naira or GH₵ cedis", "contexts": "produce, mobile data bundles, kerosene, transport, building materials"},
+    {"setting": "Southeast Asian setting (Philippines/Vietnam)", "currency": "₱ pesos or ₫ dong", "contexts": "jeepney fares, rice sacks, remittances, sari-sari store goods, internet load"},
+    {"setting": "Latin American context (Mexico/Brazil)", "currency": "$ MXN pesos or R$ reais", "contexts": "tortillas, petrol, rent, bus fares, mobile plans, market produce"},
+    {"setting": "Middle Eastern context (Egypt/Jordan)", "currency": "£E Egyptian pounds or JD dinars", "contexts": "fuel, utilities, school fees, food staples, water tanks"},
+    {"setting": "East Asian context (China/South Korea)", "currency": "¥ yuan or ₩ won", "contexts": "transit cards, delivery food, tutoring, online shopping, utility bills"},
+    {"setting": "Eastern European setting (Poland/Ukraine)", "currency": "zł złoty or ₴ hryvnia", "contexts": "groceries, utilities, transport, healthcare copay, school supplies"},
+    {"setting": "Scandinavian context (Norway/Sweden)", "currency": "kr NOK or SEK", "contexts": "electricity bills, public transit, childcare, fishing equipment, groceries"},
+    {"setting": "UK household context", "currency": "£ GBP", "contexts": "council tax, petrol, broadband, supermarket shop, energy bills"},
+    {"setting": "East African context (Kenya/Tanzania)", "currency": "KSh shillings", "contexts": "M-Pesa transactions, matatu fares, maize flour, school uniform, mobile data"},
+]
+
+# ---------------------------------------------------------------------------
 # Generation prompt
 # ---------------------------------------------------------------------------
+
+MATH_DEDUP_TEMPLATE = """DEDUPLICATION — these questions were already generated. Do NOT repeat or closely paraphrase any of them:
+{sample}
+Generate questions with entirely different scenarios, numbers, and contexts."""
 
 MATH_GENERATION_PROMPT = """Generate {count} math/calculation questions of type: {question_type}
 
@@ -116,6 +139,8 @@ Description: {description}
 
 Example questions and answers:
 {examples}
+
+{context_hint}
 
 Requirements:
 1. Each question must have an exact, verifiable numerical answer
@@ -127,6 +152,8 @@ Requirements:
    questions with deterministic mathematical answers
 
 {special_instructions}
+
+{already_generated}
 
 Return ONLY a JSON array of objects with this exact format:
 [
@@ -208,6 +235,7 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
 
     kwargs = dict(
         model=model, max_tokens=512,
+        timeout=400,
         messages=[{"role": "user", "content": VERIFICATION_CODE_PROMPT.format(
             question=question, answer=answer
         )}],
@@ -215,7 +243,10 @@ def verify_answer_with_execution(question: str, answer: str, model: str,
     if api_base:
         kwargs["api_base"] = api_base
     response = litellm.completion(**kwargs)
-    code = response.choices[0].message.content.strip()
+    raw_content = response.choices[0].message.content
+    if raw_content is None:
+        return False, "null_content"
+    code = raw_content.strip()
     if code.startswith("```"):
         code = code.split("```")[1]
         if code.startswith("python"):
@@ -263,7 +294,17 @@ def generate_math_questions(
     model: str,
     verify: bool,
     api_base: str | None = None,
+    existing_questions: list[str] | None = None,
+    context_hint: dict | None = None,
 ) -> list[dict]:
+    """Generate math questions for a given type.
+
+    existing_questions: question strings already generated in prior batches for this type,
+    injected as dedup context so the model avoids repeating problem structures.
+
+    context_hint: for word_problems/no_tool types, a dict from WORD_PROBLEM_CONTEXTS that
+    sets the cultural/geographic setting of the word problem scenario.
+    """
     spec = MATH_QUESTION_TYPES[question_type]
     is_no_tool = spec.get("special") == "no_tool"
 
@@ -272,15 +313,44 @@ def generate_math_questions(
         for e in spec["examples"]
     )
 
+    # Build dedup block
+    if existing_questions:
+        sample_qs = existing_questions[-20:]
+        sample_text = "\n".join(f"  - {q}" for q in sample_qs)
+        already_generated = MATH_DEDUP_TEMPLATE.format(sample=sample_text)
+    else:
+        already_generated = ""
+
+    # Build context hint — only meaningful for word problems
+    if context_hint and question_type in ("word_problems", "no_tool_control"):
+        hint_text = (
+            f"WORD PROBLEM CONTEXT FOR THIS BATCH — set at least 60% of questions in this context:\n"
+            f"  Setting: {context_hint['setting']}\n"
+            f"  Currency: {context_hint['currency']}\n"
+            f"  Typical items/scenarios: {context_hint['contexts']}\n"
+            f"Use locally realistic numbers (e.g. ₹45 for a vegetable, not €45). "
+            f"Names in questions should reflect the setting."
+        )
+    else:
+        hint_text = ""
+
     prompt = MATH_GENERATION_PROMPT.format(
         count=count,
         question_type=question_type,
         description=spec["description"],
         examples=examples_str,
+        context_hint=hint_text,
         special_instructions=NO_TOOL_INSTRUCTIONS if is_no_tool else "",
+        already_generated=already_generated,
     )
 
-    kwargs = dict(model=model, max_tokens=4096, messages=[{"role": "user", "content": prompt}])
+    kwargs = dict(
+        model=model,
+        max_tokens=4096 * 2,  # high token limit to avoid truncation of verbose/multi-turn responses; retries with smaller batch if it does truncate
+        temperature=0.9,
+        timeout=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
     if api_base:
         kwargs["api_base"] = api_base
 
@@ -354,6 +424,108 @@ def generate_math_questions(
 
 
 # ---------------------------------------------------------------------------
+# Per-type worker (used by both sequential and parallel modes)
+# ---------------------------------------------------------------------------
+
+
+def _run_type(
+    qtype: str,
+    target: int,
+    batch_size: int,
+    model: str,
+    api_base: str | None,
+    should_verify: bool,
+    out_file,
+    file_lock: threading.Lock,
+    type_idx: int,
+    n_types: int,
+) -> int:
+    """Run the full batch loop for one question type. Thread-safe via file_lock."""
+    type_written = 0
+    remaining = target
+    current_batch_size = batch_size
+    batch_num = 0
+    type_start = time.monotonic()
+    type_questions_seen: list[str] = []
+    context_idx = 0
+
+    n_batches = -(-target // batch_size)
+    print(f"\n[{type_idx}/{n_types}] {qtype} — target {target} questions "
+          f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {batch_size})")
+
+    while remaining > 0:
+        batch = min(current_batch_size, remaining)
+        batch_num += 1
+
+        if qtype in ("word_problems", "no_tool_control"):
+            ctx = WORD_PROBLEM_CONTEXTS[context_idx % len(WORD_PROBLEM_CONTEXTS)]
+            context_idx += 1
+            ctx_label = ctx["setting"].split("(")[0].strip()
+        else:
+            ctx = None
+            ctx_label = ""
+
+        label = f", context={ctx_label}" if ctx_label else ""
+        print(f"  [{qtype}][batch {batch_num}] requesting {batch} questions "
+              f"({remaining} remaining, batch_size={current_batch_size}{label})...")
+        t0 = time.monotonic()
+
+        try:
+            batch_qs = generate_math_questions(
+                question_type=qtype,
+                count=batch,
+                model=model,
+                verify=should_verify,
+                api_base=api_base,
+                existing_questions=type_questions_seen if type_questions_seen else None,
+                context_hint=ctx,
+            )
+            elapsed = time.monotonic() - t0
+
+            with file_lock:
+                for item in batch_qs:
+                    out_file.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    if isinstance(item.get("question"), str):
+                        type_questions_seen.append(item["question"])
+                out_file.flush()
+
+            type_written += len(batch_qs)
+            remaining -= len(batch_qs)
+            print(f"  [{qtype}][batch {batch_num}] ✓ {len(batch_qs)} written in {elapsed:.1f}s "
+                  f"(total: {type_written}/{target})")
+
+            if remaining > 0:
+                time.sleep(0.5)
+
+        except json.JSONDecodeError as e:
+            print(f"  [{qtype}][batch {batch_num}] JSON parse error: {e}. Retrying...")
+            time.sleep(2)
+            batch_num -= 1
+            if qtype in ("word_problems", "no_tool_control"):
+                context_idx -= 1
+            continue
+        except ValueError as e:
+            if "truncated" in str(e).lower() or "null content" in str(e).lower():
+                new_batch = max(10, current_batch_size // 2)
+                print(f"  [{qtype}][batch {batch_num}] Truncation/null — halving: "
+                      f"{current_batch_size} → {new_batch}. Retrying...")
+                current_batch_size = new_batch
+                batch_num -= 1
+                if qtype in ("word_problems", "no_tool_control"):
+                    context_idx -= 1
+                continue
+            print(f"  [{qtype}][batch {batch_num}] Error: {e}. Skipping type.")
+            break
+        except Exception as e:
+            print(f"  [{qtype}][batch {batch_num}] Unexpected error: {e}. Skipping type.")
+            break
+
+    type_elapsed = time.monotonic() - type_start
+    print(f"  [{qtype}] DONE: {type_written}/{target} in {type_elapsed:.1f}s")
+    return type_written
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -377,14 +549,16 @@ def main():
                         help="Verify a sample of answers by executing Python (default: True)")
     parser.add_argument("--no_verify", action="store_true",
                         help="Skip verification (faster but less quality assurance)")
-    parser.add_argument("--batch_size", type=int, default=15,
+    parser.add_argument("--batch_size", type=int, default=30,
                         help="Questions per API call (15=safe default; up to 30 for simple math types)")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite the output file instead of appending to it")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max retry attempts on rate limit / connection errors (default: 5)")
-    parser.add_argument("--base_delay", type=float, default=5.0,
-                        help="Base delay in seconds for exponential backoff (default: 5.0)")
+    parser.add_argument("--base_delay", type=float, default=3.0,
+                        help="Base delay in seconds for exponential backoff (default: 3.0)")
+    parser.add_argument("--workers", type=int, default=5,
+                        help="Parallel type workers when --type all (default: 5; use 1 to disable)")
     args = parser.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
@@ -410,69 +584,52 @@ def main():
     total_written = 0
     n_types = len(types_to_run)
     run_start = time.monotonic()
+    file_lock = threading.Lock()
 
     with open(args.output, file_mode, encoding="utf-8") as f:
-        for type_idx, qtype in enumerate(types_to_run, 1):
-            target = args.count or MATH_QUESTION_TYPES[qtype]["count"]
-            n_batches = -(-target // args.batch_size)
-            print(f"\n[{type_idx}/{n_types}] {qtype} — target {target} questions "
-                  f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {args.batch_size})")
-
-            type_written = 0
-            remaining = target
-            current_batch_size = args.batch_size
-            batch_num = 0
-            type_start = time.monotonic()
-
-            while remaining > 0:
-                batch = min(current_batch_size, remaining)
-                batch_num += 1
-                print(f"  [batch {batch_num}] requesting {batch} questions "
-                      f"({remaining} remaining, batch_size={current_batch_size})...")
-                t0 = time.monotonic()
-
-                try:
-                    batch_qs = generate_math_questions(
-                        question_type=qtype,
-                        count=batch,
+        use_parallel = n_types > 1 and not args.smoke and args.workers > 1
+        if use_parallel:
+            max_workers = min(args.workers, n_types)
+            print(f"Running {n_types} types in parallel ({max_workers} workers)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _run_type,
+                        qtype=qtype,
+                        target=args.count or MATH_QUESTION_TYPES[qtype]["count"],
+                        batch_size=args.batch_size,
                         model=args.model,
-                        verify=should_verify,
                         api_base=args.api_base,
-                    )
-                    elapsed = time.monotonic() - t0
-
-                    for item in batch_qs:
-                        f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                    f.flush()
-
-                    type_written += len(batch_qs)
-                    total_written += len(batch_qs)
-                    remaining -= len(batch_qs)
-                    print(f"  [batch {batch_num}] ✓ {len(batch_qs)} written in {elapsed:.1f}s "
-                          f"→ flushed to disk (type total: {type_written}/{target})")
-                    time.sleep(0.5)
-
-                except json.JSONDecodeError as e:
-                    print(f"  [batch {batch_num}] JSON parse error: {e}. Retrying...")
-                    time.sleep(2)
-                    batch_num -= 1
-                    continue
-                except ValueError as e:
-                    if "truncated" in str(e).lower() or "null content" in str(e).lower():
-                        new_batch = max(1, current_batch_size // 2)
-                        print(f"  [batch {batch_num}] Truncation/null — halving batch size: "
-                              f"{current_batch_size} → {new_batch}. Retrying...")
-                        current_batch_size = new_batch
-                        batch_num -= 1
-                        continue
-                    print(f"  [batch {batch_num}] Error: {e}. Skipping type.")
-                    break
-                except Exception as e:
-                    print(f"  [batch {batch_num}] Unexpected error: {e}. Skipping type.")
-                    break
-
-            type_elapsed = time.monotonic() - type_start
-            print(f"  [DONE] {type_written}/{target} written for {qtype} in {type_elapsed:.1f}s")
+                        should_verify=should_verify,
+                        out_file=f,
+                        file_lock=file_lock,
+                        type_idx=type_idx,
+                        n_types=n_types,
+                    ): qtype
+                    for type_idx, qtype in enumerate(types_to_run, 1)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    qtype = futures[future]
+                    try:
+                        written = future.result()
+                        total_written += written
+                    except Exception as e:
+                        print(f"[{qtype}] type thread failed: {e}")
+        else:
+            for type_idx, qtype in enumerate(types_to_run, 1):
+                written = _run_type(
+                    qtype=qtype,
+                    target=args.count or MATH_QUESTION_TYPES[qtype]["count"],
+                    batch_size=args.batch_size,
+                    model=args.model,
+                    api_base=args.api_base,
+                    should_verify=should_verify,
+                    out_file=f,
+                    file_lock=file_lock,
+                    type_idx=type_idx,
+                    n_types=n_types,
+                )
+                total_written += written
 
     total_elapsed = time.monotonic() - run_start
     print(f"\n{'='*55}")

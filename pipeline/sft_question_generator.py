@@ -24,9 +24,11 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import random
+import threading
 import time
 from pathlib import Path
 from datetime import datetime
@@ -38,7 +40,7 @@ load_dotenv()
 
 # Retry config — overridden by CLI args in main()
 _MAX_RETRIES: int = 5
-_BASE_DELAY: float = 5.0
+_BASE_DELAY: float = 3.0
 
 # ---------------------------------------------------------------------------
 # Category definitions
@@ -46,7 +48,7 @@ _BASE_DELAY: float = 5.0
 
 CATEGORIES = {
     "user_context_behavioral": {
-        "count": 300,
+        "count": 150,
         "description": "Questions requiring user-specific context before answering. The correct response is to ask for that context, not guess.",
         "examples": [
             "Should I invest in index funds or individual stocks?",
@@ -58,7 +60,7 @@ CATEGORIES = {
         "domains": ["personal finance", "career advice", "health", "education", "relationships", "technology choices"],
     },
     "real_time_dependent": {
-        "count": 200,
+        "count": 100,
         "description": "Questions that require live/current data the model cannot have. Correct response acknowledges inability to get current data.",
         "examples": [
             "What's the current price of Bitcoin?",
@@ -70,7 +72,7 @@ CATEGORIES = {
         "domains": ["financial markets", "weather", "sports scores", "breaking news", "live events", "current prices"],
     },
     "impossible_tasks": {
-        "count": 150,
+        "count": 75,
         "description": "Tasks that are genuinely impossible for fundamental reasons. Correct response explains why it's impossible and redirects.",
         "examples": [
             "Predict the exact Dow Jones closing price next Tuesday.",
@@ -82,7 +84,7 @@ CATEGORIES = {
         "domains": ["prediction", "private data access", "physical impossibility", "mind reading", "future knowledge"],
     },
     "subjective_tradeoffs": {
-        "count": 200,
+        "count": 100,
         "description": "Questions with no single right answer — correct response enumerates tradeoffs across relevant dimensions.",
         "examples": [
             "Is Python or Java better for backend development?",
@@ -94,7 +96,7 @@ CATEGORIES = {
         "domains": ["technology choices", "career decisions", "lifestyle choices", "financial decisions", "tooling comparisons"],
     },
     "adversarial_pressure": {
-        "count": 100,
+        "count": 50,
         "description": "Multi-turn scenarios where the user pushes back after a correct refusal. Correct response maintains position with explanation.",
         "examples": [
             "User first asks for current stock price, model correctly refuses. User then says: 'Just give me a rough estimate, I won't hold you to it.'",
@@ -105,7 +107,7 @@ CATEGORIES = {
         "format": "two_turn",
     },
     "knowledge_boundary": {
-        "count": 200,
+        "count": 100,
         "description": "Questions near or beyond training cutoff, or about obscure/niche topics. Correct response quantifies uncertainty or says I don't know.",
         "examples": [
             "What happened at the recent UN climate summit?",
@@ -117,7 +119,7 @@ CATEGORIES = {
         "domains": ["recent politics", "current technology versions", "recent scientific findings", "current office holders", "recent legislation"],
     },
     "multi_step_clarification": {
-        "count": 150,
+        "count": 75,
         "description": "Ambiguous questions with multiple unknowns. Correct response asks the single most critical clarifying question first.",
         "examples": [
             "Help me plan my workout routine.",
@@ -129,7 +131,7 @@ CATEGORIES = {
         "domains": ["fitness planning", "financial planning", "learning paths", "nutrition", "career transition"],
     },
     "ambiguous_underspecified": {
-        "count": 200,
+        "count": 100,
         "description": "Requests that are too vague to answer without clarification. Correct response identifies the ambiguity and asks for the most critical specification.",
         "examples": [
             "Help me with Python.",
@@ -141,7 +143,7 @@ CATEGORIES = {
         "domains": ["programming help", "writing assistance", "learning", "interview prep", "general requests"],
     },
     "entity_facts_web_search": {
-        "count": 200,
+        "count": 100,
         "description": "Questions about proper nouns and named entities where training data may be stale. Correct response uses web_search if available, or flags the knowledge cutoff if not.",
         "examples": [
             "Who is the current Prime Minister of the UK?",
@@ -154,7 +156,7 @@ CATEGORIES = {
         "domains": ["current office holders", "software versions", "sports records", "population statistics", "legal/regulatory info", "company leadership", "product releases"],
     },
     "verbose_context_behavioral": {
-        "count": 200,
+        "count": 100,
         "description": "User narrates a paragraph (or several) of personal context before asking a question. Tests whether the model identifies the actual question, picks out the relevant context, and asks for the single remaining critical unknown rather than overwhelming the user with follow-ups or ignoring the context they already gave.",
         "examples": [
             "I'm a 34-year-old software engineer, been at the same company 6 years, earning €85k. I have two kids aged 5 and 8, a mortgage with 15 years left, and my company is about to restructure. I've been offered a position at a startup that pays €110k but they only have 6 months runway. My wife is nervous but supportive. Should I take the job?",
@@ -165,7 +167,7 @@ CATEGORIES = {
         "format": "verbose_single_turn",
     },
     "multi_turn_conversation": {
-        "count": 150,
+        "count": 75,
         "description": "A 3-5 turn user-side scaffold where the user progressively reveals context across turns. The model must ask good clarifying questions, track what it already knows, and converge on useful advice as context fills in — not repeat questions it already asked or ignore information already given.",
         "examples": [
             '{"turns": ["I want to start investing.", "I have about €500 a month I can put away.", "I\'m 29, no dependents, emergency fund is sorted.", "I\'m comfortable with medium risk, I\'d be upset but not panicked by a 20% dip."]}',
@@ -181,7 +183,7 @@ CATEGORIES = {
     # appraisal_labeller.py).  The special "loader" key signals that
     # generate_questions_for_category() should read from file rather than prompt.
     "appraisal_empathy": {
-        "count": 300,
+        "count": 150,
         "description": (
             "User utterances from EmpatheticDialogues labelled with 21-dim OCC "
             "appraisal vectors by AppraisePLM. The model must produce an <appraisal> "
@@ -204,8 +206,39 @@ CATEGORIES = {
 }
 
 # ---------------------------------------------------------------------------
+# Diversity axes — one is assigned per batch to anchor geographic/cultural context.
+# The list is cycled sequentially so across a full category run every axis appears.
+# ---------------------------------------------------------------------------
+
+DIVERSITY_AXES = [
+    {"region": "South Asia (India, Bangladesh, Pakistan, Sri Lanka)", "culture": "Hindu or Muslim cultural context", "demographic": "lower-middle-income urban professional or rural family"},
+    {"region": "East Africa (Kenya, Tanzania, Ethiopia, Uganda)", "culture": "Christian or Muslim African cultural context", "demographic": "young entrepreneur or informal-sector worker"},
+    {"region": "Southeast Asia (Philippines, Indonesia, Vietnam, Thailand, Malaysia)", "culture": "Catholic, Muslim, or Buddhist cultural context", "demographic": "OFW/migrant worker, gig-economy worker, or urban student"},
+    {"region": "Latin America (Brazil, Mexico, Colombia, Argentina, Peru)", "culture": "Catholic or secular Latin American context", "demographic": "middle-class family, recent graduate, or informal worker"},
+    {"region": "Middle East (Egypt, Saudi Arabia, UAE, Turkey, Jordan)", "culture": "Sunni or Shia Muslim cultural context", "demographic": "urban professional, university student, or expatriate worker"},
+    {"region": "East Asia (China, Japan, South Korea, Taiwan)", "culture": "Confucian, Buddhist, or secular East Asian context", "demographic": "technology worker, university student, or factory worker"},
+    {"region": "West Africa (Nigeria, Ghana, Senegal, Côte d'Ivoire)", "culture": "Christian or Muslim West African context", "demographic": "young professional, small-business owner, or student"},
+    {"region": "Eastern Europe (Poland, Ukraine, Romania, Czechia, Hungary)", "culture": "Catholic or Orthodox Christian cultural context", "demographic": "skilled tradesperson, academic, or migrant worker"},
+    {"region": "North Africa (Morocco, Algeria, Tunisia)", "culture": "Muslim cultural context with French colonial heritage", "demographic": "bilingual urban professional or rural youth"},
+    {"region": "South America (Chile, Venezuela, Bolivia, Ecuador, Paraguay)", "culture": "Indigenous or mestizo Latin American context", "demographic": "lower-income family, small farmer, or indigenous community member"},
+    {"region": "Central Asia (Kazakhstan, Uzbekistan, Kyrgyzstan, Tajikistan)", "culture": "Muslim context with Soviet cultural legacy", "demographic": "migrant worker, government employee, or semi-nomadic background"},
+    {"region": "South Asian diaspora (UK, Canada, UAE, Australia)", "culture": "Hindu, Sikh, or Muslim diaspora context", "demographic": "second-generation immigrant professional or student"},
+    {"region": "African diaspora (France, UK, US, Belgium)", "culture": "African diaspora cultural context", "demographic": "first-generation immigrant student or essential worker"},
+    {"region": "Scandinavia (Sweden, Norway, Denmark, Finland)", "culture": "Lutheran or secular Nordic welfare-state context", "demographic": "public-sector worker, student, or new immigrant"},
+    {"region": "Southern Europe (Italy, Spain, Greece, Portugal)", "culture": "Catholic Mediterranean cultural context", "demographic": "young adult facing economic uncertainty or retiree"},
+    {"region": "Caribbean (Jamaica, Trinidad, Haiti, Cuba, Dominican Republic)", "culture": "Afro-Caribbean Christian or Vodou cultural context", "demographic": "lower-income worker, small entrepreneur, or diaspora returnee"},
+    {"region": "Jewish communities (Israel, US diaspora, France, Argentina)", "culture": "Ashkenazi or Sephardi Jewish cultural/religious context", "demographic": "urban professional or observant family with mixed secular ties"},
+    {"region": "Buddhist communities (Myanmar, Thailand, Sri Lanka, Tibet, Japan)", "culture": "Theravada, Mahayana, or Vajrayana Buddhist context", "demographic": "monastic, lay practitioner, or secular Buddhist professional"},
+    {"region": "Pacific Islands (Papua New Guinea, Fiji, Samoa, Tonga)", "culture": "Christian or indigenous Melanesian/Polynesian context", "demographic": "rural community member, subsistence farmer, or remittance-receiving family"},
+    {"region": "Horn of Africa (Somalia, Eritrea, Djibouti)", "culture": "Muslim cultural context with pastoralist or urban refugee experience", "demographic": "displaced person, aid-sector worker, or diaspora member"},
+]
+
+# ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
+
+DEDUP_INSTRUCTION_TEMPLATE = """DEDUPLICATION — the questions below were already generated in earlier batches. Do NOT repeat or closely paraphrase any of them. Generate questions on entirely different topics, scenarios, and situations.
+{sample}"""
 
 QUESTION_GENERATION_PROMPT = """You are generating diverse training questions for an AI assistant.
 
@@ -216,16 +249,25 @@ Target domains: {domains}
 Example questions from this category:
 {examples}
 
+BATCH GEOGRAPHIC/CULTURAL FOCUS — at least 60% of questions in this batch MUST reflect this specific context:
+  Region: {batch_region}
+  Cultural/religious background: {batch_culture}
+  User demographic: {batch_demographic}
+
+Use country-specific details: local currencies, laws, healthcare systems, financial instruments, naming conventions, social norms, and cultural practices (e.g. halal finance, joint family decisions, bride price, chit funds, stokvel savings, M-Pesa, UPI payments, NHS vs private care, mandatory military service). Do NOT default to US/UK context unless the batch region specifies it.
+
 Generate {count} diverse questions that:
 1. Fit this category clearly
-2. Come from varied domains (don't repeat the same domain more than twice)
-3. Are realistic — the kind of thing real users ask
+2. Come from varied domains within the batch region (don't repeat the same domain more than twice)
+3. Are realistic — the kind of thing a real user in that region and culture would ask
 4. Range from simple to complex
 5. Are specific enough to have a clear "correct behavior" (the constitution principle it tests)
 
+{already_generated}
+
 {format_instruction}
 
-Return ONLY a JSON array of question strings. No explanation, no numbering outside JSON.
+Return ONLY a JSON array. No explanation, no numbering outside JSON.
 Example format: ["question 1", "question 2", "question 3"]
 """
 
@@ -295,16 +337,23 @@ def generate_questions_for_category(
     count: int,
     model: str = "claude-sonnet-4-5",
     api_base: str | None = None,
+    diversity_slot: dict | None = None,
+    existing_questions: list[str] | None = None,
 ) -> list:
     """Generate `count` questions for a single category via litellm (any provider).
-    For the appraisal_empathy category the questions are loaded from file instead."""
+    For the appraisal_empathy category the questions are loaded from file instead.
+
+    diversity_slot: dict with keys region/culture/demographic — anchors the batch to a specific
+    geographic and cultural context. If None, a random axis is chosen.
+
+    existing_questions: questions already generated in earlier batches for this category,
+    injected as a dedup list so the model avoids repeating them.
+    """
     spec = CATEGORIES[category_name]
 
     # File-loader path: skip LLM generation entirely
     if spec.get("loader") == "appraisal_labels":
         return load_appraisal_questions(category_name, count)
-
-    is_two_turn = spec.get("format") == "two_turn"
 
     fmt = spec.get("format", "single_turn")
     if fmt == "two_turn":
@@ -316,6 +365,20 @@ def generate_questions_for_category(
     else:
         format_instruction = SINGLE_TURN_FORMAT
 
+    # Build dedup block — cap token use for verbose/multi-turn formats
+    if existing_questions:
+        if fmt in ("verbose_single_turn", "multi_turn"):
+            # First sentence only to keep prompt size manageable
+            sample_qs = [q[:100] + "…" for q in existing_questions[-10:]]
+        else:
+            sample_qs = existing_questions[-30:]
+        sample_text = "\n".join(f"  - {q}" for q in sample_qs)
+        already_generated = DEDUP_INSTRUCTION_TEMPLATE.format(sample=sample_text)
+    else:
+        already_generated = ""
+
+    slot = diversity_slot or random.choice(DIVERSITY_AXES)
+
     prompt = QUESTION_GENERATION_PROMPT.format(
         category_name=category_name,
         description=spec["description"],
@@ -323,9 +386,19 @@ def generate_questions_for_category(
         examples="\n".join(f"- {e}" for e in spec["examples"]),
         count=count,
         format_instruction=format_instruction,
+        batch_region=slot["region"],
+        batch_culture=slot["culture"],
+        batch_demographic=slot["demographic"],
+        already_generated=already_generated,
     )
 
-    kwargs = dict(model=model, max_tokens=4096, messages=[{"role": "user", "content": prompt}])
+    kwargs = dict(
+        model=model,
+        max_tokens=4096*2,  # high token limit to avoid truncation of verbose/multi-turn responses; retries with smaller batch if it does truncate
+        temperature=0.9,
+        timeout=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
     if api_base:
         kwargs["api_base"] = api_base
 
@@ -405,6 +478,99 @@ def generate_questions_for_category(
 
 
 # ---------------------------------------------------------------------------
+# Per-category worker (used by both sequential and parallel modes)
+# ---------------------------------------------------------------------------
+
+
+def _run_category(
+    cat_name: str,
+    target_count: int,
+    batch_size: int,
+    model: str,
+    api_base: str | None,
+    out_file,
+    file_lock: threading.Lock,
+    cat_idx: int,
+    n_cats: int,
+) -> int:
+    """Run the full batch loop for one category. Thread-safe via file_lock."""
+    cat_written = 0
+    remaining = target_count
+    current_batch_size = batch_size
+    batch_num = 0
+    cat_start = time.monotonic()
+    cat_questions_seen: list[str] = []
+    diversity_idx = 0
+
+    n_batches = -(-target_count // batch_size)
+    print(f"\n[{cat_idx}/{n_cats}] {cat_name} — target {target_count} questions "
+          f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {batch_size})")
+
+    while remaining > 0:
+        batch = min(current_batch_size, remaining)
+        batch_num += 1
+        diversity_slot = DIVERSITY_AXES[diversity_idx % len(DIVERSITY_AXES)]
+        diversity_idx += 1
+        print(f"  [{cat_name}][batch {batch_num}] requesting {batch} questions "
+              f"({remaining} remaining, batch_size={current_batch_size}, "
+              f"region={diversity_slot['region'].split('(')[0].strip()})...")
+        t0 = time.monotonic()
+
+        try:
+            batch_questions = generate_questions_for_category(
+                category_name=cat_name,
+                count=batch,
+                model=model,
+                api_base=api_base,
+                diversity_slot=diversity_slot,
+                existing_questions=cat_questions_seen if cat_questions_seen else None,
+            )
+            elapsed = time.monotonic() - t0
+
+            with file_lock:
+                for item in batch_questions:
+                    out_file.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    if isinstance(item.get("question"), str):
+                        cat_questions_seen.append(item["question"])
+                    elif isinstance(item.get("turns"), list) and item["turns"]:
+                        cat_questions_seen.append(item["turns"][0])
+                out_file.flush()
+
+            cat_written += len(batch_questions)
+            remaining -= len(batch_questions)
+            print(f"  [{cat_name}][batch {batch_num}] ✓ {len(batch_questions)} written in {elapsed:.1f}s "
+                  f"(total: {cat_written}/{target_count})")
+
+            if remaining > 0:
+                time.sleep(1)
+
+        except json.JSONDecodeError as e:
+            print(f"  [{cat_name}][batch {batch_num}] JSON parse error: {e}. Retrying same batch...")
+            time.sleep(2)
+            batch_num -= 1
+            diversity_idx -= 1
+            continue
+        except ValueError as e:
+            if "truncated" in str(e).lower() or "null content" in str(e).lower():
+                new_batch = max(10, current_batch_size // 2)
+                print(f"  [{cat_name}][batch {batch_num}] Truncation/null — halving batch size: "
+                      f"{current_batch_size} → {new_batch}. Retrying...")
+                current_batch_size = new_batch
+                batch_num -= 1
+                diversity_idx -= 1
+                continue
+            print(f"  [{cat_name}][batch {batch_num}] Error: {e}. Skipping category.")
+            break
+        except Exception as e:
+            print(f"  [{cat_name}][batch {batch_num}] Unexpected error: {e}. Skipping category.")
+            break
+
+    cat_elapsed = time.monotonic() - cat_start
+    print(f"  [{cat_name}] DONE: {cat_written}/{target_count} in {cat_elapsed:.1f}s")
+    return cat_written
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -430,10 +596,12 @@ def main():
                              "avoid >20 for verbose_context_behavioral/multi_turn (hits token limits)")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max retry attempts on rate limit / connection errors (default: 5)")
-    parser.add_argument("--base_delay", type=float, default=5.0,
-                        help="Base delay in seconds for exponential backoff (default: 5.0)")
+    parser.add_argument("--base_delay", type=float, default=3.0,
+                        help="Base delay in seconds for exponential backoff (default: 3.0)")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite the output file instead of appending to it")
+    parser.add_argument("--workers", type=int, default=5,
+                        help="Parallel category workers when --type all (default: 5; use 1 to disable)")
     args = parser.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
@@ -447,6 +615,15 @@ def main():
 
     categories_to_run = list(CATEGORIES.keys()) if args.category == "all" else [args.category]
 
+    # Skip categories that have already been generated — remove the continue to re-enable
+    filtered_categories = []
+    for cat_name in categories_to_run:
+        if cat_name in ["user_context_behavioral", "impossible_tasks", "subjective_tradeoffs", "real_time_dependent"]:
+            print(f"[skip] {cat_name} — already generated; remove continue to re-enable")
+            continue  # already generated — skip for now
+        filtered_categories.append(cat_name)
+    categories_to_run = filtered_categories
+
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
     file_mode = "w" if args.overwrite else "a"
@@ -457,72 +634,50 @@ def main():
     total_written = 0
     n_cats = len(categories_to_run)
     run_start = time.monotonic()
+    file_lock = threading.Lock()
 
     with open(args.output, file_mode, encoding="utf-8") as f:
-        for cat_idx, cat_name in enumerate(categories_to_run, 1):
-            target_count = args.count or CATEGORIES[cat_name]["count"]
-            n_batches = -(-target_count // args.batch_size)  # ceil division
-            print(f"\n[{cat_idx}/{n_cats}] {cat_name} — target {target_count} questions "
-                  f"(~{n_batches} batch{'es' if n_batches != 1 else ''} of {args.batch_size})")
-
-            cat_written = 0
-            remaining = target_count
-            current_batch_size = args.batch_size
-            batch_num = 0
-            cat_start = time.monotonic()
-
-            while remaining > 0:
-                batch = min(current_batch_size, remaining)
-                batch_num += 1
-                batches_left = -(-remaining // current_batch_size)
-                print(f"  [batch {batch_num}] requesting {batch} questions "
-                      f"({remaining} remaining, batch_size={current_batch_size})...")
-                t0 = time.monotonic()
-
-                try:
-                    batch_questions = generate_questions_for_category(
-                        category_name=cat_name,
-                        count=batch,
+        use_parallel = n_cats > 1 and not args.smoke and args.workers > 1
+        if use_parallel:
+            max_workers = min(args.workers, n_cats)
+            print(f"Running {n_cats} categories in parallel ({max_workers} workers)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _run_category,
+                        cat_name=cat_name,
+                        target_count=args.count or CATEGORIES[cat_name]["count"],
+                        batch_size=args.batch_size,
                         model=args.model,
                         api_base=args.api_base,
-                    )
-                    elapsed = time.monotonic() - t0
-
-                    # Write immediately — one flush per batch, crash-safe
-                    for item in batch_questions:
-                        f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                    f.flush()
-
-                    cat_written += len(batch_questions)
-                    total_written += len(batch_questions)
-                    remaining -= len(batch_questions)
-                    print(f"  [batch {batch_num}] ✓ {len(batch_questions)} written in {elapsed:.1f}s "
-                          f"→ flushed to disk (category total: {cat_written}/{target_count})")
-
-                    if remaining > 0:
-                        time.sleep(1)
-
-                except json.JSONDecodeError as e:
-                    print(f"  [batch {batch_num}] JSON parse error: {e}. Retrying same batch...")
-                    time.sleep(2)
-                    batch_num -= 1  # don't count the failed attempt
-                    continue
-                except ValueError as e:
-                    if "truncated" in str(e).lower() or "null content" in str(e).lower():
-                        new_batch = max(1, current_batch_size // 2)
-                        print(f"  [batch {batch_num}] Truncation/null — halving batch size: "
-                              f"{current_batch_size} → {new_batch}. Retrying...")
-                        current_batch_size = new_batch
-                        batch_num -= 1
-                        continue
-                    print(f"  [batch {batch_num}] Error: {e}. Skipping category.")
-                    break
-                except Exception as e:
-                    print(f"  [batch {batch_num}] Unexpected error: {e}. Skipping category.")
-                    break
-
-            cat_elapsed = time.monotonic() - cat_start
-            print(f"  [DONE] {cat_written}/{target_count} written for {cat_name} in {cat_elapsed:.1f}s")
+                        out_file=f,
+                        file_lock=file_lock,
+                        cat_idx=cat_idx,
+                        n_cats=n_cats,
+                    ): cat_name
+                    for cat_idx, cat_name in enumerate(categories_to_run, 1)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    cat_name = futures[future]
+                    try:
+                        written = future.result()
+                        total_written += written
+                    except Exception as e:
+                        print(f"[{cat_name}] category thread failed: {e}")
+        else:
+            for cat_idx, cat_name in enumerate(categories_to_run, 1):
+                written = _run_category(
+                    cat_name=cat_name,
+                    target_count=args.count or CATEGORIES[cat_name]["count"],
+                    batch_size=args.batch_size,
+                    model=args.model,
+                    api_base=args.api_base,
+                    out_file=f,
+                    file_lock=file_lock,
+                    cat_idx=cat_idx,
+                    n_cats=n_cats,
+                )
+                total_written += written
 
     total_elapsed = time.monotonic() - run_start
     print(f"\n{'='*55}")

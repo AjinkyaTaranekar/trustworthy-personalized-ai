@@ -6,6 +6,21 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-04] refactor | Math question generator — dedup, temperature, and word problem context rotation
+- Same root causes as Part A question generator: no temperature set (provider default, often near-greedy) → repetitive problem structures; no inter-batch memory → same problem templates regenerated each batch.
+- **Fix — temperature:** Added `temperature=0.9` to all `generate_math_questions` calls.
+- **Fix — dedup:** Per-type question strings tracked in memory; last 20 injected into each subsequent batch prompt.
+- **Fix — word problem context rotation:** Added `WORD_PROBLEM_CONTEXTS` list (10 geographic/currency settings: South Asia, West Africa, SE Asia, Latin America, Middle East, East Asia, Eastern Europe, Scandinavia, UK, East Africa). Cycled per batch for `word_problems` and `no_tool_control` types — at least 60% of each batch set to the assigned cultural context with locally realistic currencies, items, and names. Pure math types (arithmetic, algebra, geometry, statistics, unit_conversion) not rotated since the math itself is culturally neutral.
+- **Files changed:** `pipeline/sft_math_question_generator.py`.
+
+## [2026-05-04] refactor | Question generator — diversity axis rotation, dedup, and temperature fix
+- **Root cause 1 (repetition):** `generate_questions_for_category` was called fresh each batch with an identical prompt, no memory of prior output. LLMs with low temperature anchor on fixed examples and regenerate near-identical questions.
+- **Root cause 2 (Western bias):** All category `examples` and `domains` were US/UK-centric. Prompt only specified topical domain variety, not geographic or cultural variety.
+- **Fix — axis rotation:** Added `DIVERSITY_AXES` list (20 slots: South Asia, East Africa, SE Asia, Latin America, Middle East, East Asia, West Africa, Eastern Europe, North Africa, South America, Central Asia, diasporas, Scandinavia, S. Europe, Caribbean, Jewish communities, Buddhist communities, Pacific Islands, Horn of Africa). Cycled sequentially per batch. Each batch prompt mandates ≥60% questions reflect the assigned region/culture/demographic with country-specific details (local currencies, halal finance, M-Pesa, chit funds, NHS, etc.).
+- **Fix — dedup injection:** Tracks generated questions in memory per category. Single-turn: last 30 shown verbatim. Verbose/multi-turn: last 10 truncated to 100 chars. Model instructed not to repeat or paraphrase listed questions.
+- **Fix — temperature:** Explicitly set `temperature=0.9` on all generation calls (previously provider default, often low, causing near-identical batches).
+- **Files changed:** `pipeline/sft_question_generator.py`, `wiki/sources/code/sft-v2-pipeline.md`.
+
 ## [2026-05-03] refactor | NVIDIA NIM provider confirmed — docs updated
 - Verified NVIDIA NIM support in litellm via official docs (`nvidia_nim/<org>/<model>` prefix, `NVIDIA_NIM_API_KEY` env var, base URL `https://integrate.api.nvidia.com/v1`).
 - Confirmed model IDs: `nvidia_nim/moonshotai/kimi-k2.6` and `nvidia_nim/minimaxai/minimax-m2.7` — both available on NIM free tier.

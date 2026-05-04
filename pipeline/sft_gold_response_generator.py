@@ -29,10 +29,12 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import random
 import re
+import threading
 import time
 from pathlib import Path
 from datetime import datetime
@@ -404,7 +406,7 @@ IDEAL_BEHAVIORS = {
 
 # Retry config — overridden by CLI args in main()
 _MAX_RETRIES: int = 5
-_BASE_DELAY: float = 5.0
+_BASE_DELAY: float = 3.0
 
 
 def _call(messages: list, model: str, max_tokens: int, api_base: str | None = None) -> str:
@@ -806,6 +808,100 @@ def _merge_violations(rule_violations: list[str], llm_violations: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Per-question worker
+# ---------------------------------------------------------------------------
+
+
+def _process_one(
+    item: dict,
+    model: str,
+    critic_model: str,
+    api_base: str | None,
+    out_file,
+    file_lock: threading.Lock,
+    idx: int,
+    total: int,
+    run_start: float,
+) -> str:
+    """Process one question through the full draft → critique → revise pipeline.
+    Thread-safe: only touches out_file inside file_lock. Returns 'ok' | 'error'."""
+    fmt = item.get("format", "single_turn")
+    category = item.get("category", "unknown")
+    tool_profile = pick_tool_profile(category)
+    tag = f"[{idx}/{total}:{category}]"
+
+    try:
+        if fmt == "multi_turn":
+            turns = item.get("turns", [])
+            if len(turns) < 2:
+                print(f"  {tag} ✗ multi_turn with <2 turns — skipping")
+                return "error"
+
+            print(f"\n{tag} {len(turns)}-turn | tools={tool_profile['label']}")
+            t0 = time.monotonic()
+            responses = generate_multi_turn_responses(turns, category, tool_profile, model, api_base)
+            print(f"  {tag} turns done in {time.monotonic()-t0:.1f}s")
+
+            violations_per_turn: list[str] = []
+            for t_idx, (turn_q, turn_r) in enumerate(zip(turns, responses)):
+                rule_v = rule_check_response(turn_r, turn_q, category, tool_profile)
+                llm_v = critique_turn(turn_q, category, turn_r, tool_profile, critic_model, api_base)
+                v = _merge_violations(rule_v, llm_v)
+                violations_per_turn.append(v)
+                print(f"  {tag} turn {t_idx+1}: {len(rule_v)} rule + {_count_violations(llm_v)} LLM viol")
+
+            example = build_multi_turn_example(turns, responses, category, tool_profile, violations_per_turn)
+
+        else:
+            question = item.get("question", "").strip()
+            follow_up = item.get("follow_up")
+            elapsed = time.monotonic() - run_start
+            print(f"\n{tag} tools={tool_profile['label']} | elapsed={elapsed:.0f}s")
+            print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
+
+            t0 = time.monotonic()
+            draft = generate_draft(question, category, follow_up, tool_profile, model, api_base,
+                                   appraisal_meta=item.get("appraisal_meta"))
+            print(f"  {tag} [1/3] Draft: {len(draft)} chars in {time.monotonic()-t0:.1f}s")
+
+            rule_violations = rule_check_response(draft, question, category, tool_profile)
+            if rule_violations:
+                print(f"  {tag} [2a]  Rule check: {len(rule_violations)} structural violation(s)")
+                for rv in rule_violations:
+                    print(f"        → {rv[:90]}")
+
+            t0 = time.monotonic()
+            llm_violations = critique_draft(question, category, draft, tool_profile, critic_model, api_base,
+                                            appraisal_meta=item.get("appraisal_meta"))
+            violations = _merge_violations(rule_violations, llm_violations)
+            has_violations = violations.strip() != "NO_VIOLATIONS"
+            n_rule = len(rule_violations)
+            n_llm = _count_violations(llm_violations)
+            print(f"  {tag} [2/3] Critique in {time.monotonic()-t0:.1f}s: "
+                  f"{n_rule} rule + {n_llm} LLM viol "
+                  f"{'→ revising' if has_violations else '→ clean'}")
+
+            final = draft
+            if has_violations:
+                t0 = time.monotonic()
+                final = revise_draft(question, category, draft, violations, tool_profile, model, api_base)
+                print(f"  {tag} [3/3] Revised: {len(final)} chars in {time.monotonic()-t0:.1f}s")
+
+            example = build_training_example(question, category, final, follow_up, draft, violations, tool_profile)
+
+        with file_lock:
+            out_file.write(json.dumps(example, ensure_ascii=False) + "\n")
+            out_file.flush()
+
+        print(f"  {tag} ✓ written + flushed")
+        return "ok"
+
+    except Exception as e:
+        print(f"  {tag} ✗ Unhandled error: {e}")
+        return "error"
+
+
+# ---------------------------------------------------------------------------
 # Main processing loop
 # ---------------------------------------------------------------------------
 
@@ -820,6 +916,7 @@ def process_questions(
     critic_model: str | None = None,
     overwrite: bool = False,
     category_filter: str | None = None,
+    workers: int = 4,
 ) -> None:
     # ── Critic selection ─────────────────────────────────────────────────────
     # A frozen larger model (e.g. claude-opus-4-7) prevents the self-referential
@@ -864,129 +961,84 @@ def process_questions(
         if done_questions:
             print(f"Dedup loaded   : {len(done_questions)} already-processed questions (will skip)")
 
-    # Count total questions to process for progress display
-    total_in_file = sum(1 for _ in open(questions_path, encoding="utf-8"))
-    print(f"Questions file : {questions_path} ({total_in_file} lines)")
-
-    processed = 0
+    # Load and filter all items upfront so parallel workers start immediately
+    items_to_process: list[dict] = []
     skipped = 0
-    errors = 0
-    run_start = time.monotonic()
+    parse_errors = 0
+    total_in_file = 0
 
-    with open(questions_path, encoding="utf-8") as qf, \
-         open(output_path, write_mode, encoding="utf-8") as out:
-
-        for line_num, line in enumerate(qf, 1):
-            if max_examples and processed >= max_examples:
-                break
-
+    with open(questions_path, encoding="utf-8") as qf:
+        for line in qf:
+            total_in_file += 1
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
-                errors += 1
+                parse_errors += 1
                 continue
 
             fmt = item.get("format", "single_turn")
             category = item.get("category", "unknown")
 
-            # Category filter
             if category_filter and category_filter != "all" and category != category_filter:
                 skipped += 1
                 continue
 
-            # Deduplicate
             if fmt == "multi_turn":
                 dedup_key = json.dumps(item.get("turns", []))
             else:
                 dedup_key = item.get("question", "").strip()
 
             if not dedup_key:
-                errors += 1
+                parse_errors += 1
                 continue
 
             if dedup_key in done_questions:
                 skipped += 1
                 continue
 
-            tool_profile = pick_tool_profile(category)
-            elapsed_total = time.monotonic() - run_start
-            rate = processed / elapsed_total if elapsed_total > 0 else 0
-            print(f"\n[{processed + 1}] line {line_num}/{total_in_file} | "
-                  f"cat={category} fmt={fmt} tools={tool_profile['label']} | "
-                  f"rate={rate:.2f}/s | elapsed={elapsed_total:.0f}s")
+            items_to_process.append(item)
 
-            try:
-                if fmt == "multi_turn":
-                    turns = item.get("turns", [])
-                    if len(turns) < 2:
-                        errors += 1
-                        continue
-                    print(f"  Generating {len(turns)}-turn conversation...")
-                    t0 = time.monotonic()
-                    responses = generate_multi_turn_responses(turns, category, tool_profile, model, api_base)
-                    print(f"  Turns generated in {time.monotonic()-t0:.1f}s")
+    if max_examples:
+        items_to_process = items_to_process[:max_examples]
 
-                    violations_per_turn: list[str] = []
-                    for t_idx, (turn_q, turn_r) in enumerate(zip(turns, responses)):
-                        rule_v = rule_check_response(turn_r, turn_q, category, tool_profile)
-                        llm_v = critique_turn(turn_q, category, turn_r, tool_profile, _critic, api_base)
-                        v = _merge_violations(rule_v, llm_v)
-                        violations_per_turn.append(v)
-                        print(f"    Turn {t_idx + 1}: {len(rule_v)} rule + {_count_violations(llm_v)} LLM violation(s)")
+    print(f"Questions file : {questions_path} ({total_in_file} lines)")
+    print(f"To process     : {len(items_to_process)}  (skipped={skipped}, parse_errors={parse_errors})")
 
-                    example = build_multi_turn_example(turns, responses, category, tool_profile, violations_per_turn)
-                    out.write(json.dumps(example, ensure_ascii=False) + "\n")
-                    out.flush()
+    processed = 0
+    errors = 0
+    run_start = time.monotonic()
+    file_lock = threading.Lock()
+    total = len(items_to_process)
+
+    with open(output_path, write_mode, encoding="utf-8") as out:
+        if workers <= 1 or total <= 1:
+            for i, item in enumerate(items_to_process, 1):
+                result = _process_one(item, model, _critic, api_base, out, file_lock, i, total, run_start)
+                if result == "ok":
                     processed += 1
-                    done_questions.add(dedup_key)
-                    print(f"  ✓ Written + flushed (processed={processed})")
-
                 else:
-                    question = item.get("question", "").strip()
-                    follow_up = item.get("follow_up")
-                    print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
-
-                    t0 = time.monotonic()
-                    draft = generate_draft(question, category, follow_up, tool_profile, model, api_base,
-                                           appraisal_meta=item.get("appraisal_meta"))
-                    print(f"  [1/3] Draft: {len(draft)} chars in {time.monotonic()-t0:.1f}s")
-
-                    rule_violations = rule_check_response(draft, question, category, tool_profile)
-                    if rule_violations:
-                        print(f"  [2a]  Rule check: {len(rule_violations)} structural violation(s)")
-                        for rv in rule_violations:
-                            print(f"        → {rv[:90]}")
-
-                    t0 = time.monotonic()
-                    llm_violations = critique_draft(question, category, draft, tool_profile, _critic, api_base,
-                                                    appraisal_meta=item.get("appraisal_meta"))
-                    violations = _merge_violations(rule_violations, llm_violations)
-                    has_violations = violations.strip() != "NO_VIOLATIONS"
-                    n_rule = len(rule_violations)
-                    n_llm = _count_violations(llm_violations)
-                    print(f"  [2/3] Critique in {time.monotonic()-t0:.1f}s: "
-                          f"{n_rule} rule + {n_llm} LLM violation(s) "
-                          f"{'→ revising' if has_violations else '→ clean'}")
-
-                    final = draft
-                    if has_violations:
-                        t0 = time.monotonic()
-                        final = revise_draft(question, category, draft, violations, tool_profile, model, api_base)
-                        print(f"  [3/3] Revised: {len(final)} chars in {time.monotonic()-t0:.1f}s")
-
-                    example = build_training_example(question, category, final, follow_up, draft, violations, tool_profile)
-                    out.write(json.dumps(example, ensure_ascii=False) + "\n")
-                    out.flush()
-                    processed += 1
-                    done_questions.add(dedup_key)
-                    print(f"  ✓ Written + flushed (processed={processed})")
-
-                time.sleep(0.5)
-
-            except Exception as e:
-                print(f"  ✗ Unhandled error: {e}")
-                errors += 1
-                continue
+                    errors += 1
+        else:
+            max_w = min(workers, total)
+            print(f"Running {total} examples in parallel ({max_w} workers)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
+                futures = {
+                    executor.submit(
+                        _process_one,
+                        item, model, _critic, api_base, out, file_lock, i, total, run_start,
+                    ): item
+                    for i, item in enumerate(items_to_process, 1)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        result = future.result()
+                        if result == "ok":
+                            processed += 1
+                        else:
+                            errors += 1
+                    except Exception as e:
+                        print(f"  ✗ Future failed: {e}")
+                        errors += 1
 
     total_elapsed = time.monotonic() - run_start
     print(f"\n{'='*55}")
@@ -1025,8 +1077,10 @@ def main():
                         help="Only process questions of this category. E.g. --type adversarial_pressure")
     parser.add_argument("--max_retries", type=int, default=5,
                         help="Max retry attempts on rate limit / connection errors (default: 5)")
-    parser.add_argument("--base_delay", type=float, default=5.0,
-                        help="Base delay in seconds for exponential backoff (default: 5.0)")
+    parser.add_argument("--base_delay", type=float, default=3.0,
+                        help="Base delay in seconds for exponential backoff (default: 3.0)")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="Parallel question workers (default: 4; use 1 to disable parallelism)")
     args = parser.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
@@ -1049,6 +1103,7 @@ def main():
         critic_model=args.critic_model,
         overwrite=args.overwrite,
         category_filter=args.category_filter,
+        workers=args.workers,
     )
 
 

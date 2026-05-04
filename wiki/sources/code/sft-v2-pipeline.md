@@ -11,7 +11,7 @@ sources:
   - pipeline/sft_dataset_assembler.py
   - pipeline/constitution.md
   - README.md
-updated: 2026-05-03
+updated: 2026-05-04
 status: current
 ---
 
@@ -64,6 +64,16 @@ sft_gold_response_generator.py               sft_rejection_sampler.py
 | `web_search` | Real-time / entity facts |
 | `read_url` | Follow up a search hit |
 | `get_datetime` | Time-aware responses |
+
+## Question generator diversity and dedup (2026-05-04)
+
+Each batch call in `sft_question_generator.py` now receives two additional constraints that address Western/US bias and cross-batch repetition.
+
+**Axis rotation:** A `DIVERSITY_AXES` list of 20 geographic/cultural/demographic slots (South Asia, East Africa, Southeast Asia, Latin America, Middle East, East Asia, West Africa, Eastern Europe, North Africa, etc.) is cycled sequentially across batches. Each batch prompt mandates ≥60% of questions reflect the assigned region, cultural background, and demographic. Country-specific details are explicitly required: local currencies, financial instruments (chit funds, stokvel, M-Pesa, halal finance), healthcare systems, social norms, and naming conventions.
+
+**Dedup injection:** Already-generated question strings for the current category are tracked in memory and injected into subsequent batch prompts. Single-turn categories: last 30 questions shown verbatim. Verbose/multi-turn: last 10, truncated to 100 chars each (to preserve token budget). The model is instructed to avoid repeating or paraphrasing any listed question.
+
+**Temperature:** Set explicitly to `0.9` for all generation calls (previously relied on provider default, which was often low and contributed to near-identical batches).
 
 ## LiteLLM design point
 
