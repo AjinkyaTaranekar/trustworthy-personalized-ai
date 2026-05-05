@@ -1,0 +1,41 @@
+{
+  "train": {
+    "total": 92,
+    "by_category": {
+      "subjective_tradeoffs": 45,
+      "user_context_behavioral": 21,
+      "real_time_dependent": 16,
+      "impossible_tasks": 10
+    },
+    "by_source": {
+      "constitution_teacher": 92
+    },
+    "by_pipeline": {
+      "part_a": 92
+    },
+    "revised_count": 92,
+    "revised_pct": "100.0%",
+    "avg_response_length_chars": 2333,
+    "has_tool_call_count": 7,
+    "has_tool_call_pct": "7.6%"
+  },
+  "eval": {
+    "total": 10,
+    "by_category": {
+      "subjective_tradeoffs": 6,
+      "real_time_dependent": 3,
+      "impossible_tasks": 1
+    },
+    "by_source": {
+      "constitution_teacher": 10
+    },
+    "by_pipeline": {
+      "part_a": 10
+    },
+    "revised_count": 10,
+    "revised_pct": "100.0%",
+    "avg_response_length_chars": 1962,
+    "has_tool_call_count": 0,
+    "has_tool_call_pct": "0.0%"
+  }
+}
