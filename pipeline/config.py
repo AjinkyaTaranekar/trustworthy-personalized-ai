@@ -68,6 +68,8 @@ class PipelineConfig:
     # ── FalkorDB connection ────────────────────────────────────────────────────
     FALKORDB_HOST: str = "localhost"
     FALKORDB_PORT: int = 6379
+    FALKORDB_USER: str = ""           # set for cloud/auth-enabled instances
+    FALKORDB_PASSWORD: str = ""       # set for cloud/auth-enabled instances
     FALKORDB_GRAPH_NAME: str = "user_model"
 
     # ── Empathy settings ───────────────────────────────────────────────────────
@@ -137,9 +139,11 @@ class PipelineConfig:
                 s = socket.create_connection((self.FALKORDB_HOST, self.FALKORDB_PORT), timeout=2)
                 s.close()
             except OSError:
+                hint = "docker compose up -d" if not self.FALKORDB_PASSWORD else \
+                    f"check host/port/password for {self.FALKORDB_HOST}:{self.FALKORDB_PORT}"
                 issues.append(
                     f"ENABLE_USER_MODELLING=True but FalkorDB is not reachable at "
-                    f"{self.FALKORDB_HOST}:{self.FALKORDB_PORT} — run: docker compose up -d"
+                    f"{self.FALKORDB_HOST}:{self.FALKORDB_PORT} — {hint}"
                 )
 
         return issues

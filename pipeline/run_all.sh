@@ -34,6 +34,14 @@ MODELS_DIR="$PIPELINE/models"
 REPORTS_DIR="$PIPELINE/reports"
 LOG_FILE="$PIPELINE/run_all.log"
 
+# Load .env from repo root if present (exports PIPELINE_* and API keys)
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -o allexport
+  # shellcheck disable=SC1090
+  source "$REPO_ROOT/.env"
+  set +o allexport
+fi
+
 # Default settings
 DRY_RUN=0
 FROM_STAGE=1

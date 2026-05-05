@@ -6,6 +6,14 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-05] refactor | FalkorDB password support + GPU setup script
+- Added `FALKORDB_PASSWORD: str = ""` field to `PipelineConfig` in `config.py`. Empty string means no auth (local Docker); set for cloud/auth-enabled instances via `PIPELINE_FALKORDB_PASSWORD` env var.
+- Updated `user_modelling.py:GraphClient.__init__` to pass `password=` kwarg to `_fdb.FalkorDB()` only when the field is non-empty, preserving backward compatibility with passwordless local instances.
+- Updated `config.py:validate()` hint message to differentiate between local Docker (`docker compose up -d`) and cloud (`check host/port/password`) when FalkorDB is unreachable.
+- Added `.env` loading to `run_all.sh` via `set -o allexport / source .env / set +o allexport` so PIPELINE_* vars and API keys are available to all subprocesses without per-script dotenv calls.
+- Created `pipeline/setup_gpu.sh`: one-shot GPU machine setup script. Detects CUDA version, installs torch with correct index URL (cu118/cu121/cu124), installs unsloth (pip then git fallback), installs all pipeline deps, creates `.env` template, seeds `train_interleaved.jsonl` from `smoke_gold.jsonl`, validates all imports + CUDA.
+- **Files changed:** `pipeline/config.py`, `pipeline/user_modelling.py`, `pipeline/run_all.sh`, `pipeline/setup_gpu.sh` (new).
+
 ## [2026-05-04] refactor | Math question generator — dedup, temperature, and word problem context rotation
 - Same root causes as Part A question generator: no temperature set (provider default, often near-greedy) → repetitive problem structures; no inter-batch memory → same problem templates regenerated each batch.
 - **Fix — temperature:** Added `temperature=0.9` to all `generate_math_questions` calls.

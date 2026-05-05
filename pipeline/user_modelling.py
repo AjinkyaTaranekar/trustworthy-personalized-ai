@@ -186,7 +186,12 @@ class GraphClient:
 
         try:
             import falkordb as _fdb
-            db = _fdb.FalkorDB(host=cfg.FALKORDB_HOST, port=cfg.FALKORDB_PORT)
+            kwargs = {"host": cfg.FALKORDB_HOST, "port": cfg.FALKORDB_PORT}
+            if cfg.FALKORDB_USER:
+                kwargs["username"] = cfg.FALKORDB_USER
+            if cfg.FALKORDB_PASSWORD:
+                kwargs["password"] = cfg.FALKORDB_PASSWORD
+            db = _fdb.FalkorDB(**kwargs)
             self._graph = db.select_graph(cfg.FALKORDB_GRAPH_NAME)
             self._ensure_indexes()
             self.available = True

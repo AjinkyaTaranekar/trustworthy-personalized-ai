@@ -5,3 +5,8 @@ datasets
 torch
 litellm
 python-dotenv
+fastapi
+uvicorn
+pydantic
+falkordb
+pyyaml
