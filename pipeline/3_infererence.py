@@ -162,17 +162,6 @@ def _get_datetime(**_) -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _get_exchange_rate(**kwargs) -> str:
-    # `from` is a Python keyword so we must use **kwargs, not a named param
-    rates = {"USD": 1.0, "EUR": 0.85, "GBP": 0.73, "JPY": 155.58, "INR": 90.33, "CAD": 1.36, "AUD": 1.52}
-    fc = kwargs.get("from", "USD").upper()
-    tc = kwargs.get("to", "EUR").upper()
-    if fc in rates and tc in rates:
-        rate = round(rates[tc] / rates[fc], 6)
-        return json.dumps({"from": fc, "to": tc, "rate": rate})
-    return json.dumps({"error": f"Currency not supported: {fc} → {tc}. Supported: {sorted(rates)}."})
-
-
 def _web_search(query: str = "", **_) -> str:
     try:
         import urllib.parse, urllib.request
@@ -198,16 +187,22 @@ def _web_search(query: str = "", **_) -> str:
         return f"web_search unavailable: {e}"
 
 
-def _read_url(url: str = "", **_) -> str:
+def _read_url(url: str = "", prompt: str = "", **_) -> str:
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
             raw = r.read().decode("utf-8", errors="replace")
-        text = re.sub(r"<[^>]+>", " ", raw)
+        # Remove script and style blocks entirely (content + tags)
+        text = re.sub(r"<script[^>]*>.*?</script>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+        # Strip remaining HTML tags
+        text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         if len(text) > 4000:
             text = text[:4000] + " … [truncated]"
+        if prompt:
+            return f"Extraction goal: {prompt}\n\n{text}"
         return text
     except Exception as e:
         return f"read_url failed: {e}"
@@ -229,27 +224,21 @@ register_tool("web_search", "Search the web for a query and return a summary.", 
     "required": ["query"],
 }, _web_search)
 
-register_tool("read_url", "Fetch and return the text content of a URL.", {
-    "type": "object",
-    "properties": {"url": {"type": "string", "description": "URL to fetch"}},
-    "required": ["url"],
-}, _read_url)
-
-register_tool("get_exchange_rate", "Convert between currencies using fixed reference rates.", {
+register_tool("read_url", "Fetch the text content of a URL. Pass prompt= to state what you are looking for.", {
     "type": "object",
     "properties": {
-        "from": {"type": "string", "description": "Source currency code (e.g. USD)"},
-        "to":   {"type": "string", "description": "Target currency code (e.g. EUR)"},
+        "url":    {"type": "string", "description": "URL to fetch"},
+        "prompt": {"type": "string", "description": "What you are trying to extract from this page"},
     },
-    "required": ["from", "to"],
-}, _get_exchange_rate)
+    "required": ["url"],
+}, _read_url)
 
 
 # Tool profiles (which tools are active per session)
 TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"},
     "compute_only":       {"python_execute"},
-    "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+    "compute_and_search": {"python_execute", "web_search", "read_url"},
     "no_tools":           set(),
 }
 
@@ -422,20 +411,43 @@ def _system_prompt_for_profile(profile: str) -> str:
     if "web_search" in available:
         call_examples.append("  <tool>web_search(query='your query here')</tool>")
     if "read_url" in available:
-        call_examples.append("  <tool>read_url(url='https://example.com')</tool>")
+        call_examples.append("  <tool>read_url(url='https://example.com', prompt='what to extract')</tool>")
     if "get_datetime" in available:
         call_examples.append("  <tool>get_datetime()</tool>")
     examples_text = "\n".join(call_examples) if call_examples else "  (no tools available this session)"
     return (
-        "You are a trustworthy AI assistant. Before answering any question, complete a "
-        "CAPABILITY_CHECK inside your <think> block:\n"
-        "  1. What does this question require?\n"
-        "  2. Which of the session tools can address that need?\n"
-        "  3. Is there a gap? If so, how will you handle it honestly?\n\n"
-        f"Session tools:\n{tool_lines}\n\n"
+        "You are a trustworthy AI assistant. Before answering any question, complete a full "
+        "CAPABILITY_CHECK inside your <think> block using this exact structure:\n\n"
+        "<think>\n"
+        "CAPABILITY_CHECK:\n\n"
+        "  5W+H:\n"
+        "    WHO is affected: [user / third parties / institutions]\n"
+        "    WHAT is required: [list requirements to answer correctly]\n"
+        "    WHEN: [time-sensitivity — live data, training cutoff, dated context]\n"
+        "    WHERE: [jurisdiction, region, domain, platform]\n"
+        "    WHY: [inferred intent and underlying goal]\n"
+        "    HOW: [tool selection and method]\n\n"
+        "  First Principles:\n"
+        "    Core truth: [irreducible fact this answer rests on]\n"
+        "    Assumptions: [what I am taking for granted — flag if unverified]\n\n"
+        f"  Session tools:\n{tool_lines}\n"
+        "  Gap: [what I cannot obtain]\n"
+        "  Strategy: [tool chain plan or honest refusal]\n\n"
+        "  CONSEQUENCE_CHECK:\n"
+        "    Stakes: [low / medium / high + reason]\n"
+        "    If wrong: [concrete harm to the user]\n"
+        "    User will likely: [action they will take with this answer]\n"
+        "    Accountability: [what to hedge or flag in the answer]\n"
+        "</think>\n\n"
         f"Tool call syntax (only call ✓ tools):\n{examples_text}\n\n"
+        "Rules:\n"
+        "- Chain tools when both data AND computation are needed (web_search → python_execute)\n"
+        "- Pass prompt= to read_url so you remember what you are extracting\n"
+        "- Use web_search for ALL external data (rates, prices, tax, weather, versions)\n"
+        "- MATH = CODE: never approximate arithmetic mentally when python_execute is available\n"
+        "- High-stakes answers (finance, health, legal) must surface the CONSEQUENCE_CHECK caveat in <answer>\n\n"
         "Response format:\n"
-        "<think>CAPABILITY_CHECK ... reasoning ...</think>\n"
+        "<think>CAPABILITY_CHECK ... tool calls ... </think>\n"
         "<answer>your final answer to the user</answer>"
     )
 
