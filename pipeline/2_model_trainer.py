@@ -216,7 +216,7 @@ def _tool_integrity_reward(response: str, active_tools: set) -> float:
     """P3: no calls to non-existent or session-unavailable tools."""
     _ALL_TOOLS = frozenset({
         "python_execute", "web_search", "read_url",
-        "get_datetime", "get_exchange_rate",
+        "get_datetime",
     })
     called = set(re.findall(r"<tool>(\w+)\(", response))
     hallucinated = called - _ALL_TOOLS
@@ -244,9 +244,9 @@ def _constitution_reward(response: str, question: str,
 
 def _profile_to_set(label: str) -> set:
     profiles = {
-        "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+        "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"},
         "compute_only":       {"python_execute"},
-        "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+        "compute_and_search": {"python_execute", "web_search", "read_url"},
         "no_tools":           set(),
     }
     return profiles.get(label, {"python_execute"})
