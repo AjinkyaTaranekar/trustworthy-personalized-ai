@@ -184,7 +184,8 @@ def _accuracy_reward(response: str, expected_answer: str | None,
     """For verifiable math categories: execute code and check answer.
     For behavioural categories: neutral 0.5 (no ground truth)."""
     math_types = {"arithmetic", "algebra", "geometry", "statistics",
-                  "unit_conversion", "word_problems"}
+                  "unit_conversion", "word_problems",
+                  "trigonometry", "calculus", "advanced_geometry"}
     if not expected_answer or question_type not in math_types:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
@@ -339,13 +340,17 @@ def build_grpo_dataset(sft_jsonl_path: str) -> "Dataset":
             user_msgs = [m for m in messages if m["role"] == "user"]
             question  = user_msgs[-1]["content"] if user_msgs else ""
 
+            # question_type: part-B math rows store it under "question_type"; part-A rows use "category"
+            q_type = meta.get("question_type") or meta.get("category", "unknown")
+            # expected_answer: populated by sft_rejection_sampler for math rows; empty for behavioural rows
+            expected = meta.get("expected_answer", "")
             rows.append({
                 "prompt":            prompt,
                 "question":          question,
-                "category":          meta.get("category", "unknown"),
-                "question_type":     meta.get("category", "unknown"),
+                "category":          meta.get("category") or meta.get("question_type", "unknown"),
+                "question_type":     q_type,
                 "tool_profile_label": meta.get("tool_profile", "compute_only"),
-                "expected_answer":   "",  # not available in SFT data; reward uses rule checks
+                "expected_answer":   expected,
                 "constitution_score": meta.get("constitution_score", 0.5),
             })
 

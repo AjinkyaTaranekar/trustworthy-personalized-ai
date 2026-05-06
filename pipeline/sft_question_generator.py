@@ -615,15 +615,6 @@ def main():
 
     categories_to_run = list(CATEGORIES.keys()) if args.category == "all" else [args.category]
 
-    # Skip categories that have already been generated — remove the continue to re-enable
-    filtered_categories = []
-    for cat_name in categories_to_run:
-        if cat_name in ["user_context_behavioral", "impossible_tasks", "subjective_tradeoffs", "real_time_dependent"]:
-            print(f"[skip] {cat_name} — already generated; remove continue to re-enable")
-            continue  # already generated — skip for now
-        filtered_categories.append(cat_name)
-    categories_to_run = filtered_categories
-
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
     file_mode = "w" if args.overwrite else "a"
