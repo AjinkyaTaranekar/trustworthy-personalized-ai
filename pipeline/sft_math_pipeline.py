@@ -46,6 +46,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Ensure UTF-8 output on Windows (cp1252 console can't render arrows, ticks, etc.)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 _MAX_RETRIES: int = 3
 _BASE_DELAY: float = 2.0
 

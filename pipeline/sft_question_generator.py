@@ -27,6 +27,7 @@ import concurrent.futures
 import json
 import os
 import random
+import sys
 import threading
 import time
 from pathlib import Path
@@ -36,6 +37,10 @@ import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Ensure UTF-8 output on Windows (cp1252 console can't render ₹, ৳, ₦, etc.)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 _MAX_RETRIES: int = 5
 _BASE_DELAY: float = 3.0

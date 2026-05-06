@@ -31,6 +31,7 @@ import json
 import os
 import random
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -40,6 +41,10 @@ import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Ensure UTF-8 output on Windows (cp1252 console can't render ₹, ✓, ✗, etc.)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # ---------------------------------------------------------------------------
 # Tool availability profiles
@@ -1079,8 +1084,8 @@ def process_questions(
     _critic = critic_model or model
     if critic_model is None:
         print(
-            "\n  ⚠  WARNING: --critic_model not set. The generator is critiquing its own "
-            "drafts (self-referential SPOF — security-review.tex §4.3).\n"
+            "\n  WARNING: --critic_model not set. The generator is critiquing its own "
+            "drafts (self-referential SPOF -- security-review.tex s4.3).\n"
             "  Rule-based checks will still run as an independent out-of-band verifier,\n"
             "  but LLM critique quality is limited by shared distributional bias.\n"
             "  Recommended: --critic_model claude-opus-4-7\n"
