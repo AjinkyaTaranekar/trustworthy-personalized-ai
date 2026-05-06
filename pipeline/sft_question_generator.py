@@ -548,6 +548,52 @@ def generate_questions_for_category(
 # ---------------------------------------------------------------------------
 
 
+def _run_category(
+    cat_name: str,
+    target: int,
+    already_done: list[str],
+    model: str,
+    api_base: str | None,
+    batch_size: int,
+    out_file,
+    file_lock: threading.Lock,
+) -> int:
+    """Generate questions for a single category sequentially (batches must be sequential
+    so each batch can deduplicate against the previous ones). Returns count written."""
+    needed = max(0, target - len(already_done))
+    if needed == 0:
+        print(f"  {cat_name}: already at target ({len(already_done)}), skipping")
+        return 0
+
+    print(f"\n{cat_name}: need {needed} more (have {len(already_done)})")
+    axis_cycle = list(DIVERSITY_AXES)
+    random.shuffle(axis_cycle)
+    generated = 0
+    seen = list(already_done)  # local copy for dedup — not shared across threads
+
+    while generated < needed:
+        batch_n = min(batch_size, needed - generated)
+        slot = axis_cycle[generated % len(axis_cycle)]
+        print(f"  [{cat_name}] batch {generated+1}–{generated+batch_n} | region={slot['region'][:30]}...")
+        try:
+            items = generate_questions_for_category(
+                cat_name, batch_n, model, api_base,
+                diversity_slot=slot,
+                existing_questions=seen,
+            )
+            with file_lock:
+                for item in items:
+                    out_file.write(json.dumps(item, ensure_ascii=False) + "\n")
+                out_file.flush()
+            seen.extend(item.get("question", "") for item in items)
+            generated += len(items)
+            print(f"  [{cat_name}] +{len(items)} written ({generated}/{needed})")
+        except Exception as e:
+            print(f"  [{cat_name}] batch error: {e}")
+
+    return generated
+
+
 def generate_all_questions(
     total_per_category: int | None,
     model: str,
@@ -556,10 +602,12 @@ def generate_all_questions(
     category_filter: str | None = None,
     batch_size: int = 15,
     overwrite: bool = False,
+    workers: int = 4,
 ) -> None:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     write_mode = "w" if overwrite else "a"
 
+    # Load already-generated questions per category for dedup and progress tracking
     existing: dict[str, list] = {}
     if Path(output_path).exists() and not overwrite:
         with open(output_path, encoding="utf-8") as f:
@@ -577,48 +625,41 @@ def generate_all_questions(
         [category_filter] if category_filter and category_filter != "all"
         else list(CATEGORIES.keys())
     )
+    categories_to_run = [c for c in categories_to_run if c in CATEGORIES]
 
     file_lock = threading.Lock()
 
     with open(output_path, write_mode, encoding="utf-8") as out:
-        for cat_name in categories_to_run:
-            if cat_name not in CATEGORIES:
-                print(f"Unknown category: {cat_name}")
-                continue
-            spec = CATEGORIES[cat_name]
-            target = total_per_category or spec["count"]
-            already_done = len(existing.get(cat_name, []))
-            needed = max(0, target - already_done)
-            if needed == 0:
-                print(f"  {cat_name}: already at target ({already_done}), skipping")
-                continue
-
-            print(f"\n{cat_name}: need {needed} more (have {already_done})")
-            axis_cycle = list(DIVERSITY_AXES)
-            random.shuffle(axis_cycle)
-            generated = 0
-
-            while generated < needed:
-                batch_n = min(batch_size, needed - generated)
-                slot = axis_cycle[generated % len(axis_cycle)]
-                print(f"  Batch {generated+1}–{generated+batch_n} | region={slot['region'][:35]}...")
-                try:
-                    items = generate_questions_for_category(
-                        cat_name, batch_n, model, api_base,
-                        diversity_slot=slot,
-                        existing_questions=existing.get(cat_name, []),
-                    )
-                    with file_lock:
-                        for item in items:
-                            out.write(json.dumps(item, ensure_ascii=False) + "\n")
-                        out.flush()
-                    existing.setdefault(cat_name, []).extend(
-                        item.get("question", "") for item in items
-                    )
-                    generated += len(items)
-                    print(f"  {cat_name}: +{len(items)} written ({generated}/{needed})")
-                except Exception as e:
-                    print(f"  {cat_name} batch error: {e}")
+        if workers <= 1 or len(categories_to_run) <= 1:
+            # Sequential — simpler, better for debugging single categories
+            for cat_name in categories_to_run:
+                spec = CATEGORIES[cat_name]
+                target = total_per_category or spec["count"]
+                _run_category(cat_name, target, existing.get(cat_name, []),
+                              model, api_base, batch_size, out, file_lock)
+        else:
+            # Parallel across categories — categories are independent so safe to parallelise.
+            # Batches within each category remain sequential (dedup requires it).
+            max_w = min(workers, len(categories_to_run))
+            print(f"Running {len(categories_to_run)} categories in parallel ({max_w} workers)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
+                futures = {
+                    executor.submit(
+                        _run_category,
+                        cat_name,
+                        total_per_category or CATEGORIES[cat_name]["count"],
+                        existing.get(cat_name, []),
+                        model, api_base, batch_size, out, file_lock,
+                    ): cat_name
+                    for cat_name in categories_to_run
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    cat_name = futures[future]
+                    try:
+                        n = future.result()
+                        print(f"  {cat_name}: done ({n} written this run)")
+                    except Exception as e:
+                        print(f"  {cat_name}: failed — {e}")
 
     print(f"\nDone. Output: {output_path}")
 
@@ -637,7 +678,10 @@ def main():
     parser.add_argument("--output", type=str, default="pipeline/data/questions_partA.jsonl")
     parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7")
     parser.add_argument("--api_base", type=str, default=None)
-    parser.add_argument("--batch_size", type=int, default=15)
+    parser.add_argument("--batch_size", type=int, default=15,
+                        help="Questions per LLM call per category (default: 15)")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="Parallel category workers (default: 4; use 1 to disable parallelism)")
     parser.add_argument("--overwrite", action="store_true",
                         help="Start fresh — overwrite the output file instead of appending")
     parser.add_argument("--max_retries", type=int, default=5)
@@ -650,6 +694,7 @@ def main():
 
     print(f"Model     : {args.model}")
     print(f"Categories: {args.category_filter}")
+    print(f"Workers   : {args.workers}")
     print(f"Output    : {args.output}")
 
     generate_all_questions(
@@ -660,6 +705,7 @@ def main():
         category_filter=args.category_filter,
         batch_size=args.batch_size,
         overwrite=args.overwrite,
+        workers=args.workers,
     )
 
 
