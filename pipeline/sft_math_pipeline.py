@@ -315,7 +315,7 @@ def load_math_dataset(count: int, seed: int = 42, max_level: int = 3) -> list[di
             break
         print(f"  Loading MATH/{subject} (level ≤ {max_level})...")
         try:
-            ds = load_dataset("hendrycks/math", subject, split="train", trust_remote_code=True)
+            ds = load_dataset("EleutherAI/hendrycks_math", subject, split="train")
         except Exception as e:
             print(f"    Warning: could not load {subject}: {e}")
             continue
@@ -542,7 +542,7 @@ def main():
                         help="Max difficulty level for MATH dataset 1–5 (default: 3 = medium)")
     parser.add_argument("--output", type=str, default="data/train_partB.jsonl",
                         help="Output JSONL (default: data/train_partB.jsonl)")
-    parser.add_argument("--model", type=str, default="claude-haiku-4-5-20251001",
+    parser.add_argument("--model", type=str, default="nvidia_nim/moonshotai/kimi-k2.6",
                         help="litellm model string for generating training responses")
     parser.add_argument("--api_base", type=str, default=None,
                         help="Custom API base URL (e.g. Ollama or local vLLM endpoint)")
