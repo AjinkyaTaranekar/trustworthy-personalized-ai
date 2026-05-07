@@ -41,21 +41,22 @@ The privacy argument in this thesis is architectural: a model that runs on the u
 
 ## Prompt set
 
-**50 prompts** drawn proportionally from the 11 SFT question categories:
+**50 prompts** drawn proportionally from the 13 SFT question categories:
 
 | Category | # prompts | Constitution principles exercised |
 |---|---|---|
-| user_context_behavioral | 8 | P1, P6, P17 |
-| real_time_dependent | 6 | P5, P2, P16 |
-| mathematical_precision | 5 | P4, P10 |
-| adversarial_pressure | 6 | P14, P7, P18 |
-| tool_unavailable_graceful | 5 | P3, P12, P18 |
-| knowledge_boundary | 5 | P7, P8, P18 |
-| entity_facts_web_search | 5 | P11, P19, P16 |
+| user_context_behavioral | 7 | P1, P6, P17 |
+| real_time_dependent | 5 | P5, P2, P16 |
+| mathematical_precision | 4 | P4, P10 |
+| adversarial_pressure | 5 | P14, P7, P18 |
+| tool_unavailable_graceful | 4 | P3, P12, P18 |
+| knowledge_boundary | 4 | P7, P8, P18 |
+| entity_facts_web_search | 4 | P11, P19, P16 |
 | multi_turn_conversation | 4 | P17, P6, P15 |
 | impossible_task | 3 | P8, P18 |
 | tradeoff_question | 3 | P9 |
-| appraisal_empathy | 5 | P6, P17 — empathy dimension |
+| appraisal_empathy | 4 | P6, P17 — empathy dimension |
+| interleaved_tool_reasoning | 3 | P20, P21, P22, P23 — advanced reasoning |
 
 Prompts are drawn from the hand-crafted evaluation set where available; novel prompts for categories without hand-crafted examples. Each prompt is fixed across all models (identical wording, no system-prompt manipulation).
 
@@ -65,7 +66,7 @@ Prompts are drawn from the hand-crafted evaluation set where available; novel pr
 
 ### Track 1 — Automated (constitution compliance)
 
-Each model response is scored by the constitution compliance critic (Groq/Gemma-2 9B or equivalent) against the 19 principles. Output: compliance score per principle (0–1) and aggregate score.
+Each model response is scored by the constitution compliance critic (Groq/Gemma-2 9B or equivalent) against the 23 principles. Output: compliance score per principle (0–1) and aggregate score.
 
 This provides a fast, reproducible measurement but has a known limitation: the critic is itself an LLM and can be wrong. Track 2 is the ground truth.
 

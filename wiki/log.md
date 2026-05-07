@@ -6,6 +6,55 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-07] query | Training data analysis — train_partA.jsonl quality report
+- **Source:** `pipeline/pipeline/data/train_partA.jsonl` — 296 records, 1.76 MB.
+- **Category distribution:** 5 categories present (exact split not logged here; see CMEM S189 for full breakdown).
+- **Tool profile distribution:** 4 profiles represented (all_tools, compute_only, search_only, no_tools).
+- **Mean constitution score:** 0.885 across all records.
+- **Structural issues identified (63 records affected; 81% structurally sound):**
+  - 53 records missing `<answer>` tags — concentrated in `real_time_dependent` category where tool-call responses lack final answer wrappers.
+  - 2 records with empty `<answer>` blocks.
+  - 9 records missing `<think>` tags — primarily in `adversarial_multi_turn` examples.
+  - 1 truncated record.
+- **Root cause:** `real_time_dependent` gold response generator produces tool-call sequences without consistently wrapping the final answer; `adversarial_multi_turn` examples use a different turn format that omits `<think>` at the outer level.
+- **Decision pending:** user to decide between (A) filter to `train_partA_clean.jsonl` (~241 clean records) or (B) rerun generator to fix the problematic categories while preserving full dataset size. No action taken yet.
+- **Files touched:** none — analysis only. Temporary scripts `_analyse.py`, `_analyse2.py`, `_analyse3.py`, `_out.txt` removed after analysis.
+
+## [2026-05-07] refactor | Math pipeline — EleutherAI dataset + Kimi K2.6 default model
+- **Dataset source** switched from original MATH dataset to `EleutherAI/hendrycks_math` — more stable HuggingFace source with consistent splits.
+- **Default model** changed to `nvidia_nim/moonshotai/kimi-k2.6` — aligns math pipeline with Part A generator; single NVIDIA NIM API key covers both pipelines.
+- **Files changed:** `pipeline/sft_math_question_generator.py`.
+- **Wiki updated:** `wiki/sources/code/sft-v2-pipeline.md` (math pipeline configuration section added).
+
+## [2026-05-06] refactor | UTF-8 encoding fix — Windows console compatibility
+- Added `sys.stdout.reconfigure(encoding='utf-8')` to all three pipeline generation scripts (`sft_question_generator.py`, `sft_gold_response_generator.py`, `sft_math_question_generator.py`).
+- Fix is necessary on Windows where the default console codepage (cp1252) raises `UnicodeEncodeError` when printing non-ASCII characters from generated training examples.
+- **Files changed:** `pipeline/sft_question_generator.py`, `pipeline/sft_gold_response_generator.py`, `pipeline/sft_math_question_generator.py`.
+
+## [2026-05-06] refactor | SFT pipeline — question generator and gold response generator for 23-principle constitution
+- **Trigger:** Constitution expanded to 23 principles; question generator and gold response generator needed full refresh to cover new principles.
+- **`sft_question_generator.py`** — rewritten for 23-principle constitution. Now generates 13 categories (was 11, then 12 after appraisal_empathy was added in Phase 2). New category `interleaved_tool_reasoning` added: questions that require chaining `web_search` for data retrieval followed by `python_execute` for computation — directly trains P23 (INTERLEAVED TOOL CHAINING). Prompts now include 5W+H framing, first-principles decomposition signals, and consequence-check scaffolding in the ideal-behaviour specifications. Parallel category execution via `ThreadPoolExecutor` retained with `--workers` flag.
+- **`sft_gold_response_generator.py`** — rewritten for 23-principle constitution. `rule_check_response()` now deterministically checks P20 (first-principles section present), P21 (5W+H dimensions all addressed), P22 (CONSEQUENCE_CHECK block present), P23 (tool chain present when category is `interleaved_tool_reasoning`). `IDEAL_BEHAVIORS` entry added for `interleaved_tool_reasoning`. `TRAINING_SYSTEM_PROMPT_TEMPLATE` updated to list all 23 principles explicitly. Full 4-tool registry (`python_execute`, `web_search`, `read_url`, `get_datetime`) in system prompt.
+- **Files changed:** `pipeline/sft_question_generator.py`, `pipeline/sft_gold_response_generator.py`.
+- **Wiki updated:** `wiki/sources/code/sft-v2-pipeline.md` (categories 11→13, principles 19→23, new category table entries).
+
+## [2026-05-06] refactor | Constitution expanded to 23 principles — P20–P23 added
+- **Trigger:** Pipeline review identified four recurring epistemic failure modes not covered by P1–P19: (1) answers stated without naming underlying assumptions; (2) CAPABILITY_CHECK too narrow — skipping contextual dimensions; (3) no explicit stakes/consequence assessment before high-risk answers; (4) tool chains stopped at one tool when a second was needed for precision.
+- **New principles appended to `pipeline/constitution.md` (Part IV):**
+  - **P20 FIRST PRINCIPLES** — identify irreducible truths; flag unverified assumptions in `<think>` and hedge in `<answer>`.
+  - **P21 5W+H QUESTIONING** — every CAPABILITY_CHECK must address Who/What/When/Where/Why/How; depth scales to question complexity.
+  - **P22 CONSEQUENCE_CHECK** — assess stakes (low/medium/high), concrete harm if wrong, action user will take, what must be hedged; high-stakes caveats must appear in `<answer>`, not only `<think>`.
+  - **P23 INTERLEAVED TOOL CHAINING** — when data retrieval AND computation are both needed, chain the calls; stopping at one tool when a second would verify is a capability failure.
+- **Summary reference table** in `constitution.md` updated to include P20–P23.
+- **Files changed:** `pipeline/constitution.md`.
+- **Wiki updated:** `wiki/entities/constitution.md` (19→23, new P20–P23 section added, critique-loop note updated to reflect deterministic rule coverage), `wiki/sources/code/constitution-document.md` (principles list updated), `wiki/topics/constitution-psychological-grounding.md` (Framework D added, P20–P23 table rows added with ⚠ tentative mappings), multiple references 19→23.
+
+## [2026-05-06] refactor | get_exchange_rate removed; read_url updated with context parameter
+- **`get_exchange_rate` removed** from `3_infererence.py` tool registry, `TOOL_PROFILES`, and `2_model_trainer.py` reward function. Rationale: the tool was a mock with a hard-coded rate; its presence in TOOL_PROFILES caused training data to show rate lookups returning a static value — misleading for a principle that teaches real-time honesty. `web_search` covers exchange rate queries adequately.
+- **`read_url` updated** with an optional `context` prompt parameter — allows the caller to specify what to extract from the page rather than returning raw text. HTML cleaning bug fixed (malformed tag handling improved). `read_url` signature in `constitution.md` available tools table updated accordingly.
+- **TOOL_PROFILES trimmed** to 4 canonical tools: `python_execute`, `web_search`, `read_url`, `get_datetime`. This is now the authoritative set for all training data generation.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/2_model_trainer.py`, `pipeline/5_context_degradation.py`, `pipeline/constitution.md` (available tools table).
+
 ## [2026-05-05] refactor | FalkorDB password support + GPU setup script
 - Added `FALKORDB_PASSWORD: str = ""` field to `PipelineConfig` in `config.py`. Empty string means no auth (local Docker); set for cloud/auth-enabled instances via `PIPELINE_FALKORDB_PASSWORD` env var.
 - Updated `user_modelling.py:GraphClient.__init__` to pass `password=` kwarg to `_fdb.FalkorDB()` only when the field is non-empty, preserving backward compatibility with passwordless local instances.

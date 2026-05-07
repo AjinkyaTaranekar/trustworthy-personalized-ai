@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-05-03
+updated: 2026-05-07
 ---
 
 # Index
@@ -29,7 +29,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Entities
 
-- [[entities/constitution]] — 19-principle SFT v2 constitution
+- [[entities/constitution]] — 23-principle SFT v2 constitution
 - [[entities/grpo]] — group relative policy optimisation (the repo's RL algorithm)
 - [[entities/mcp]] — Model Context Protocol — "USB for AI"
 - [[entities/rag]] — retrieval-augmented generation pattern
@@ -145,7 +145,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ### Code (pipeline summaries)
 - [[sources/code/sft-v2-pipeline]] — SFT data generation pipeline with security blockers 1+2
-- [[sources/code/constitution-document]] — full 19-principle source
+- [[sources/code/constitution-document]] — full 23-principle source
 - [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + Experiment 0 + adversarial suite + run_all.sh + preflight
 
 ## Experiments

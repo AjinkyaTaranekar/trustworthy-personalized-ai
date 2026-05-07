@@ -11,7 +11,7 @@ sources:
   - pipeline/sft_dataset_assembler.py
   - pipeline/constitution.md
   - README.md
-updated: 2026-05-04
+updated: 2026-05-07
 status: current
 ---
 
@@ -25,12 +25,12 @@ status: current
 Part A (behavioural)                         Part B (math)
 ─────────────────────────────────────        ──────────────────────────────
 sft_question_generator.py                    sft_math_question_generator.py
-  11 categories, ~1,700 Qs                     7 types, ~1,050 Qs
+  13 categories, ~2,000 Qs                     7 types, ~1,050 Qs
         │                                              │
         ▼                                              ▼
 sft_gold_response_generator.py               sft_rejection_sampler.py
   draft → rule_check_response() [Blocker 2]    N candidates → score
-  → LLM critique (19 principles)               keep +1 (code + correct)
+  → LLM critique (23 principles)               keep +1 (code + correct)
   → _merge_violations() [Blocker 2]            AST code sandbox [Blocker 1]
   → revise on merged violations
         │                                              │
@@ -46,7 +46,7 @@ sft_gold_response_generator.py               sft_rejection_sampler.py
 
 ## Categories
 
-**Part A (11 behavioural — updated 2026-05-01):** user-context, real-time, impossible tasks, subjective tradeoffs, adversarial pressure, knowledge boundary, multi-step clarification, ambiguous requests, entity facts requiring web search, **verbose-context behavioural** (paragraph-length user input), **multi-turn conversation** (3–5 turn scaffolds).
+**Part A (13 behavioural — updated 2026-05-06):** user-context, real-time, impossible tasks, subjective tradeoffs, adversarial pressure, knowledge boundary, multi-step clarification, ambiguous requests, entity facts requiring web search, verbose-context behavioural (paragraph-length user input), multi-turn conversation (3–5 turn scaffolds), **appraisal-empathy** (loaded from offline AppraisePLM labels — no LLM generation), **interleaved-tool-reasoning** (questions requiring web_search → python_execute chains; trains P23).
 
 **Part B (7 math):** arithmetic, algebra, geometry, statistics, unit conversions, word problems, no-tool control.
 
@@ -81,7 +81,7 @@ All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the `--mo
 
 | Provider | Model string | Key env var | Notes |
 |---|---|---|---|
-| **NVIDIA NIM** | `nvidia_nim/moonshotai/kimi-k2.6` | `NVIDIA_NIM_API_KEY` | ✅ confirmed; free tier; 1T-param MoE VLM |
+| **NVIDIA NIM** | `nvidia_nim/moonshotai/kimi-k2.6` | `NVIDIA_NIM_API_KEY` | ✅ confirmed; free tier; 1T-param MoE VLM; **default for math pipeline** |
 | **NVIDIA NIM** | `nvidia_nim/minimaxai/minimax-m2.7` | `NVIDIA_NIM_API_KEY` | ✅ confirmed; free tier; used as independent critic |
 | Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | Free tier; ~5,100 calls for full run |
 | Groq | `groq/gemma2-9b-it` | `GROQ_API_KEY` | Good independent critic (different family) |
@@ -89,6 +89,10 @@ All v2 scripts use [`litellm`](https://github.com/BerriAI/litellm) — the `--mo
 | Ollama | `ollama/llama3.2` | `OLLAMA_API_BASE` | Fully local; no key needed |
 
 Recommended setup: NVIDIA NIM Kimi K2.6 as generator + Minimax M2.7 as independent critic — both frontier models, both free, different architectures (genuine critic independence). Also used as comparison models in [[experiments/frontier-model-comparison]].
+
+## Math pipeline configuration (updated 2026-05-07)
+
+Part B uses `sft_math_question_generator.py`. Dataset source switched to **EleutherAI/hendrycks_math** (replaces the original MATH dataset source). Default model is now **`nvidia_nim/moonshotai/kimi-k2.6`** — the same provider used for Part A, simplifying the `.env` setup to a single API key. Previous default was OpenAI-compatible endpoint; Kimi K2.6 is confirmed working on NVIDIA NIM free tier.
 
 ## Scoring in rejection sampling (Part B)
 
@@ -99,7 +103,7 @@ Recommended setup: NVIDIA NIM Kimi K2.6 as generator + Minimax M2.7 as independe
 
 ## Related
 
-- [[sources/code/constitution-document]] — the 19 principles critiqued against
+- [[sources/code/constitution-document]] — the 23 principles critiqued against
 - [[entities/constitution]] — entity-level summary
 - [[sources/code/training-and-benchmark]] — the training stage that consumes this output
 - [[sources/papers/auto-cot]] — methodological precedent for automated exemplars

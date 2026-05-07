@@ -4,13 +4,13 @@ type: topic
 tags: [constitution, psychology, trust, reasoning, empathy, evaluation]
 sources:
   - pipeline/constitution.md
-updated: 2026-05-03
+updated: 2026-05-07
 status: current
 ---
 
 # Psychological Grounding of the Constitution
 
-**The 19-principle constitution is not self-authored speculation — each principle maps to a validated construct from psychology, human-computer interaction, or epistemology, giving the training data external validity.**
+**The 23-principle constitution is not self-authored speculation — each principle maps to a validated construct from psychology, human-computer interaction, or epistemology, giving the training data external validity.**
 
 Without this grounding, the constitution is merely a prompt and the training pipeline is circular distillation. With it, the constitution becomes a codified, literature-backed specification of trustworthy behaviour that can be evaluated against independent human judgment. This page documents that mapping explicitly so the thesis contribution is defensible.
 
@@ -24,7 +24,7 @@ The core epistemological problem with LLM-generated training data is that the te
 
 ## Three organising frameworks
 
-The 19 principles cluster into three bodies of literature.
+The 23 principles cluster into four bodies of literature.
 
 ### Framework A: Trust theory (Mayer, Davis & Schoorman 1995)
 
@@ -40,9 +40,13 @@ This framework was extended to human-computer trust by Lee & See (2004), who sho
 
 Zagzebski (1996) defines epistemic virtues as stable cognitive dispositions that reliably produce true belief: intellectual humility, open-mindedness, and calibration. Kahneman (2011) operationalises the distinction between fast intuitive System 1 reasoning and deliberate System 2 reasoning — the capability-check pattern in the constitution is a forced System 2 intervention. Metacognition (Flavell 1979; Nelson & Narens 1990) is the capacity to monitor and regulate one's own cognitive processes — tool inventory and self-correction in the constitution are direct operationalisations of metacognitive monitoring.
 
-### Framework C: Conversational theory and distributed cognition
+### Framework C: Conversational theory and distributed cognition (P4, P10–P12, P17, P23)
 
 Clark & Brennan (1991) establish conversational grounding: both parties in a dialogue must reach a shared understanding, and the cost of repair increases with conversational distance. This is the theoretical basis for one-question-at-a-time clarification. Grice (1975) provides the four maxims (quantity, quality, relation, manner) that govern cooperative conversation — each maps to a constitution principle. Hutchins (1995) and Clark & Chalmers (1998) articulate distributed and extended cognition: intelligent behaviour is not confined to the skull but is produced by the system of agent + environment + tools. The constitution's tool-use principles operationalise this for AI systems.
+
+### Framework D: Structured epistemic reasoning (P20–P23) — *⚠ mappings tentative, pending formal literature review*
+
+Four principles added in May 2026 encode structured reasoning behaviours not fully covered by Frameworks A–C. The working psychological anchors are: first-principles decomposition as forced System 2 processing (Kahneman 2011); 5W+H as a contextual-integrity framing device (Nissenbaum 2004) and Gricean completeness check; consequence assessment as a decision-support bias-reduction tool (Turban 1990, Kahneman et al. 1982); interleaved tool chaining as distributed-cognition completion (Hutchins 1995, Clark & Chalmers 1998). These mappings are plausible but lack the same depth of literature support as Frameworks A–C. A dedicated literature pass is needed before these can be defended in the thesis.
 
 ---
 
@@ -69,6 +73,10 @@ Clark & Brennan (1991) establish conversational grounding: both parties in a dia
 | 17 | MULTI-STEP CLARIFICATION | Conversational grounding | Clark & Brennan (1991); Grice (1975) — Quantity maxim | Grounding is incremental; dumping all questions violates quantity and burdens the user's working memory |
 | 18 | EXPLICIT I DON'T KNOW | Epistemic integrity | Zagzebski (1996); Socratic principle | The most durable epistemic virtue: confessing ignorance rather than constructing a plausible fiction |
 | 19 | SEARCH FOR FACTS ABOUT ENTITIES | Information foraging | Pirolli & Card (1999), information foraging theory; Tulving (1983) | Entity facts are semantically decaying; information foraging predicts seeking fresh sources over recalled stale data |
+| 20 | FIRST PRINCIPLES | Epistemic virtue / metacognition | Kahneman (2011) — System 2 forcing; Zagzebski (1996) — intellectual humility | Decomposing to irreducible truths prevents availability heuristic errors; naming unverified assumptions is metacognitive monitoring ⚠ mapping tentative — formal citation needed |
+| 21 | 5W+H QUESTIONING | Conversational grounding / contextual integrity | Clark & Brennan (1991); Nissenbaum (2004) | Comprehensive contextual framing satisfies Grice's Quantity maxim and prevents contextual integrity violations ⚠ mapping tentative |
+| 22 | CONSEQUENCE_CHECK | Decision support / accountability | Turban (1990); Kahneman et al. (1982), *Judgment under Uncertainty* | Explicit stake assessment is a decision-support intervention that counters optimism bias and omission error ⚠ mapping tentative |
+| 23 | INTERLEAVED TOOL CHAINING | Distributed cognition / capability completeness | Hutchins (1995); Clark & Chalmers (1998) | Stopping at one tool when a second tool provides verifiable precision is a cognitive offloading failure; chaining is the distributed-cognition completion ⚠ mapping tentative |
 
 ---
 

@@ -18,7 +18,7 @@ During a session on 2026-05-03, a critical gap in the project was surfaced: the 
 
 The reframe adds three things:
 
-1. **Psychological grounding for the constitution** — each of the 19 principles is now mapped to a peer-reviewed construct from trust theory, metacognition, or conversational theory. See [[topics/constitution-psychological-grounding]].
+1. **Psychological grounding for the constitution** — each of the original 19 principles is mapped to a peer-reviewed construct from trust theory, metacognition, or conversational theory (see [[topics/constitution-psychological-grounding]]). P20–P23 added 2026-05-06 have tentative mappings pending formal review.
 
 2. **Human evaluation rubric** — a 12-item Likert instrument based on Mayer et al. (1995) and Davis (1983), providing an independent ground truth that is not derived from any LLM. See [[experiments/human-evaluation-rubric]].
 
