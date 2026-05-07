@@ -1213,7 +1213,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Part A gold responses — v2 (23 principles)")
     parser.add_argument("--questions", type=str, required=True,
                         help="Input JSONL file from sft_question_generator.py")
-    parser.add_argument("--output", type=str, default="pipeline/data/train_partA.jsonl",
+    parser.add_argument("--output", type=str, default="data/train_partA.jsonl",
                         help="Output training JSONL file")
     parser.add_argument("--model", type=str, default="nvidia_nim/moonshotai/kimi-k2.6",
                         help="litellm model string for draft generation")

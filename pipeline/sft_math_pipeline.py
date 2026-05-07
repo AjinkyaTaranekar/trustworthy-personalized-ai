@@ -50,8 +50,8 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-_MAX_RETRIES: int = 3
-_BASE_DELAY: float = 2.0
+_MAX_RETRIES: int = 5
+_BASE_DELAY: float = 3.0
 
 # ---------------------------------------------------------------------------
 # System prompt — appears in every training example (must match 3_inference.py)
@@ -376,7 +376,7 @@ def generate_training_example(
     prompt = GENERATION_PROMPT.format(question=question, question_type=q_type)
     kwargs = dict(
         model=model,
-        max_tokens=2048,
+        max_tokens=2048 * 4,
         temperature=0.3,
         timeout=90,
         messages=[{"role": "user", "content": prompt}],
@@ -542,12 +542,12 @@ def main():
                         help="Max difficulty level for MATH dataset 1–5 (default: 3 = medium)")
     parser.add_argument("--output", type=str, default="data/train_partB.jsonl",
                         help="Output JSONL (default: data/train_partB.jsonl)")
-    parser.add_argument("--model", type=str, default="nvidia_nim/moonshotai/kimi-k2.6",
+    parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7",
                         help="litellm model string for generating training responses")
     parser.add_argument("--api_base", type=str, default=None,
                         help="Custom API base URL (e.g. Ollama or local vLLM endpoint)")
-    parser.add_argument("--retries", type=int, default=3,
-                        help="Retries per question when code fails to verify (default: 3)")
+    parser.add_argument("--retries", type=int, default=5,
+                        help="Retries per question when code fails to verify (default: 5)")
     parser.add_argument("--workers", type=int, default=5,
                         help="Parallel workers (default: 5; reduce to 1–2 if rate-limited)")
     parser.add_argument("--seed", type=int, default=42,

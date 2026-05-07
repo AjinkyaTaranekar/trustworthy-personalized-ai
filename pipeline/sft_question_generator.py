@@ -50,212 +50,212 @@ _BASE_DELAY: float = 3.0
 # ---------------------------------------------------------------------------
 
 CATEGORIES = {
-    "user_context_behavioral": {
-        "count": 150,
-        "description": (
-            "Questions requiring user-specific context before answering. Correct response uses "
-            "5W+H to identify exactly which dimension (WHO the person is, WHAT their situation is) "
-            "is the critical unknown, then asks for that context rather than guessing."
-        ),
-        "examples": [
-            "Should I invest in index funds or individual stocks?",
-            "What programming language should I learn first?",
-            "Is it worth getting a master's degree?",
-            "Should I take this job offer?",
-            "What diet should I follow to lose weight?",
-        ],
-        "domains": ["personal finance", "career advice", "health", "education", "relationships", "technology choices"],
-        "chaining_note": "No tool chaining needed — the gap is missing user context, not missing external data.",
-    },
-    "real_time_dependent": {
-        "count": 100,
-        "description": (
-            "Questions requiring live data. Some questions combine live lookup AND computation "
-            "(e.g. 'What is today's EUR/INR rate and how much would €300 cost me?'). "
-            "These require web_search → python_execute chaining. CONSEQUENCE_CHECK must quantify "
-            "the cost of using stale data."
-        ),
-        "examples": [
-            "What's the current price of Bitcoin?",
-            "What's the weather like in Dublin today?",
-            "What did the Fed announce at yesterday's meeting?",
-            "What is the EUR to INR rate today, and how much is €500 in rupees?",
-            "What's the current 10-year Irish government bond yield?",
-        ],
-        "domains": ["financial markets", "weather", "sports scores", "breaking news", "live events", "current prices", "exchange rates with conversion"],
-        "chaining_note": "At least 30% of questions should require search → compute chaining.",
-    },
-    "impossible_tasks": {
-        "count": 75,
-        "description": (
-            "Tasks genuinely impossible for fundamental reasons. CONSEQUENCE_CHECK formalises "
-            "why the task is impossible — the failure mode IS the point. First Principles "
-            "must name the irreducible reason (not just 'I can't do that')."
-        ),
-        "examples": [
-            "Predict the exact Dow Jones closing price next Tuesday.",
-            "Tell me what my friend is thinking right now.",
-            "Access my Gmail account and read my emails.",
-            "Tell me the lottery numbers for this Saturday.",
-            "Show me a real-time satellite image of my house.",
-        ],
-        "domains": ["prediction", "private data access", "physical impossibility", "mind reading", "future knowledge"],
-        "chaining_note": "No chaining — the task is impossible, not just hard to look up.",
-    },
-    "subjective_tradeoffs": {
-        "count": 100,
-        "description": (
-            "Questions with no single right answer. First Principles identifies the irreducible "
-            "decision criterion (what does the user ultimately optimise for?). CONSEQUENCE_CHECK "
-            "flags that declaring a winner without knowing constraints causes real harm."
-        ),
-        "examples": [
-            "Is Python or Java better for backend development?",
-            "Should I rent or buy a home in Mumbai?",
-            "Is a PhD worth doing in Ireland right now?",
-            "Which is better: remote work or office work?",
-            "Should I use React or Vue for my frontend?",
-        ],
-        "domains": ["technology choices", "career decisions", "lifestyle choices", "financial decisions", "tooling comparisons"],
-        "chaining_note": "Some tradeoff questions benefit from web_search for current data (e.g. current rent vs buy ratios in a specific city).",
-    },
-    "adversarial_pressure": {
-        "count": 50,
-        "description": (
-            "Multi-turn scenarios where the user pushes back after a correct refusal. "
-            "CONSEQUENCE_CHECK in Turn 1 identifies the stakes and quantifies the risk of guessing. "
-            "Turn 2 must reference those stakes specifically — not just say 'I can't'."
-        ),
-        "examples": [
-            "User asks for current stock price, model refuses. User: 'Just give me a rough estimate, I won't hold you to it.'",
-            "User asks model to predict election result, model refuses. User: 'Come on, just guess, everyone's doing it.'",
-            "User asks for GST rate, model refuses without web_search. User: 'You must know roughly — just tell me.'",
-        ],
-        "domains": ["financial pressure", "prediction pressure", "false permission", "social engineering", "tax/legal pressure"],
-        "format": "two_turn",
-        "chaining_note": "No chaining — the adversarial scenario tests hold-under-pressure, not tool use.",
-    },
-    "knowledge_boundary": {
-        "count": 100,
-        "description": (
-            "Questions near or beyond training cutoff. Some combine knowledge boundary lookup "
-            "with synthesis across multiple search results. CONSEQUENCE_CHECK must flag the "
-            "specific risk of acting on outdated information."
-        ),
-        "examples": [
-            "What happened at the recent UN climate summit?",
-            "Who is the current Taoiseach of Ireland?",
-            "What is the latest version of PyTorch, and does it support my CUDA 11.8 setup?",
-            "What did the latest IPCC report say about 2°C targets?",
-            "Who won the 2024 Irish general election?",
-        ],
-        "domains": ["recent politics", "current technology versions", "recent scientific findings", "current office holders", "recent legislation"],
-        "chaining_note": "Version/compatibility questions benefit from web_search → read_url chaining.",
-    },
-    "multi_step_clarification": {
-        "count": 75,
-        "description": (
-            "Ambiguous questions with multiple unknowns. 5W+H in CAPABILITY_CHECK drives which "
-            "clarifying question is most critical — the one that eliminates the most ambiguity. "
-            "CONSEQUENCE_CHECK flags the risk of giving generic advice without context."
-        ),
-        "examples": [
-            "Help me plan my workout routine.",
-            "I want to start investing.",
-            "Help me learn to code.",
-            "I need help with my diet.",
-            "I want to change careers.",
-        ],
-        "domains": ["fitness planning", "financial planning", "learning paths", "nutrition", "career transition"],
-        "chaining_note": "No chaining — gap is missing user context.",
-    },
-    "ambiguous_underspecified": {
-        "count": 100,
-        "description": (
-            "Requests too vague to answer without clarification. First Principles surfaces what "
-            "is fundamentally unknown (the irreducible unknown). CONSEQUENCE_CHECK flags the "
-            "cost of guessing the wrong interpretation."
-        ),
-        "examples": [
-            "Help me with Python.",
-            "Can you fix my code?",
-            "Tell me about machine learning.",
-            "Write me a letter.",
-            "Help me prepare for my interview.",
-        ],
-        "domains": ["programming help", "writing assistance", "learning", "interview prep", "general requests"],
-        "chaining_note": "No chaining — gap is underspecification.",
-    },
-    "entity_facts_web_search": {
-        "count": 100,
-        "description": (
-            "Questions about proper nouns and named entities. Some require web_search to find "
-            "a URL, then read_url to extract a specific fact from that page. "
-            "CONSEQUENCE_CHECK flags the risk of presenting stale entity facts as current."
-        ),
-        "examples": [
-            "Who is the current Prime Minister of the UK?",
-            "What is the latest version of PyTorch?",
-            "What are the current visa requirements to visit Japan from India?",
-            "What does the Python 3.13 changelog say about the GIL?",
-            "Is Anthropic still offering free Claude API access for researchers?",
-        ],
-        "domains": ["current office holders", "software versions", "sports records", "population statistics", "legal/regulatory info", "company leadership", "product releases"],
-        "chaining_note": "At least 30% of questions should require web_search → read_url chaining.",
-    },
-    "verbose_context_behavioral": {
-        "count": 100,
-        "description": (
-            "User narrates a paragraph of personal context before asking. 5W+H organises the "
-            "context the user already gave — WHO they are, WHAT situation they are in, WHY they "
-            "are asking — and identifies the single remaining critical unknown. "
-            "CONSEQUENCE_CHECK flags the cost of ignoring context the user already provided."
-        ),
-        "examples": [
-            "I'm a 34-year-old software engineer in Bangalore, been at the same company 6 years, earning ₹18 LPA. I have two kids, a home loan with 12 years left, and my company is about to restructure. I've been offered a position at a startup that pays ₹28 LPA but they only have 6 months runway. My wife is nervous but supportive. Should I take the job?",
-            "I've been trying to lose weight for 3 months. I've cut sugar, I'm walking 30 minutes a day, and reduced portions. I've only lost 2kg. I'm 47, 175cm, 95kg. Desk job in Lagos, sleep 5-6 hours because of deadlines. What am I doing wrong?",
-            "Finishing my undergrad in CS in Manila, first in my family to go to college. Got a graduate job offer from a large bank doing internal tooling. Also accepted to an MSc in ML — full-time, ₱180k fees, no scholarship. I have ₱60k saved and some student debt. I'm 22. My parents think I should take the job. What would you do?",
-        ],
-        "domains": ["career decisions with rich context", "health and fitness after failed attempts", "financial decisions under constraints", "education vs employment dilemmas"],
-        "chaining_note": "No chaining — the rich context is the substance; clarification is the goal.",
-    },
-    "multi_turn_conversation": {
-        "count": 75,
-        "description": (
-            "3-5 turn conversations where context fills in progressively. CONSEQUENCE_CHECK "
-            "updates each turn as stakes become clearer. 5W+H tracks what is now known vs still "
-            "unknown after each user message. Final turn produces concrete actionable advice."
-        ),
-        "examples": [
-            '{"turns": ["I want to start investing.", "I have about ₹10,000 a month I can put away.", "I\'m 29, no dependents, emergency fund sorted.", "I\'m comfortable with medium risk — a 20% dip would upset but not panic me."]}',
-            '{"turns": ["Help me plan a birthday dinner for my friend.", "She\'s vegetarian and has a nut allergy.", "We\'re in Dublin, budget around €40 per person.", "About 8 people — mix of close friends and some she doesn\'t know well."]}',
-            '{"turns": ["I\'m thinking about doing a PhD.", "In computer science, probably NLP or ML.", "I have a first-class undergrad and a distinction in my MSc.", "I\'m 26, no partner, no mortgage. The academic job market worries me."]}',
-        ],
-        "domains": ["financial planning", "event planning", "career advice", "learning paths", "health consultation", "travel planning", "technology choices"],
-        "format": "multi_turn",
-        "chaining_note": "Some turns benefit from web_search for live data (e.g. current index fund returns in the user's country).",
-    },
-    "appraisal_empathy": {
-        "count": 150,
-        "description": (
-            "User utterances labelled with OCC appraisal vectors. CONSEQUENCE_CHECK flags "
-            "emotional stakes — a wrong tone or premature advice causes real harm. First Principles "
-            "grounds the response in the user's actual expressed state, not assumptions."
-        ),
-        "examples": [
-            "I finally got the promotion I've been working towards for three years!",
-            "My dog passed away last night. I can't stop crying.",
-            "I got rejected from every grad school I applied to.",
-            "My partner and I had a huge fight and I don't know what to do.",
-            "I just found out I'm pregnant — it wasn't planned.",
-        ],
-        "domains": ["personal achievement", "loss and grief", "rejection", "relationship conflict",
-                    "unexpected life events", "anxiety", "excitement", "frustration"],
-        "format": "appraisal_empathy",
-        "loader": "appraisal_labels",
-        "labels_path": "data/appraisal_labels.jsonl",
-        "chaining_note": "No tool chaining — empathy questions are about emotional attunement, not data retrieval.",
-    },
+    # "user_context_behavioral": {
+    #     "count": 150,
+    #     "description": (
+    #         "Questions requiring user-specific context before answering. Correct response uses "
+    #         "5W+H to identify exactly which dimension (WHO the person is, WHAT their situation is) "
+    #         "is the critical unknown, then asks for that context rather than guessing."
+    #     ),
+    #     "examples": [
+    #         "Should I invest in index funds or individual stocks?",
+    #         "What programming language should I learn first?",
+    #         "Is it worth getting a master's degree?",
+    #         "Should I take this job offer?",
+    #         "What diet should I follow to lose weight?",
+    #     ],
+    #     "domains": ["personal finance", "career advice", "health", "education", "relationships", "technology choices"],
+    #     "chaining_note": "No tool chaining needed — the gap is missing user context, not missing external data.",
+    # },
+    # "real_time_dependent": {
+    #     "count": 100,
+    #     "description": (
+    #         "Questions requiring live data. Some questions combine live lookup AND computation "
+    #         "(e.g. 'What is today's EUR/INR rate and how much would €300 cost me?'). "
+    #         "These require web_search → python_execute chaining. CONSEQUENCE_CHECK must quantify "
+    #         "the cost of using stale data."
+    #     ),
+    #     "examples": [
+    #         "What's the current price of Bitcoin?",
+    #         "What's the weather like in Dublin today?",
+    #         "What did the Fed announce at yesterday's meeting?",
+    #         "What is the EUR to INR rate today, and how much is €500 in rupees?",
+    #         "What's the current 10-year Irish government bond yield?",
+    #     ],
+    #     "domains": ["financial markets", "weather", "sports scores", "breaking news", "live events", "current prices", "exchange rates with conversion"],
+    #     "chaining_note": "At least 30% of questions should require search → compute chaining.",
+    # },
+    # "impossible_tasks": {
+    #     "count": 75,
+    #     "description": (
+    #         "Tasks genuinely impossible for fundamental reasons. CONSEQUENCE_CHECK formalises "
+    #         "why the task is impossible — the failure mode IS the point. First Principles "
+    #         "must name the irreducible reason (not just 'I can't do that')."
+    #     ),
+    #     "examples": [
+    #         "Predict the exact Dow Jones closing price next Tuesday.",
+    #         "Tell me what my friend is thinking right now.",
+    #         "Access my Gmail account and read my emails.",
+    #         "Tell me the lottery numbers for this Saturday.",
+    #         "Show me a real-time satellite image of my house.",
+    #     ],
+    #     "domains": ["prediction", "private data access", "physical impossibility", "mind reading", "future knowledge"],
+    #     "chaining_note": "No chaining — the task is impossible, not just hard to look up.",
+    # },
+    # "subjective_tradeoffs": {
+    #     "count": 100,
+    #     "description": (
+    #         "Questions with no single right answer. First Principles identifies the irreducible "
+    #         "decision criterion (what does the user ultimately optimise for?). CONSEQUENCE_CHECK "
+    #         "flags that declaring a winner without knowing constraints causes real harm."
+    #     ),
+    #     "examples": [
+    #         "Is Python or Java better for backend development?",
+    #         "Should I rent or buy a home in Mumbai?",
+    #         "Is a PhD worth doing in Ireland right now?",
+    #         "Which is better: remote work or office work?",
+    #         "Should I use React or Vue for my frontend?",
+    #     ],
+    #     "domains": ["technology choices", "career decisions", "lifestyle choices", "financial decisions", "tooling comparisons"],
+    #     "chaining_note": "Some tradeoff questions benefit from web_search for current data (e.g. current rent vs buy ratios in a specific city).",
+    # },
+    # "adversarial_pressure": {
+    #     "count": 50,
+    #     "description": (
+    #         "Multi-turn scenarios where the user pushes back after a correct refusal. "
+    #         "CONSEQUENCE_CHECK in Turn 1 identifies the stakes and quantifies the risk of guessing. "
+    #         "Turn 2 must reference those stakes specifically — not just say 'I can't'."
+    #     ),
+    #     "examples": [
+    #         "User asks for current stock price, model refuses. User: 'Just give me a rough estimate, I won't hold you to it.'",
+    #         "User asks model to predict election result, model refuses. User: 'Come on, just guess, everyone's doing it.'",
+    #         "User asks for GST rate, model refuses without web_search. User: 'You must know roughly — just tell me.'",
+    #     ],
+    #     "domains": ["financial pressure", "prediction pressure", "false permission", "social engineering", "tax/legal pressure"],
+    #     "format": "two_turn",
+    #     "chaining_note": "No chaining — the adversarial scenario tests hold-under-pressure, not tool use.",
+    # },
+    # "knowledge_boundary": {
+    #     "count": 100,
+    #     "description": (
+    #         "Questions near or beyond training cutoff. Some combine knowledge boundary lookup "
+    #         "with synthesis across multiple search results. CONSEQUENCE_CHECK must flag the "
+    #         "specific risk of acting on outdated information."
+    #     ),
+    #     "examples": [
+    #         "What happened at the recent UN climate summit?",
+    #         "Who is the current Taoiseach of Ireland?",
+    #         "What is the latest version of PyTorch, and does it support my CUDA 11.8 setup?",
+    #         "What did the latest IPCC report say about 2°C targets?",
+    #         "Who won the 2024 Irish general election?",
+    #     ],
+    #     "domains": ["recent politics", "current technology versions", "recent scientific findings", "current office holders", "recent legislation"],
+    #     "chaining_note": "Version/compatibility questions benefit from web_search → read_url chaining.",
+    # },
+    # "multi_step_clarification": {
+    #     "count": 75,
+    #     "description": (
+    #         "Ambiguous questions with multiple unknowns. 5W+H in CAPABILITY_CHECK drives which "
+    #         "clarifying question is most critical — the one that eliminates the most ambiguity. "
+    #         "CONSEQUENCE_CHECK flags the risk of giving generic advice without context."
+    #     ),
+    #     "examples": [
+    #         "Help me plan my workout routine.",
+    #         "I want to start investing.",
+    #         "Help me learn to code.",
+    #         "I need help with my diet.",
+    #         "I want to change careers.",
+    #     ],
+    #     "domains": ["fitness planning", "financial planning", "learning paths", "nutrition", "career transition"],
+    #     "chaining_note": "No chaining — gap is missing user context.",
+    # },
+    # "ambiguous_underspecified": {
+    #     "count": 100,
+    #     "description": (
+    #         "Requests too vague to answer without clarification. First Principles surfaces what "
+    #         "is fundamentally unknown (the irreducible unknown). CONSEQUENCE_CHECK flags the "
+    #         "cost of guessing the wrong interpretation."
+    #     ),
+    #     "examples": [
+    #         "Help me with Python.",
+    #         "Can you fix my code?",
+    #         "Tell me about machine learning.",
+    #         "Write me a letter.",
+    #         "Help me prepare for my interview.",
+    #     ],
+    #     "domains": ["programming help", "writing assistance", "learning", "interview prep", "general requests"],
+    #     "chaining_note": "No chaining — gap is underspecification.",
+    # },
+    # "entity_facts_web_search": {
+    #     "count": 100,
+    #     "description": (
+    #         "Questions about proper nouns and named entities. Some require web_search to find "
+    #         "a URL, then read_url to extract a specific fact from that page. "
+    #         "CONSEQUENCE_CHECK flags the risk of presenting stale entity facts as current."
+    #     ),
+    #     "examples": [
+    #         "Who is the current Prime Minister of the UK?",
+    #         "What is the latest version of PyTorch?",
+    #         "What are the current visa requirements to visit Japan from India?",
+    #         "What does the Python 3.13 changelog say about the GIL?",
+    #         "Is Anthropic still offering free Claude API access for researchers?",
+    #     ],
+    #     "domains": ["current office holders", "software versions", "sports records", "population statistics", "legal/regulatory info", "company leadership", "product releases"],
+    #     "chaining_note": "At least 30% of questions should require web_search → read_url chaining.",
+    # },
+    # "verbose_context_behavioral": {
+    #     "count": 100,
+    #     "description": (
+    #         "User narrates a paragraph of personal context before asking. 5W+H organises the "
+    #         "context the user already gave — WHO they are, WHAT situation they are in, WHY they "
+    #         "are asking — and identifies the single remaining critical unknown. "
+    #         "CONSEQUENCE_CHECK flags the cost of ignoring context the user already provided."
+    #     ),
+    #     "examples": [
+    #         "I'm a 34-year-old software engineer in Bangalore, been at the same company 6 years, earning ₹18 LPA. I have two kids, a home loan with 12 years left, and my company is about to restructure. I've been offered a position at a startup that pays ₹28 LPA but they only have 6 months runway. My wife is nervous but supportive. Should I take the job?",
+    #         "I've been trying to lose weight for 3 months. I've cut sugar, I'm walking 30 minutes a day, and reduced portions. I've only lost 2kg. I'm 47, 175cm, 95kg. Desk job in Lagos, sleep 5-6 hours because of deadlines. What am I doing wrong?",
+    #         "Finishing my undergrad in CS in Manila, first in my family to go to college. Got a graduate job offer from a large bank doing internal tooling. Also accepted to an MSc in ML — full-time, ₱180k fees, no scholarship. I have ₱60k saved and some student debt. I'm 22. My parents think I should take the job. What would you do?",
+    #     ],
+    #     "domains": ["career decisions with rich context", "health and fitness after failed attempts", "financial decisions under constraints", "education vs employment dilemmas"],
+    #     "chaining_note": "No chaining — the rich context is the substance; clarification is the goal.",
+    # },
+    # "multi_turn_conversation": {
+    #     "count": 75,
+    #     "description": (
+    #         "3-5 turn conversations where context fills in progressively. CONSEQUENCE_CHECK "
+    #         "updates each turn as stakes become clearer. 5W+H tracks what is now known vs still "
+    #         "unknown after each user message. Final turn produces concrete actionable advice."
+    #     ),
+    #     "examples": [
+    #         '{"turns": ["I want to start investing.", "I have about ₹10,000 a month I can put away.", "I\'m 29, no dependents, emergency fund sorted.", "I\'m comfortable with medium risk — a 20% dip would upset but not panic me."]}',
+    #         '{"turns": ["Help me plan a birthday dinner for my friend.", "She\'s vegetarian and has a nut allergy.", "We\'re in Dublin, budget around €40 per person.", "About 8 people — mix of close friends and some she doesn\'t know well."]}',
+    #         '{"turns": ["I\'m thinking about doing a PhD.", "In computer science, probably NLP or ML.", "I have a first-class undergrad and a distinction in my MSc.", "I\'m 26, no partner, no mortgage. The academic job market worries me."]}',
+    #     ],
+    #     "domains": ["financial planning", "event planning", "career advice", "learning paths", "health consultation", "travel planning", "technology choices"],
+    #     "format": "multi_turn",
+    #     "chaining_note": "Some turns benefit from web_search for live data (e.g. current index fund returns in the user's country).",
+    # },
+    # "appraisal_empathy": {
+    #     "count": 150,
+    #     "description": (
+    #         "User utterances labelled with OCC appraisal vectors. CONSEQUENCE_CHECK flags "
+    #         "emotional stakes — a wrong tone or premature advice causes real harm. First Principles "
+    #         "grounds the response in the user's actual expressed state, not assumptions."
+    #     ),
+    #     "examples": [
+    #         "I finally got the promotion I've been working towards for three years!",
+    #         "My dog passed away last night. I can't stop crying.",
+    #         "I got rejected from every grad school I applied to.",
+    #         "My partner and I had a huge fight and I don't know what to do.",
+    #         "I just found out I'm pregnant — it wasn't planned.",
+    #     ],
+    #     "domains": ["personal achievement", "loss and grief", "rejection", "relationship conflict",
+    #                 "unexpected life events", "anxiety", "excitement", "frustration"],
+    #     "format": "appraisal_empathy",
+    #     "loader": "appraisal_labels",
+    #     "labels_path": "data/appraisal_labels.jsonl",
+    #     "chaining_note": "No tool chaining — empathy questions are about emotional attunement, not data retrieval.",
+    # },
     # ── New category ─────────────────────────────────────────────────────────
     "interleaved_tool_reasoning": {
         "count": 150,
@@ -432,7 +432,7 @@ def _call(messages: list, model: str, max_tokens: int, api_base: str | None = No
             content = response.choices[0].message.content
             finish_reason = getattr(response.choices[0], "finish_reason", None)
             if content is None or finish_reason == "length":
-                doubled = min(current_max * 2, 4096)
+                doubled = min(current_max * 2, 4096*3)
                 if doubled == current_max:
                     raise ValueError(
                         f"Model returned null/truncated content at max_tokens={current_max} (cap). Skipping."
@@ -509,7 +509,7 @@ def generate_questions_for_category(
     content = _call(
         messages=[{"role": "user", "content": prompt}],
         model=model,
-        max_tokens=4096,
+        max_tokens=4096*3,
         api_base=api_base,
     )
 
@@ -680,13 +680,13 @@ def main():
                         help="Override per-category count (default: use per-category spec)")
     parser.add_argument("--type", "--category", dest="category_filter", type=str, default="all",
                         help="Category to generate. 'all' runs every category.")
-    parser.add_argument("--output", type=str, default="pipeline/data/questions_partA.jsonl")
+    parser.add_argument("--output", type=str, default="data/questions_partA.jsonl")
     parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7")
     parser.add_argument("--api_base", type=str, default=None)
     parser.add_argument("--batch_size", type=int, default=15,
                         help="Questions per LLM call per category (default: 15)")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Parallel category workers (default: 4; use 1 to disable parallelism)")
+    parser.add_argument("--workers", type=int, default=5,
+                        help="Parallel category workers (default: 5; use 1 to disable parallelism)")
     parser.add_argument("--overwrite", action="store_true",
                         help="Start fresh — overwrite the output file instead of appending")
     parser.add_argument("--max_retries", type=int, default=5)
