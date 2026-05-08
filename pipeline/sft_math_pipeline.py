@@ -51,7 +51,28 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 _MAX_RETRIES: int = 5
-_BASE_DELAY: float = 3.0
+_BASE_DELAY: float = 15.0  # NIM rate limits are per-minute; 3s was too short
+
+# Global rate-limit coordinator — prevents thundering herd across workers
+_rate_limit_lock  = threading.Lock()
+_rate_limit_until = 0.0          # monotonic seconds; all threads wait past this
+
+
+def _wait_for_rate_limit() -> None:
+    while True:
+        with _rate_limit_lock:
+            remaining = _rate_limit_until - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(remaining, 1.0))
+
+
+def _set_global_backoff(seconds: float) -> None:
+    global _rate_limit_until
+    with _rate_limit_lock:
+        candidate = time.monotonic() + seconds
+        if candidate > _rate_limit_until:
+            _rate_limit_until = candidate
 
 # ---------------------------------------------------------------------------
 # System prompt — appears in every training example (must match 3_inference.py)
@@ -373,28 +394,33 @@ def generate_training_example(
     expected = item["expected_answer"]
     q_type   = item["question_type"]
 
+    q_short = question[:120].replace("\n", " ")
+    print(f"\n  >> [{item['source']}·{q_type}] {q_short}", flush=True)
+
     prompt = GENERATION_PROMPT.format(question=question, question_type=q_type)
     kwargs = dict(
         model=model,
         max_tokens=2048 * 4,
         temperature=0.3,
-        timeout=90,
+        timeout=600,
         messages=[{"role": "user", "content": prompt}],
     )
     if api_base:
         kwargs["api_base"] = api_base
 
     for attempt in range(max_retries):
+        _wait_for_rate_limit()
+        print(f"    attempt {attempt + 1}: calling API [{item['source']}]...", flush=True)
         try:
             response = litellm.completion(**kwargs)
             content = response.choices[0].message.content
             if not content:
-                print(f"    attempt {attempt + 1}: null response")
+                print(f"    attempt {attempt + 1}: null response", flush=True)
                 continue
 
             code_blocks = extract_code_blocks(content)
             if not code_blocks:
-                print(f"    attempt {attempt + 1}: no code block found in response")
+                print(f"    attempt {attempt + 1}: no code block found in response", flush=True)
                 kwargs["temperature"] = min(kwargs["temperature"] + 0.2, 1.0)
                 continue
 
@@ -433,13 +459,15 @@ def generate_training_example(
                 kwargs["temperature"] = min(kwargs["temperature"] + 0.2, 1.0)
 
         except litellm.RateLimitError:
-            wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
-            print(f"    attempt {attempt + 1}: rate limit — waiting {wait:.0f}s")
-            time.sleep(wait)
+            wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 5)
+            print(f"    attempt {attempt + 1}: rate limit — global backoff {wait:.0f}s (all workers paused)")
+            _set_global_backoff(wait)
+            _wait_for_rate_limit()
         except (litellm.APIConnectionError, litellm.Timeout):
-            wait = _BASE_DELAY * (2 ** attempt)
+            wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 3)
             print(f"    attempt {attempt + 1}: connection error — waiting {wait:.0f}s")
-            time.sleep(wait)
+            _set_global_backoff(wait)
+            _wait_for_rate_limit()
         except Exception as e:
             print(f"    attempt {attempt + 1}: unexpected error — {e}")
             time.sleep(_BASE_DELAY)
@@ -548,8 +576,8 @@ def main():
                         help="Custom API base URL (e.g. Ollama or local vLLM endpoint)")
     parser.add_argument("--retries", type=int, default=5,
                         help="Retries per question when code fails to verify (default: 5)")
-    parser.add_argument("--workers", type=int, default=5,
-                        help="Parallel workers (default: 5; reduce to 1–2 if rate-limited)")
+    parser.add_argument("--workers", type=int, default=3,
+                        help="Parallel workers (default: 3; NIM has tight per-minute limits — increase only if you have a paid tier)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducible dataset sampling (default: 42)")
     parser.add_argument("--resume", action="store_true",
