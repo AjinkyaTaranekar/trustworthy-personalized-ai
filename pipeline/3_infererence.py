@@ -397,6 +397,33 @@ _ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
 _MODEL = None
 _TOKENIZER = None
 _MODEL_LABEL = "not_loaded"
+_USE_GGUF = False
+_GGUF_MODEL = None   # llama_cpp.Llama instance — populated when --gguf is passed
+
+
+def _resolve_gguf_path(gguf_arg: str) -> str:
+    """Return a local path to a .gguf file.
+
+    Accepts a local file path or a HuggingFace repo ID.
+    For HF repos, downloads the q4_k_m GGUF file (or the first .gguf found) via
+    huggingface_hub.hf_hub_download which caches to ~/.cache/huggingface.
+    """
+    p = Path(gguf_arg)
+    if p.exists():
+        if not gguf_arg.lower().endswith(".gguf"):
+            raise ValueError(f"Local GGUF path must end in .gguf, got: {gguf_arg}")
+        return str(p)
+    # HuggingFace repo ID (contains '/' but not a local path)
+    from huggingface_hub import hf_hub_download, list_repo_files
+    print(f"  Fetching file list from HF repo: {gguf_arg}")
+    repo_files = list(list_repo_files(gguf_arg))
+    gguf_files = [f for f in repo_files if f.endswith(".gguf")]
+    if not gguf_files:
+        raise ValueError(f"No .gguf files found in HuggingFace repo '{gguf_arg}'")
+    preferred = [f for f in gguf_files if "q4_k_m" in f.lower()]
+    target = preferred[0] if preferred else gguf_files[0]
+    print(f"  Downloading {target} from {gguf_arg}...")
+    return hf_hub_download(repo_id=gguf_arg, filename=target)
 
 
 def _system_prompt_for_profile(profile: str) -> str:
@@ -482,6 +509,8 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
               greedy: bool = False) -> tuple:
     """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s)."""
+    if _USE_GGUF:
+        return _generate_gguf(conversation, max_new_tokens, temperature, greedy)
     prompt = _TOKENIZER.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     n_in = inputs["input_ids"].shape[1]
@@ -503,6 +532,18 @@ def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
     analysis, SPARQL generation). No tool loop, no metrics, greedy decoding so
     the output is deterministic and fast.
     """
+    if _USE_GGUF:
+        if _GGUF_MODEL is None:
+            return ""
+        result = _GGUF_MODEL.create_chat_completion(
+            messages=[
+                {"role": "system", "content": "Respond only with the requested JSON. No prose, no markdown fences."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=max_new_tokens,
+            temperature=0.1,
+        )
+        return result["choices"][0]["message"]["content"]
     if _MODEL is None or _TOKENIZER is None:
         return ""
     conversation = [
@@ -511,6 +552,29 @@ def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
     ]
     result, _, _, _ = _generate(conversation, max_new_tokens, temperature=0.1, greedy=True)
     return result
+
+
+def _generate_gguf(conversation: list, max_new_tokens: int, temperature: float,
+                   greedy: bool = False) -> tuple:
+    """Generation via llama-cpp-python for GGUF models.
+
+    Returns the same (response_text, n_input_tokens, n_output_tokens, elapsed_s)
+    tuple as _generate() so all callers stay compatible.
+    """
+    if _GGUF_MODEL is None:
+        raise RuntimeError("_generate_gguf() called but GGUF model is not loaded.")
+    t0 = time.perf_counter()
+    result = _GGUF_MODEL.create_chat_completion(
+        messages=conversation,
+        max_tokens=max_new_tokens,
+        temperature=1e-6 if greedy else max(temperature, 1e-6),
+        top_p=0.9 if not greedy else 1.0,
+    )
+    elapsed = time.perf_counter() - t0
+    text  = result["choices"][0]["message"]["content"]
+    n_in  = result["usage"]["prompt_tokens"]
+    n_out = result["usage"]["completion_tokens"]
+    return text, n_in, n_out, elapsed
 
 
 def _build_system_prompt(
@@ -579,7 +643,13 @@ class CorrectRequest(BaseModel):
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    return {"status": "ok", "model": _MODEL_LABEL, "loaded": _MODEL is not None}
+    loaded = (_MODEL is not None) or (_USE_GGUF and _GGUF_MODEL is not None)
+    return {
+        "status": "ok",
+        "model":  _MODEL_LABEL,
+        "loaded": loaded,
+        "mode":   "gguf" if _USE_GGUF else "lora",
+    }
 
 
 @app.get("/v1/models")
@@ -621,7 +691,7 @@ def delete_tool(name: str) -> Dict[str, Any]:
 
 @app.post("/v1/chat/completions")
 def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
-    if _MODEL is None:
+    if _MODEL is None and not (_USE_GGUF and _GGUF_MODEL is not None):
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     # ── Extract the most recent user turn for module hooks ─────────────────
@@ -833,6 +903,9 @@ def main() -> None:
                         help="Path to fine-tuned LoRA checkpoint")
     parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
                         help="HuggingFace model ID used when --model_dir does not exist")
+    parser.add_argument("--gguf", default=None,
+                        help="Load a GGUF model instead of LoRA. Accepts a local .gguf file "
+                             "path or a HuggingFace repo ID (downloads q4_k_m variant).")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--max_seq_length", type=int, default=4096)
@@ -840,7 +913,7 @@ def main() -> None:
                         help="Path to a YAML config file (overrides PIPELINE_* env vars)")
     args = parser.parse_args()
 
-    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH
+    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL
 
     # Load YAML config if provided (overrides env-var defaults)
     if args.config:
@@ -856,16 +929,29 @@ def main() -> None:
     print(f"Pipeline flags:\n{cfg.summary()}")
 
     # ── Load model ──────────────────────────────────────────────────────────
-    from unsloth import FastModel  # deferred so the module imports without GPU
-
-    model_path = Path(args.model_dir)
-    source = str(model_path) if model_path.exists() else args.base_model
-    _MODEL_LABEL = source
-    print(f"Loading model: {source}")
-    _MODEL, _TOKENIZER = FastModel.from_pretrained(
-        model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
-    )
-    FastModel.for_inference(_MODEL)
+    if args.gguf:
+        _USE_GGUF = True
+        gguf_path = _resolve_gguf_path(args.gguf)
+        from llama_cpp import Llama
+        print(f"Loading GGUF model: {gguf_path}")
+        _GGUF_MODEL = Llama(
+            model_path=gguf_path,
+            n_ctx=args.max_seq_length,
+            n_gpu_layers=-1,    # offload all layers to GPU; falls back to CPU automatically
+            verbose=False,
+        )
+        _MODEL_LABEL = Path(gguf_path).stem
+        print(f"GGUF model ready: {_MODEL_LABEL}")
+    else:
+        from unsloth import FastModel  # deferred so the module imports without GPU
+        model_path = Path(args.model_dir)
+        source = str(model_path) if model_path.exists() else args.base_model
+        _MODEL_LABEL = source
+        print(f"Loading model: {source}")
+        _MODEL, _TOKENIZER = FastModel.from_pretrained(
+            model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
+        )
+        FastModel.for_inference(_MODEL)
 
     # ── Initialise optional modules ─────────────────────────────────────────
     _GRAPH_CLIENT = GraphClient(cfg)
