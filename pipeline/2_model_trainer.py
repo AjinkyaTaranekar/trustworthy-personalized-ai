@@ -57,8 +57,8 @@ SFT_CONFIG = {
     "learning_rate":               2e-4,
     "warmup_steps":                100,
     "logging_steps":               10,
-    "save_steps":                  500,
-    "eval_steps":                  100,
+    "save_steps":                  50,
+    "eval_steps":                  50,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
@@ -284,15 +284,86 @@ def _profile_to_set(label: str) -> set:
     return profiles.get(label, {"python_execute"})
 
 
-def make_reward_fn(reward_type: str = "d"):
-    """Return a TRL-compatible reward function.
+def make_reward_fns(reward_type: str = "d") -> list:
+    """Return a list of per-component reward functions for GRPOTrainer.
 
-    reward_type 'c': format + accuracy only  (Ablation C)
-    reward_type 'd': full composite          (Ablation D)
+    TRL sums the outputs of all functions to produce the training signal and
+    automatically logs each under rewards/{fn_name}_mean — giving per-component
+    breakdown in grpo_loss_history.json at zero extra cost.
+
+    Each function returns its *weighted* component score so the sum equals the
+    original composite reward. Training dynamics are identical to the old single
+    function; only the logging granularity changes.
+
+    reward_type 'c': format + accuracy only (Ablation C — two functions)
+    reward_type 'd': full composite         (Ablation D — four functions)
     """
-    def reward_fn(
-        prompts: list[str],
-        completions: list[str],
+    def format_reward(
+        prompts: list[str], completions: list[str], **kwargs
+    ) -> list[float]:
+        w = REWARD_WEIGHTS["format"]
+        return [float(w * _format_reward(c)) for c in completions]
+
+    def accuracy_reward(
+        prompts: list[str], completions: list[str],
+        question_type: list[str] | None = None,
+        expected_answer: list[str] | None = None,
+        category: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        qt_list = question_type or category or ["unknown"] * n
+        ea_list = expected_answer or [None] * n
+        w = REWARD_WEIGHTS["accuracy"]
+        return [
+            float(w * _accuracy_reward(c, ea, qt))
+            for c, ea, qt in zip(completions, ea_list, qt_list)
+        ]
+
+    if reward_type == "c":
+        # Ablation C: renormalise so the two weights still sum to 1
+        total_w = REWARD_WEIGHTS["format"] + REWARD_WEIGHTS["accuracy"]
+
+        def format_reward_c(
+            prompts: list[str], completions: list[str], **kwargs
+        ) -> list[float]:
+            w = REWARD_WEIGHTS["format"] / total_w
+            return [float(w * _format_reward(c)) for c in completions]
+
+        def accuracy_reward_c(
+            prompts: list[str], completions: list[str],
+            question_type: list[str] | None = None,
+            expected_answer: list[str] | None = None,
+            category: list[str] | None = None,
+            **kwargs,
+        ) -> list[float]:
+            n = len(completions)
+            qt_list = question_type or category or ["unknown"] * n
+            ea_list = expected_answer or [None] * n
+            w = REWARD_WEIGHTS["accuracy"] / total_w
+            return [
+                float(w * _accuracy_reward(c, ea, qt))
+                for c, ea, qt in zip(completions, ea_list, qt_list)
+            ]
+
+        return [format_reward_c, accuracy_reward_c]
+
+    # Ablation D — full composite (four functions)
+    def tool_integrity_reward(
+        prompts: list[str], completions: list[str],
+        tool_profile_label: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        tp_list = tool_profile_label or ["compute_only"] * n
+        w = REWARD_WEIGHTS["tool_integrity"]
+        return [
+            float(w * _tool_integrity_reward(c, _profile_to_set(tpl)))
+            for c, tpl in zip(completions, tp_list)
+        ]
+
+    def constitution_reward(
+        prompts: list[str], completions: list[str],
         question: list[str] | None = None,
         question_type: list[str] | None = None,
         expected_answer: list[str] | None = None,
@@ -303,11 +374,10 @@ def make_reward_fn(reward_type: str = "d"):
         n = len(completions)
         q_list  = question or [""] * n
         qt_list = question_type or category or ["unknown"] * n
-        ea_list = expected_answer or [None] * n
         tp_list = tool_profile_label or ["compute_only"] * n
-
-        rewards = []
-        for comp, q, qt, ea, tpl in zip(completions, q_list, qt_list, ea_list, tp_list):
+        w = REWARD_WEIGHTS["constitution"]
+        results = []
+        for comp, q, qt, tpl in zip(completions, q_list, qt_list, tp_list):
             active_tools = _profile_to_set(tpl)
             tool_profile_dict = {
                 "context": " | ".join(
@@ -316,28 +386,25 @@ def make_reward_fn(reward_type: str = "d"):
                 ),
                 "label": tpl,
             }
+            results.append(float(w * _constitution_reward(comp, q, qt, tool_profile_dict)))
+        return results
 
-            fmt  = _format_reward(comp)
-            acc  = _accuracy_reward(comp, ea, qt)
+    return [format_reward, accuracy_reward, tool_integrity_reward, constitution_reward]
 
-            if reward_type == "c":
-                # Ablation C: format + accuracy only
-                r = REWARD_WEIGHTS["format"] * fmt + REWARD_WEIGHTS["accuracy"] * acc
-                # Normalise to [0, 1] using only the two active weights
-                total_w = REWARD_WEIGHTS["format"] + REWARD_WEIGHTS["accuracy"]
-                r /= total_w
-            else:
-                # Ablation D: full composite
-                tool = _tool_integrity_reward(comp, active_tools)
-                cons = _constitution_reward(comp, q, qt, tool_profile_dict)
-                r = (REWARD_WEIGHTS["format"]        * fmt
-                     + REWARD_WEIGHTS["accuracy"]      * acc
-                     + REWARD_WEIGHTS["tool_integrity"] * tool
-                     + REWARD_WEIGHTS["constitution"]   * cons)
 
-            rewards.append(float(r))
+def make_reward_fn(reward_type: str = "d"):
+    """Single composite reward function — used only for held-out evaluation in publish().
 
-        return rewards
+    Training uses make_reward_fns() (plural) so TRL logs each component separately.
+    """
+    fns = make_reward_fns(reward_type)
+
+    def reward_fn(prompts, completions, **kwargs):
+        totals = [0.0] * len(completions)
+        for fn in fns:
+            for i, v in enumerate(fn(prompts, completions, **kwargs)):
+                totals[i] += v
+        return totals
 
     return reward_fn
 
@@ -558,7 +625,7 @@ class ModelTrainer:
         self._grpo_eval_dataset = grpo_split["test"]
         print(f"  GRPO Train: {len(dataset)}  |  Held-out: {len(self._grpo_eval_dataset)}")
 
-        reward_fn = make_reward_fn(reward_type)
+        reward_fns = make_reward_fns(reward_type)
 
         # GRPOConfig — DAPO settings where supported by TRL
         # If your TRL version does not have clip_range_ratio_high, it falls back
@@ -598,7 +665,7 @@ class ModelTrainer:
         trainer = GRPOTrainer(
             model=self.model,
             processing_class=self.tokenizer,
-            reward_funcs=reward_fn,
+            reward_funcs=reward_fns,
             args=config,
             train_dataset=dataset,
         )
