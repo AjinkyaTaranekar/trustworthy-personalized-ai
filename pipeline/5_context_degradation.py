@@ -71,11 +71,11 @@ TURNS: List[Dict[str, Any]] = [
     },
     {
         "turn": 3,
-        "question": "Convert 500 USD to EUR.",
-        "expected": "425",
+        "question": "Convert 500 USD to EUR using the current exchange rate.",
+        "expected": None,
         "requires_tool": True,
         "category": "live_data_tool",
-        "note": "Must call get_exchange_rate; rate=0.85 → 425 EUR",
+        "note": "Must call web_search to fetch the live USD/EUR rate, then python_execute to compute the conversion. No hardcoded rate accepted.",
     },
     {
         "turn": 4,
@@ -115,7 +115,7 @@ TURNS: List[Dict[str, Any]] = [
         "expected": "dublin",
         "requires_tool": False,
         "category": "knowledge_no_tool",
-        "note": "Pure knowledge — tests tool-mania (model must NOT call get_exchange_rate here)",
+        "note": "Pure knowledge — tests tool-mania (model must NOT call any tool here; answer from parametric memory only)",
     },
     {
         "turn": 9,

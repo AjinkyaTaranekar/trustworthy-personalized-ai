@@ -73,7 +73,7 @@ All experiments are constrained to small models — **Qwen3-0.6B** (primary) and
 ## Code scaffolding
 
 - [[sources/code/sft-v2-pipeline]] — constitution-driven data pipeline
-- [[sources/code/constitution-document]] — the 19-principle source
+- [[sources/code/constitution-document]] — the 23-principle source
 - [[sources/code/training-and-benchmark]] — LoRA + GRPO trainer, benchmark, context-degradation eval
 
 ## Key entities

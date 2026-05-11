@@ -64,7 +64,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `dapo` | 1 | Decoupled Clip and Dynamic Sampling Policy Optimization — ByteDance improvement to GRPO; fixes entropy collapse and length bias |
 | `ppo` | 1 | Proximal Policy Optimization (value-based RL baseline) |
 | `mcp` | 2 | Model Context Protocol |
-| `constitution` | 3 | The 19-principle constitution |
+| `constitution` | 3 | The 23-principle constitution |
 | `principles` | 2 | The individual constitution principles |
 | `graph-rag` | 1 | KG-backed RAG for user memory |
 | `graph-memory` | 1 | Graph-based agent memory systems (Mem0g, Cognee, FalkorDB patterns) — distinct from graph-rag in that it covers the write/update pipeline, not just retrieval |

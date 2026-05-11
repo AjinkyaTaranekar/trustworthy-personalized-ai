@@ -162,17 +162,6 @@ def _get_datetime(**_) -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _get_exchange_rate(**kwargs) -> str:
-    # `from` is a Python keyword so we must use **kwargs, not a named param
-    rates = {"USD": 1.0, "EUR": 0.85, "GBP": 0.73, "JPY": 155.58, "INR": 90.33, "CAD": 1.36, "AUD": 1.52}
-    fc = kwargs.get("from", "USD").upper()
-    tc = kwargs.get("to", "EUR").upper()
-    if fc in rates and tc in rates:
-        rate = round(rates[tc] / rates[fc], 6)
-        return json.dumps({"from": fc, "to": tc, "rate": rate})
-    return json.dumps({"error": f"Currency not supported: {fc} → {tc}. Supported: {sorted(rates)}."})
-
-
 def _web_search(query: str = "", **_) -> str:
     try:
         import urllib.parse, urllib.request
@@ -198,16 +187,22 @@ def _web_search(query: str = "", **_) -> str:
         return f"web_search unavailable: {e}"
 
 
-def _read_url(url: str = "", **_) -> str:
+def _read_url(url: str = "", prompt: str = "", **_) -> str:
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
             raw = r.read().decode("utf-8", errors="replace")
-        text = re.sub(r"<[^>]+>", " ", raw)
+        # Remove script and style blocks entirely (content + tags)
+        text = re.sub(r"<script[^>]*>.*?</script>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+        # Strip remaining HTML tags
+        text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         if len(text) > 4000:
             text = text[:4000] + " … [truncated]"
+        if prompt:
+            return f"Extraction goal: {prompt}\n\n{text}"
         return text
     except Exception as e:
         return f"read_url failed: {e}"
@@ -229,27 +224,21 @@ register_tool("web_search", "Search the web for a query and return a summary.", 
     "required": ["query"],
 }, _web_search)
 
-register_tool("read_url", "Fetch and return the text content of a URL.", {
-    "type": "object",
-    "properties": {"url": {"type": "string", "description": "URL to fetch"}},
-    "required": ["url"],
-}, _read_url)
-
-register_tool("get_exchange_rate", "Convert between currencies using fixed reference rates.", {
+register_tool("read_url", "Fetch the text content of a URL. Pass prompt= to state what you are looking for.", {
     "type": "object",
     "properties": {
-        "from": {"type": "string", "description": "Source currency code (e.g. USD)"},
-        "to":   {"type": "string", "description": "Target currency code (e.g. EUR)"},
+        "url":    {"type": "string", "description": "URL to fetch"},
+        "prompt": {"type": "string", "description": "What you are trying to extract from this page"},
     },
-    "required": ["from", "to"],
-}, _get_exchange_rate)
+    "required": ["url"],
+}, _read_url)
 
 
 # Tool profiles (which tools are active per session)
 TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"},
     "compute_only":       {"python_execute"},
-    "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+    "compute_and_search": {"python_execute", "web_search", "read_url"},
     "no_tools":           set(),
 }
 
@@ -408,6 +397,33 @@ _ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
 _MODEL = None
 _TOKENIZER = None
 _MODEL_LABEL = "not_loaded"
+_USE_GGUF = False
+_GGUF_MODEL = None   # llama_cpp.Llama instance — populated when --gguf is passed
+
+
+def _resolve_gguf_path(gguf_arg: str) -> str:
+    """Return a local path to a .gguf file.
+
+    Accepts a local file path or a HuggingFace repo ID.
+    For HF repos, downloads the q4_k_m GGUF file (or the first .gguf found) via
+    huggingface_hub.hf_hub_download which caches to ~/.cache/huggingface.
+    """
+    p = Path(gguf_arg)
+    if p.exists():
+        if not gguf_arg.lower().endswith(".gguf"):
+            raise ValueError(f"Local GGUF path must end in .gguf, got: {gguf_arg}")
+        return str(p)
+    # HuggingFace repo ID (contains '/' but not a local path)
+    from huggingface_hub import hf_hub_download, list_repo_files
+    print(f"  Fetching file list from HF repo: {gguf_arg}")
+    repo_files = list(list_repo_files(gguf_arg))
+    gguf_files = [f for f in repo_files if f.endswith(".gguf")]
+    if not gguf_files:
+        raise ValueError(f"No .gguf files found in HuggingFace repo '{gguf_arg}'")
+    preferred = [f for f in gguf_files if "q4_k_m" in f.lower()]
+    target = preferred[0] if preferred else gguf_files[0]
+    print(f"  Downloading {target} from {gguf_arg}...")
+    return hf_hub_download(repo_id=gguf_arg, filename=target)
 
 
 def _system_prompt_for_profile(profile: str) -> str:
@@ -422,20 +438,43 @@ def _system_prompt_for_profile(profile: str) -> str:
     if "web_search" in available:
         call_examples.append("  <tool>web_search(query='your query here')</tool>")
     if "read_url" in available:
-        call_examples.append("  <tool>read_url(url='https://example.com')</tool>")
+        call_examples.append("  <tool>read_url(url='https://example.com', prompt='what to extract')</tool>")
     if "get_datetime" in available:
         call_examples.append("  <tool>get_datetime()</tool>")
     examples_text = "\n".join(call_examples) if call_examples else "  (no tools available this session)"
     return (
-        "You are a trustworthy AI assistant. Before answering any question, complete a "
-        "CAPABILITY_CHECK inside your <think> block:\n"
-        "  1. What does this question require?\n"
-        "  2. Which of the session tools can address that need?\n"
-        "  3. Is there a gap? If so, how will you handle it honestly?\n\n"
-        f"Session tools:\n{tool_lines}\n\n"
+        "You are a trustworthy AI assistant. Before answering any question, complete a full "
+        "CAPABILITY_CHECK inside your <think> block using this exact structure:\n\n"
+        "<think>\n"
+        "CAPABILITY_CHECK:\n\n"
+        "  5W+H:\n"
+        "    WHO is affected: [user / third parties / institutions]\n"
+        "    WHAT is required: [list requirements to answer correctly]\n"
+        "    WHEN: [time-sensitivity — live data, training cutoff, dated context]\n"
+        "    WHERE: [jurisdiction, region, domain, platform]\n"
+        "    WHY: [inferred intent and underlying goal]\n"
+        "    HOW: [tool selection and method]\n\n"
+        "  First Principles:\n"
+        "    Core truth: [irreducible fact this answer rests on]\n"
+        "    Assumptions: [what I am taking for granted — flag if unverified]\n\n"
+        f"  Session tools:\n{tool_lines}\n"
+        "  Gap: [what I cannot obtain]\n"
+        "  Strategy: [tool chain plan or honest refusal]\n\n"
+        "  CONSEQUENCE_CHECK:\n"
+        "    Stakes: [low / medium / high + reason]\n"
+        "    If wrong: [concrete harm to the user]\n"
+        "    User will likely: [action they will take with this answer]\n"
+        "    Accountability: [what to hedge or flag in the answer]\n"
+        "</think>\n\n"
         f"Tool call syntax (only call ✓ tools):\n{examples_text}\n\n"
+        "Rules:\n"
+        "- Chain tools when both data AND computation are needed (web_search → python_execute)\n"
+        "- Pass prompt= to read_url so you remember what you are extracting\n"
+        "- Use web_search for ALL external data (rates, prices, tax, weather, versions)\n"
+        "- MATH = CODE: never approximate arithmetic mentally when python_execute is available\n"
+        "- High-stakes answers (finance, health, legal) must surface the CONSEQUENCE_CHECK caveat in <answer>\n\n"
         "Response format:\n"
-        "<think>CAPABILITY_CHECK ... reasoning ...</think>\n"
+        "<think>CAPABILITY_CHECK ... tool calls ... </think>\n"
         "<answer>your final answer to the user</answer>"
     )
 
@@ -470,6 +509,8 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
               greedy: bool = False) -> tuple:
     """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s)."""
+    if _USE_GGUF:
+        return _generate_gguf(conversation, max_new_tokens, temperature, greedy)
     prompt = _TOKENIZER.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     n_in = inputs["input_ids"].shape[1]
@@ -491,6 +532,18 @@ def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
     analysis, SPARQL generation). No tool loop, no metrics, greedy decoding so
     the output is deterministic and fast.
     """
+    if _USE_GGUF:
+        if _GGUF_MODEL is None:
+            return ""
+        result = _GGUF_MODEL.create_chat_completion(
+            messages=[
+                {"role": "system", "content": "Respond only with the requested JSON. No prose, no markdown fences."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=max_new_tokens,
+            temperature=0.1,
+        )
+        return result["choices"][0]["message"]["content"]
     if _MODEL is None or _TOKENIZER is None:
         return ""
     conversation = [
@@ -499,6 +552,29 @@ def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
     ]
     result, _, _, _ = _generate(conversation, max_new_tokens, temperature=0.1, greedy=True)
     return result
+
+
+def _generate_gguf(conversation: list, max_new_tokens: int, temperature: float,
+                   greedy: bool = False) -> tuple:
+    """Generation via llama-cpp-python for GGUF models.
+
+    Returns the same (response_text, n_input_tokens, n_output_tokens, elapsed_s)
+    tuple as _generate() so all callers stay compatible.
+    """
+    if _GGUF_MODEL is None:
+        raise RuntimeError("_generate_gguf() called but GGUF model is not loaded.")
+    t0 = time.perf_counter()
+    result = _GGUF_MODEL.create_chat_completion(
+        messages=conversation,
+        max_tokens=max_new_tokens,
+        temperature=1e-6 if greedy else max(temperature, 1e-6),
+        top_p=0.9 if not greedy else 1.0,
+    )
+    elapsed = time.perf_counter() - t0
+    text  = result["choices"][0]["message"]["content"]
+    n_in  = result["usage"]["prompt_tokens"]
+    n_out = result["usage"]["completion_tokens"]
+    return text, n_in, n_out, elapsed
 
 
 def _build_system_prompt(
@@ -567,7 +643,13 @@ class CorrectRequest(BaseModel):
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    return {"status": "ok", "model": _MODEL_LABEL, "loaded": _MODEL is not None}
+    loaded = (_MODEL is not None) or (_USE_GGUF and _GGUF_MODEL is not None)
+    return {
+        "status": "ok",
+        "model":  _MODEL_LABEL,
+        "loaded": loaded,
+        "mode":   "gguf" if _USE_GGUF else "lora",
+    }
 
 
 @app.get("/v1/models")
@@ -609,7 +691,7 @@ def delete_tool(name: str) -> Dict[str, Any]:
 
 @app.post("/v1/chat/completions")
 def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
-    if _MODEL is None:
+    if _MODEL is None and not (_USE_GGUF and _GGUF_MODEL is not None):
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     # ── Extract the most recent user turn for module hooks ─────────────────
@@ -821,6 +903,9 @@ def main() -> None:
                         help="Path to fine-tuned LoRA checkpoint")
     parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
                         help="HuggingFace model ID used when --model_dir does not exist")
+    parser.add_argument("--gguf", default=None,
+                        help="Load a GGUF model instead of LoRA. Accepts a local .gguf file "
+                             "path or a HuggingFace repo ID (downloads q4_k_m variant).")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--max_seq_length", type=int, default=4096)
@@ -828,7 +913,7 @@ def main() -> None:
                         help="Path to a YAML config file (overrides PIPELINE_* env vars)")
     args = parser.parse_args()
 
-    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH
+    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL
 
     # Load YAML config if provided (overrides env-var defaults)
     if args.config:
@@ -844,16 +929,29 @@ def main() -> None:
     print(f"Pipeline flags:\n{cfg.summary()}")
 
     # ── Load model ──────────────────────────────────────────────────────────
-    from unsloth import FastModel  # deferred so the module imports without GPU
-
-    model_path = Path(args.model_dir)
-    source = str(model_path) if model_path.exists() else args.base_model
-    _MODEL_LABEL = source
-    print(f"Loading model: {source}")
-    _MODEL, _TOKENIZER = FastModel.from_pretrained(
-        model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
-    )
-    FastModel.for_inference(_MODEL)
+    if args.gguf:
+        _USE_GGUF = True
+        gguf_path = _resolve_gguf_path(args.gguf)
+        from llama_cpp import Llama
+        print(f"Loading GGUF model: {gguf_path}")
+        _GGUF_MODEL = Llama(
+            model_path=gguf_path,
+            n_ctx=args.max_seq_length,
+            n_gpu_layers=-1,    # offload all layers to GPU; falls back to CPU automatically
+            verbose=False,
+        )
+        _MODEL_LABEL = Path(gguf_path).stem
+        print(f"GGUF model ready: {_MODEL_LABEL}")
+    else:
+        from unsloth import FastModel  # deferred so the module imports without GPU
+        model_path = Path(args.model_dir)
+        source = str(model_path) if model_path.exists() else args.base_model
+        _MODEL_LABEL = source
+        print(f"Loading model: {source}")
+        _MODEL, _TOKENIZER = FastModel.from_pretrained(
+            model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
+        )
+        FastModel.for_inference(_MODEL)
 
     # ── Initialise optional modules ─────────────────────────────────────────
     _GRAPH_CLIENT = GraphClient(cfg)

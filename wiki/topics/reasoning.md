@@ -23,7 +23,7 @@ Standard LLMs generate "sociopath yapper" explanations: post-hoc rationalisation
 - **Process-reward RL** — reward the thought process, not just the final answer (Seed1.5-Thinking, DeepSeek-R1). Trains "how to think" over "what to answer".
 - **Tool-augmented reasoning** — PAL, ReAct: delegate computation to a Python interpreter / search tool. Enables the honest report "I used a calculator".
 - **Interleaved thinking** — thinking and acting interleaved at the token level.
-- **Constitution-driven SFT** — 19 principles covering capability honesty, tool discipline, refusal. See [[entities/constitution]].
+- **Constitution-driven SFT** — 23 principles covering capability honesty, tool discipline, refusal, first-principles reasoning, 5W+H framing, consequence accountability, and interleaved tool chaining. See [[entities/constitution]].
 - **Capability check** — every `<think>` block must include a `CAPABILITY_CHECK` step in the SFT v2 data filter.
 
 ## Open questions

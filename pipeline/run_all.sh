@@ -236,12 +236,11 @@ if should_run 1; then
       --questions '$DATA_DIR/questions_partA.jsonl' \
       --output '$DATA_DIR/train_partA.jsonl' \
       --critic_model claude-opus-4-7"
-    run_or_dry "python '$PIPELINE/sft_math_question_generator.py' \
-      --output '$DATA_DIR/questions_partB.jsonl'"
-    run_or_dry "python '$PIPELINE/sft_rejection_sampler.py' \
-      --questions '$DATA_DIR/questions_partB.jsonl' \
-      --output '$DATA_DIR/train_partB.jsonl' \
-      --use_api_model"
+    run_or_dry "python '$PIPELINE/sft_math_pipeline.py' \
+      --gsm8k_count 500 \
+      --math_count 500 \
+      --math_max_level 3 \
+      --output '$DATA_DIR/train_partB.jsonl'"
     run_or_dry "python '$PIPELINE/sft_dataset_assembler.py' \
       --input_a '$DATA_DIR/train_partA.jsonl' \
       --input_b '$DATA_DIR/train_partB.jsonl' \

@@ -106,6 +106,38 @@ REWARD_WEIGHTS = {
 
 
 # ---------------------------------------------------------------------------
+# ROUGE evaluation helper
+# ---------------------------------------------------------------------------
+
+def compute_rouge(hypotheses: list[str], references: list[str]) -> dict:
+    """Compute ROUGE-1, ROUGE-2, ROUGE-L. Returns precision/recall/fmeasure per metric.
+
+    Args:
+        hypotheses: Model-generated responses.
+        references: Gold reference responses.
+    Returns:
+        Dict mapping metric name → {precision, recall, fmeasure}, all rounded to 4 dp.
+    """
+    from rouge_score import rouge_scorer as _rs
+    scorer = _rs.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+    agg: dict = {"rouge1": [], "rouge2": [], "rougeL": []}
+    for hyp, ref in zip(hypotheses, references):
+        scores = scorer.score(ref, hyp)
+        for key in agg:
+            agg[key].append(scores[key])
+    if not hypotheses:
+        return {k: {"precision": 0.0, "recall": 0.0, "fmeasure": 0.0} for k in agg}
+    return {
+        key: {
+            "precision": round(sum(s.precision for s in vals) / len(vals), 4),
+            "recall":    round(sum(s.recall    for s in vals) / len(vals), 4),
+            "fmeasure":  round(sum(s.fmeasure  for s in vals) / len(vals), 4),
+        }
+        for key, vals in agg.items()
+    }
+
+
+# ---------------------------------------------------------------------------
 # GRPO reward functions (all verifiable — no judge model needed)
 # ---------------------------------------------------------------------------
 
@@ -184,7 +216,8 @@ def _accuracy_reward(response: str, expected_answer: str | None,
     """For verifiable math categories: execute code and check answer.
     For behavioural categories: neutral 0.5 (no ground truth)."""
     math_types = {"arithmetic", "algebra", "geometry", "statistics",
-                  "unit_conversion", "word_problems"}
+                  "unit_conversion", "word_problems",
+                  "trigonometry", "calculus", "advanced_geometry"}
     if not expected_answer or question_type not in math_types:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
@@ -215,7 +248,7 @@ def _tool_integrity_reward(response: str, active_tools: set) -> float:
     """P3: no calls to non-existent or session-unavailable tools."""
     _ALL_TOOLS = frozenset({
         "python_execute", "web_search", "read_url",
-        "get_datetime", "get_exchange_rate",
+        "get_datetime",
     })
     called = set(re.findall(r"<tool>(\w+)\(", response))
     hallucinated = called - _ALL_TOOLS
@@ -243,9 +276,9 @@ def _constitution_reward(response: str, question: str,
 
 def _profile_to_set(label: str) -> set:
     profiles = {
-        "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime", "get_exchange_rate"},
+        "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"},
         "compute_only":       {"python_execute"},
-        "compute_and_search": {"python_execute", "web_search", "read_url", "get_exchange_rate"},
+        "compute_and_search": {"python_execute", "web_search", "read_url"},
         "no_tools":           set(),
     }
     return profiles.get(label, {"python_execute"})
@@ -339,13 +372,17 @@ def build_grpo_dataset(sft_jsonl_path: str) -> "Dataset":
             user_msgs = [m for m in messages if m["role"] == "user"]
             question  = user_msgs[-1]["content"] if user_msgs else ""
 
+            # question_type: part-B math rows store it under "question_type"; part-A rows use "category"
+            q_type = meta.get("question_type") or meta.get("category", "unknown")
+            # expected_answer: populated by sft_rejection_sampler for math rows; empty for behavioural rows
+            expected = meta.get("expected_answer", "")
             rows.append({
                 "prompt":            prompt,
                 "question":          question,
-                "category":          meta.get("category", "unknown"),
-                "question_type":     meta.get("category", "unknown"),
+                "category":          meta.get("category") or meta.get("question_type", "unknown"),
+                "question_type":     q_type,
                 "tool_profile_label": meta.get("tool_profile", "compute_only"),
-                "expected_answer":   "",  # not available in SFT data; reward uses rule checks
+                "expected_answer":   expected,
                 "constitution_score": meta.get("constitution_score", 0.5),
             })
 
@@ -374,13 +411,20 @@ class ModelTrainer:
     """Trains Qwen3-0.6B via SFT then GRPO (DAPO improvements)."""
 
     def __init__(self, data_dir: str, output_dir: str,
-                 output_name: str = "checkpoint_sft"):
-        self.data_dir   = Path(data_dir)
-        self.output_dir = Path(output_dir)
+                 output_name: str = "checkpoint_sft",
+                 hf_username: str = "AjinkyaTaranekar",
+                 no_publish: bool = False):
+        self.data_dir    = Path(data_dir)
+        self.output_dir  = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.output_name = output_name
-        self.model       = None
-        self.tokenizer   = None
+        self.output_name  = output_name
+        self._hf_username = hf_username
+        self._no_publish  = no_publish
+        self.model        = None
+        self.tokenizer    = None
+        # Populated during training; used by publish()
+        self._eval_raw          = []
+        self._grpo_eval_dataset = None
 
     def load_base_model(self):
         self.model, self.tokenizer = FastModel.from_pretrained(
@@ -419,10 +463,17 @@ class ModelTrainer:
 
     def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft"):
         raw = load_dataset("json", data_files=dataset_path)
-        full_dataset = raw["train"].map(
+        # Split the raw dataset BEFORE text-formatting so we keep 'messages' for ROUGE
+        raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+        train_dataset = raw_split["train"].map(
             messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
-        split = full_dataset.train_test_split(test_size=0.05, seed=42)
+        eval_dataset = raw_split["test"].map(
+            messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
+        )
+        # Keep raw eval records (with 'messages' key) for ROUGE computation in publish()
+        self._eval_raw = [dict(ex) for ex in raw_split["test"]]
+        split = {"train": train_dataset, "test": eval_dataset}
         print(f"  Train: {len(split['train'])}  |  Eval: {len(split['test'])}")
 
         training_args = SFTConfig(
@@ -464,6 +515,13 @@ class ModelTrainer:
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
+
+        # Auto-publish unless suppressed
+        if not self._no_publish:
+            self.publish(
+                output_name=output_name,
+                hf_username=self._hf_username,
+            )
         return self
 
     # ── Phase 2: GRPO ───────────────────────────────────────────────────────
@@ -492,8 +550,11 @@ class ModelTrainer:
         FastModel.for_training(self.model)
 
         print(f"  Building GRPO dataset from {dataset_path}...")
-        dataset = build_grpo_dataset(dataset_path)
-        print(f"  GRPO dataset: {len(dataset)} prompts")
+        full_grpo = build_grpo_dataset(dataset_path)
+        grpo_split = full_grpo.train_test_split(test_size=0.10, seed=42)
+        dataset = grpo_split["train"]
+        self._grpo_eval_dataset = grpo_split["test"]
+        print(f"  GRPO Train: {len(dataset)}  |  Held-out: {len(self._grpo_eval_dataset)}")
 
         reward_fn = make_reward_fn(reward_type)
 
@@ -560,6 +621,13 @@ class ModelTrainer:
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")
+
+        # Auto-publish unless suppressed
+        if not self._no_publish:
+            self.publish(
+                output_name=output_name,
+                hf_username=self._hf_username,
+            )
         return self
 
     # ── Convenience: run full SFT pipeline ──────────────────────────────────
@@ -569,6 +637,223 @@ class ModelTrainer:
         self.apply_lora()
         dataset_path = self.data_dir / "train_interleaved.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
+
+    def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
+        """Greedy-decode one prompt using the in-memory model (inference mode assumed).
+
+        Used only during publish() — model must already be switched to inference mode
+        via FastModel.for_inference() before calling this.
+        """
+        import torch
+        prompt_text = self.tokenizer.apply_chat_template(
+            prompt_msgs, tokenize=False, add_generation_prompt=True,
+        )
+        inputs = self.tokenizer(prompt_text, return_tensors="pt").to("cuda")
+        n_in = inputs["input_ids"].shape[1]
+        with torch.no_grad():
+            out = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+            )
+        return self.tokenizer.decode(out[0][n_in:], skip_special_tokens=True)
+
+    def _compute_rouge_report(self, output_name: str, baseline_path: str = "reports/constitution_baseline.json", max_eval_examples: int = 50) -> dict:
+        """Generate hypotheses, compute ROUGE-1/2/L, save reports/rouge_{output_name}.json.
+
+        Two reference sources:
+          1. eval split gold responses (stored in self._eval_raw during train_sft)
+          2. constitution probe baseline (reports/constitution_baseline.json)
+        """
+        reports_dir = self.output_dir.parent / "reports"
+        reports_dir.mkdir(exist_ok=True)
+        out_path = reports_dir / f"rouge_{output_name}.json"
+
+        print(f"  Computing ROUGE for {output_name}...")
+
+        # ── Eval split ROUGE ────────────────────────────────────────────────
+        eval_rouge = None
+        eval_raw = getattr(self, "_eval_raw", [])
+        if eval_raw:
+            sample = eval_raw[:max_eval_examples]
+            hypotheses, references = [], []
+            for ex in sample:
+                msgs = ex.get("messages", [])
+                gold = next(
+                    (m["content"] for m in reversed(msgs) if m["role"] == "assistant"),
+                    None,
+                )
+                if gold is None:
+                    continue
+                prompt_msgs = [m for m in msgs if m["role"] in ("system", "user")]
+                if not prompt_msgs:
+                    continue
+                try:
+                    hyp = self._local_generate(prompt_msgs)
+                except Exception as e:
+                    print(f"    [WARN] Eval example generation failed: {e}")
+                    continue
+                hypotheses.append(hyp)
+                references.append(gold)
+            if hypotheses:
+                eval_rouge = compute_rouge(hypotheses, references)
+                print(f"    Eval split ROUGE-1 F1: {eval_rouge['rouge1']['fmeasure']:.4f}")
+
+        # ── Probe baseline ROUGE ────────────────────────────────────────────
+        probe_rouge = None
+        bp = Path(baseline_path)
+        if bp.exists():
+            with open(bp, encoding="utf-8") as f:
+                baseline = json.load(f)
+            probe_results = baseline.get("probe_results", [])
+            hypotheses, references = [], []
+            for pr in probe_results:
+                q = pr.get("question", "")
+                if isinstance(q, list):
+                    q = q[-1]   # last turn of multi-turn probe
+                ref = pr.get("response", "")
+                if not q or not ref:
+                    continue
+                try:
+                    hyp = self._local_generate([{"role": "user", "content": q}])
+                except Exception as e:
+                    print(f"    [WARN] Probe generation failed: {e}")
+                    continue
+                hypotheses.append(hyp)
+                references.append(ref)
+            if hypotheses:
+                probe_rouge = compute_rouge(hypotheses, references)
+                print(f"    Probe baseline ROUGE-1 F1: {probe_rouge['rouge1']['fmeasure']:.4f}")
+        else:
+            print(f"    [ROUGE] No probe baseline at {baseline_path} — skipping probe ROUGE.")
+
+        # ── GRPO held-out reward ─────────────────────────────────────────────
+        grpo_reward = None
+        grpo_eval = getattr(self, "_grpo_eval_dataset", None)
+        if grpo_eval is not None and len(grpo_eval) > 0:
+            reward_fn = make_reward_fn("d")   # always use full reward for evaluation
+            sample = grpo_eval.select(range(min(50, len(grpo_eval))))
+            all_rewards = []
+            for row in sample:
+                prompt = row["prompt"]
+                try:
+                    hyp = self._local_generate(prompt)
+                except Exception as e:
+                    print(f"    [WARN] GRPO generation failed: {e}")
+                    continue
+                prompt_text = self.tokenizer.apply_chat_template(
+                    prompt, tokenize=False, add_generation_prompt=True,
+                )
+                rewards = reward_fn(
+                    prompts=[prompt_text],
+                    completions=[hyp],
+                    question=[row.get("question", "")],
+                    question_type=[row.get("question_type", "unknown")],
+                    expected_answer=[row.get("expected_answer")],
+                    tool_profile_label=[row.get("tool_profile_label", "compute_only")],
+                )
+                all_rewards.extend(rewards)
+            if all_rewards:
+                grpo_reward = round(sum(all_rewards) / len(all_rewards), 4)
+                print(f"    GRPO held-out reward: {grpo_reward:.4f}")
+
+        result = {
+            "checkpoint":           output_name,
+            "eval_split_rouge":     eval_rouge,
+            "probe_baseline_rouge": probe_rouge,
+            "grpo_held_out_reward": grpo_reward,
+        }
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        print(f"    ROUGE report → {out_path}")
+        return result
+
+    def publish(
+        self,
+        output_name: str,
+        hf_username: str,
+        baseline_path: str = "reports/constitution_baseline.json",
+    ) -> None:
+        """Merge LoRA → safetensors, export GGUF, push both to HuggingFace, compute ROUGE.
+
+        Requires HF_TOKEN environment variable for HuggingFace upload.
+        Skips upload (but still saves locally and computes ROUGE) if HF_TOKEN is unset.
+
+        Repo naming:
+          checkpoint_sft       → {hf_username}/trustworthy-ai-sft
+          checkpoint_grpo_c    → {hf_username}/trustworthy-ai-grpo-c
+          checkpoint_grpo_d    → {hf_username}/trustworthy-ai-grpo-d
+        """
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError(
+                "publish() requires model and tokenizer to be loaded. "
+                "Call train_sft(), train_grpo(), or load_base_model() first."
+            )
+
+        import os
+        from unsloth import FastModel
+
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+            merged_dir_preview = str(self.output_dir / f"{output_name}_merged")
+            gguf_dir_preview   = str(self.output_dir / f"{output_name}_gguf")
+            print(f"  [publish] HF_TOKEN not set — models will be saved locally "
+                  f"({merged_dir_preview}, {gguf_dir_preview}) but HuggingFace upload will be skipped.")
+
+        if not output_name.startswith("checkpoint_"):
+            raise ValueError(
+                f"output_name must start with 'checkpoint_', got '{output_name}'. "
+                "Expected values: checkpoint_sft, checkpoint_grpo_c, checkpoint_grpo_d"
+            )
+        repo_suffix = output_name.replace("checkpoint_", "").replace("_", "-")
+        repo_id     = f"{hf_username}/trustworthy-ai-{repo_suffix}"
+        merged_dir  = str(self.output_dir / f"{output_name}_merged")
+        gguf_dir    = str(self.output_dir / f"{output_name}_gguf")
+
+        print(f"\n=== Publishing {output_name} ===")
+
+        # 1. Switch to inference mode for ROUGE generation
+        FastModel.for_inference(self.model)
+
+        # 2. Compute ROUGE (uses in-memory model — must happen before merge/save)
+        self._compute_rouge_report(
+            output_name=output_name,
+            baseline_path=baseline_path,
+        )
+
+        # 3. Merge LoRA adapters → full 16-bit safetensors
+        print(f"  Merging LoRA → {merged_dir}")
+        self.model.save_pretrained_merged(merged_dir, self.tokenizer, save_method="merged_16bit")
+
+        # 4. Push merged model to HuggingFace
+        if hf_token:
+            print(f"  Pushing merged model → {repo_id}")
+            self.model.push_to_hub_merged(
+                repo_id,
+                self.tokenizer,
+                save_method="merged_16bit",
+                token=hf_token,
+                commit_message=f"train: {output_name} checkpoint",
+            )
+
+        # 5. Export GGUF (Q4_K_M quantisation)
+        print(f"  Exporting GGUF → {gguf_dir}")
+        try:
+            self.model.save_pretrained_gguf(gguf_dir, self.tokenizer, quantization_method="q4_k_m")
+        except Exception as e:
+            print(f"  [WARNING] GGUF export failed: {e}")
+
+        # 6. Push GGUF to same HuggingFace repo
+        if hf_token:
+            print(f"  Pushing GGUF → {repo_id}")
+            self.model.push_to_hub_gguf(
+                repo_id,
+                self.tokenizer,
+                quantization_method="q4_k_m",
+                token=hf_token,
+            )
+
+        print(f"  Done. Local merged: {merged_dir}  |  Local GGUF: {gguf_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +904,10 @@ def main():
     # SFT args
     parser.add_argument("--skip_if_exists", action="store_true",
                         help="Skip if checkpoint already exists")
+    parser.add_argument("--hf_username", default="AjinkyaTaranekar",
+                        help="HuggingFace username for model repo (e.g. AjinkyaTaranekar)")
+    parser.add_argument("--no_publish", action="store_true",
+                        help="Skip HuggingFace upload, GGUF export, and ROUGE computation")
     # GRPO args
     parser.add_argument("--sft_checkpoint", default="./models/checkpoint_sft",
                         help="Path to SFT checkpoint (starting point for GRPO)")
@@ -645,7 +934,13 @@ def main():
         print(f"Checkpoint exists, skipping: {checkpoint_path}")
         return
 
-    trainer = ModelTrainer(args.data_dir, args.output_dir, args.output_name)
+    trainer = ModelTrainer(
+        args.data_dir,
+        args.output_dir,
+        args.output_name,
+        hf_username=args.hf_username,
+        no_publish=args.no_publish,
+    )
 
     if args.mode == "sft":
         print("\n=== Phase 1: SFT ===")

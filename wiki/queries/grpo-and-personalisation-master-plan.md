@@ -29,7 +29,7 @@ The thesis has a complete SFT pipeline and a well-designed RL architecture on pa
 
 | Component | Status | Gap |
 |---|---|---|
-| SFT data pipeline (`sft_*.py`) | Done — 11 categories, 19 principles, TOOL_PROFILES, multi-turn scaffolds | Ready to run |
+| SFT data pipeline (`sft_*.py`) | Done — 13 categories, 23 principles, TOOL_PROFILES, multi-turn scaffolds, interleaved_tool_reasoning | Ready to run |
 | SFT trainer (`2_model_trainer.py`) | Done — Unsloth + LoRA + SFTTrainer, 3 epochs, eval split | Ready to run |
 | Constitutional drift detection (`4_benchmark.py`) | Done — 12 probes, regex scoring, SFT baseline + GRPO diff workflow | Run after SFT |
 | **GRPO trainer** | **Missing** — not one line of GRPO code on `main` branch | Must build |
