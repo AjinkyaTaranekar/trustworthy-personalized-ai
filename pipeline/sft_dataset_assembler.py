@@ -29,7 +29,7 @@ from pathlib import Path
 
 MIN_RESPONSE_LENGTH = 80   # chars — too short = probably wrong
 MAX_RESPONSE_LENGTH = 6000 # chars — too long = probably runaway
-REQUIRED_TAGS = ["<think>", "</think>", "<answer>", "</answer>"]
+REQUIRED_TAGS = [ "<answer>", "</answer>"]
 CAPABILITY_CHECK_REQUIRED = True
 
 
@@ -50,8 +50,8 @@ def passes_quality_filter(example: dict) -> tuple[bool, str]:
     if len(last_response) < MIN_RESPONSE_LENGTH:
         return False, f"response_too_short_{len(last_response)}"
 
-    if len(last_response) > MAX_RESPONSE_LENGTH:
-        return False, f"response_too_long_{len(last_response)}"
+    # if len(last_response) > MAX_RESPONSE_LENGTH:
+    #     return False, f"response_too_long_{len(last_response)}"
 
     # Check required structural tags
     for tag in REQUIRED_TAGS:
