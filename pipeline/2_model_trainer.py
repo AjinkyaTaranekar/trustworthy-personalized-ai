@@ -44,15 +44,15 @@ except ImportError:
 
 MODEL_CONFIG = {
     "base_model":     "unsloth/Qwen3-0.6B",
-    "max_seq_length": 4096,
+    "max_seq_length": 2048,  # 4096 is marginal on 16 GB VRAM (A4000); raise if you have 24 GB+
     "load_in_4bit":   True,
     "lora_r":         16,
     "lora_alpha":     32,
 }
 
 SFT_CONFIG = {
-    "per_device_train_batch_size": 2,
-    "gradient_accumulation_steps": 4,
+    "per_device_train_batch_size": 1,  # 2 risks OOM with packing on 16 GB
+    "gradient_accumulation_steps": 8,  # effective batch = 8 (same as before: 2*4)
     "num_train_epochs":            3,
     "learning_rate":               2e-4,
     "warmup_steps":                100,
@@ -67,8 +67,8 @@ SFT_CONFIG = {
 
 GRPO_CONFIG = {
     # Group size G — number of completions sampled per prompt
-    # 8 is the practical limit for 0.6B + 4-bit + 24 GB VRAM
-    "num_generations":             8,
+    # 4 is the safe limit for 0.6B + 4-bit + 16 GB VRAM (A4000); 8 needs 24 GB+
+    "num_generations":             4,
     # Learning rate — lower than SFT, fine-tuning a fine-tuned model
     "learning_rate":               1e-6,
     # KL coefficient β — anchors the policy to the SFT checkpoint (reference policy)
