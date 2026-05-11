@@ -637,7 +637,7 @@ class ModelTrainer:
     def train(self):
         self.load_base_model()
         self.apply_lora()
-        dataset_path = self.data_dir / "train_interleaved.jsonl"
+        dataset_path = self.data_dir / "train_sft_v2.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
     def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
