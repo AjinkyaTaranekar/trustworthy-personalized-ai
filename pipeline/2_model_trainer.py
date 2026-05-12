@@ -1094,6 +1094,10 @@ def main():
         dataset_path = Path(args.data_dir) / "train_sft_v2.jsonl"
         trainer.train_sft(str(dataset_path), args.output_name,
                           resume_from_checkpoint=args.resume)
+        print(f"\nNext step → run GRPO training from this checkpoint:")
+        print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
+        print(f"  # Or serve the SFT model to save a constitution baseline first:")
+        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
 
     elif args.mode == "grpo":
         print(f"\n=== Phase 2: GRPO (reward_type={args.reward_type}) ===")
@@ -1109,6 +1113,8 @@ def main():
             reward_type=args.reward_type,
             resume_from_checkpoint=args.resume,
         )
+        print(f"\nNext step → serve the GRPO checkpoint:")
+        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
 
 
 if __name__ == "__main__":

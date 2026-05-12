@@ -386,6 +386,11 @@ Examples:
     print("\nThesis: plot 'input_tokens' vs 'correct' per turn for the degradation curve.")
     print("Ablation: run this script against checkpoints A, B, C, D for the four conditions.")
 
+    print(f"\nNext step → repeat for each GRPO checkpoint to build ablation curves:")
+    print(f"  python pipeline/5_context_degradation.py --server_url {args.server_url} --compare_url <base_model_url>")
+    print(f"  # Or analyse the saved report:")
+    print(f"  python -c \"import json; r=json.load(open('{output_path}')); print(r['models'])\"")
+
 
 if __name__ == "__main__":
     main()

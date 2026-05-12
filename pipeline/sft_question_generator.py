@@ -713,6 +713,9 @@ def main():
         workers=args.workers,
     )
 
+    print(f"\nNext step → generate gold responses for Part A:")
+    print(f"  python pipeline/sft_gold_response_generator.py --questions {args.output} --output data/train_partA.jsonl")
+
 
 if __name__ == "__main__":
     main()

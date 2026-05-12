@@ -298,6 +298,9 @@ def main():
     print(f"With tool calls: {stats['train']['has_tool_call_count']} ({stats['train']['has_tool_call_pct']})")
     print(f"Avg response length: {stats['train']['avg_response_length_chars']} chars")
 
+    print(f"\nNext step → train SFT model:")
+    print(f"  python pipeline/2_model_trainer.py --mode sft --data_dir {args.output_dir}")
+
 
 if __name__ == "__main__":
     main()

@@ -617,6 +617,9 @@ def main():
         resume     = args.resume,
     )
 
+    print(f"\nNext step → assemble final SFT dataset:")
+    print(f"  python pipeline/sft_dataset_assembler.py --part_b {args.output}")
+
 
 if __name__ == "__main__":
     main()

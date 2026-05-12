@@ -999,6 +999,10 @@ def main() -> None:
     else:
         print("Ontology Verifier: disabled by config")
 
+    print(f"\nNext step (in a separate terminal once server is up) → benchmark:")
+    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port}")
+    print(f"  # Save SFT constitution baseline (run once before any GRPO):")
+    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port} --probe_only --save_as_baseline")
     print(f"Ready. Listening on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

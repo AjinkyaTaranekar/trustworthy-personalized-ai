@@ -1258,6 +1258,9 @@ def main():
         workers=args.workers,
     )
 
+    print(f"\nNext step → generate math data for Part B:")
+    print(f"  python pipeline/sft_math_pipeline.py --output data/train_partB.jsonl")
+
 
 if __name__ == "__main__":
     main()
