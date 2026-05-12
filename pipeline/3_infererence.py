@@ -890,15 +890,22 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             tc = _parse_native_tool_call(response) if use_native else _parse_tool_call(response)
             if tc:
                 fn_name = tc["function"]
+                kwargs_preview = str(tc["kwargs"])[:120]
+                print(f"[TOOL] Calling: {fn_name}({kwargs_preview})")
                 if fn_name not in _REGISTRY:
                     raw_result = f"Error: tool '{fn_name}' is not registered on this server."
+                    print(f"[TOOL] Error: tool '{fn_name}' is not registered on this server")
                 elif not use_native and fn_name not in active_tools:
                     raw_result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
+                    print(f"[TOOL] Error: tool '{fn_name}' not available in profile '{req.tool_profile}'")
                 else:
                     try:
                         raw_result = _REGISTRY[fn_name].fn(**tc["kwargs"])
+                        result_preview = str(raw_result)[:80].replace("\n", "\\n")
+                        print(f"[TOOL] Result ({len(str(raw_result))} chars): {result_preview}")
                     except Exception as e:
                         raw_result = f"Tool execution error: {e}"
+                        print(f"[TOOL] Execution error in {fn_name}: {e}")
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
                 result = _sanitise_tool_output(fn_name, str(raw_result))
                 conv.append({"role": "tool", "content": result})
