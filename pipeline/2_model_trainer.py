@@ -616,6 +616,18 @@ class ModelTrainer:
             eval_dataset=split["test"],
             args=training_args,
         )
+
+        # Mask loss on system + user tokens — gradients flow only from assistant responses.
+        # Fixes the large train/eval gap caused by computing loss over the ~400-token
+        # system prompt (CAPABILITY_CHECK template + 23 principles) on every example.
+        # Qwen3 chat format: assistant turns start with <|im_start|>assistant\n
+        from unsloth.chat_templates import train_on_responses_only
+        trainer = train_on_responses_only(
+            trainer,
+            instruction_part="<|im_start|>user\n",
+            response_part="<|im_start|>assistant\n",
+        )
+
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         # Save loss history for thesis charts
