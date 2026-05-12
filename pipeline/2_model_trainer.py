@@ -117,8 +117,14 @@ def compute_rouge(hypotheses: list[str], references: list[str]) -> dict:
         references: Gold reference responses.
     Returns:
         Dict mapping metric name → {precision, recall, fmeasure}, all rounded to 4 dp.
+        Returns zeros for all metrics if rouge_score is not installed.
     """
-    from rouge_score import rouge_scorer as _rs
+    _empty = {k: {"precision": 0.0, "recall": 0.0, "fmeasure": 0.0} for k in ("rouge1", "rouge2", "rougeL")}
+    try:
+        from rouge_score import rouge_scorer as _rs
+    except ImportError:
+        print("  [WARN] rouge_score not installed — ROUGE skipped. pip install rouge-score")
+        return _empty
     scorer = _rs.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
     agg: dict = {"rouge1": [], "rouge2": [], "rougeL": []}
     for hyp, ref in zip(hypotheses, references):
@@ -135,6 +141,26 @@ def compute_rouge(hypotheses: list[str], references: list[str]) -> dict:
         }
         for key, vals in agg.items()
     }
+
+
+def _retry_hf_push(fn, *args, max_retries: int = 3, **kwargs) -> None:
+    """Call a HuggingFace push function with exponential backoff retries.
+
+    Protects against transient network failures after long training runs.
+    Raises the last exception if all retries are exhausted.
+    """
+    import time
+    for attempt in range(1, max_retries + 1):
+        try:
+            fn(*args, **kwargs)
+            return
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            wait = 2 ** attempt
+            print(f"  [publish] HF push failed (attempt {attempt}/{max_retries}): {e}")
+            print(f"  [publish] Retrying in {wait}s... (local files are safe)")
+            time.sleep(wait)
 
 
 # ---------------------------------------------------------------------------
@@ -894,16 +920,23 @@ class ModelTrainer:
         print(f"  Merging LoRA → {merged_dir}")
         self.model.save_pretrained_merged(merged_dir, self.tokenizer, save_method="merged_16bit")
 
-        # 4. Push merged model to HuggingFace
+        # 4. Push merged model to HuggingFace (with retry — protects against transient failures)
         if hf_token:
             print(f"  Pushing merged model → {repo_id}")
-            self.model.push_to_hub_merged(
-                repo_id,
-                self.tokenizer,
-                save_method="merged_16bit",
-                token=hf_token,
-                commit_message=f"train: {output_name} checkpoint",
-            )
+            try:
+                _retry_hf_push(
+                    self.model.push_to_hub_merged,
+                    repo_id,
+                    self.tokenizer,
+                    save_method="merged_16bit",
+                    token=hf_token,
+                    commit_message=f"train: {output_name} checkpoint",
+                )
+            except Exception as e:
+                print(f"  [ERROR] HF merged upload failed after retries: {e}")
+                print(f"  [ERROR] Local merged model saved at: {merged_dir}")
+                print(f"  [ERROR] Re-run upload manually: python 2_model_trainer.py --mode sft --no_publish")
+                print(f"  [ERROR] Or push directly: huggingface-cli upload {repo_id} {merged_dir}")
 
         # 5. Export GGUF (Q4_K_M quantisation)
         print(f"  Exporting GGUF → {gguf_dir}")
@@ -912,15 +945,21 @@ class ModelTrainer:
         except Exception as e:
             print(f"  [WARNING] GGUF export failed: {e}")
 
-        # 6. Push GGUF to same HuggingFace repo
+        # 6. Push GGUF to same HuggingFace repo (with retry)
         if hf_token:
             print(f"  Pushing GGUF → {repo_id}")
-            self.model.push_to_hub_gguf(
-                repo_id,
-                self.tokenizer,
-                quantization_method="q4_k_m",
-                token=hf_token,
-            )
+            try:
+                _retry_hf_push(
+                    self.model.push_to_hub_gguf,
+                    repo_id,
+                    self.tokenizer,
+                    quantization_method="q4_k_m",
+                    token=hf_token,
+                )
+            except Exception as e:
+                print(f"  [ERROR] HF GGUF upload failed after retries: {e}")
+                print(f"  [ERROR] Local GGUF saved at: {gguf_dir}")
+                print(f"  [ERROR] Re-run: huggingface-cli upload {repo_id} {gguf_dir}")
 
         print(f"  Done. Local merged: {merged_dir}  |  Local GGUF: {gguf_dir}")
 
@@ -1017,7 +1056,7 @@ def main():
         print("\n=== Phase 1: SFT ===")
         trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_interleaved.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v2.jsonl"
         trainer.train_sft(str(dataset_path), args.output_name,
                           resume_from_checkpoint=args.resume)
 
@@ -1027,7 +1066,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_interleaved.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v2.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),

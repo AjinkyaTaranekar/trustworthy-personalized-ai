@@ -224,13 +224,13 @@ fi
 
 if should_run 1; then
   section "Stage 1 — SFT Data Check"
-  SFT_DATA="$DATA_DIR/train_interleaved.jsonl"
+  SFT_DATA="$DATA_DIR/train_sft_v2.jsonl"
   if [ -f "$SFT_DATA" ]; then
     NLINES=$(wc -l < "$SFT_DATA" | tr -d ' ')
     skip "SFT data present ($NLINES examples) — $SFT_DATA"
   else
     info "SFT data not found. Generating via sft pipeline..."
-    info "This requires ANTHROPIC_API_KEY and takes ~1–2 hours."
+    info "This requires a valid LLM provider key (ANTHROPIC_API_KEY, NVIDIA_NIM_API_KEY, etc.) and takes ~1–2 hours."
     run_or_dry "python '$PIPELINE/sft_question_generator.py' --output '$DATA_DIR/questions_partA.jsonl'"
     run_or_dry "python '$PIPELINE/sft_gold_response_generator.py' \
       --questions '$DATA_DIR/questions_partA.jsonl' \
@@ -242,9 +242,11 @@ if should_run 1; then
       --math_max_level 3 \
       --output '$DATA_DIR/train_partB.jsonl'"
     run_or_dry "python '$PIPELINE/sft_dataset_assembler.py' \
-      --input_a '$DATA_DIR/train_partA.jsonl' \
-      --input_b '$DATA_DIR/train_partB.jsonl' \
-      --output '$DATA_DIR/train_interleaved.jsonl'"
+      --part_a '$DATA_DIR/train_partA.jsonl' \
+      --part_b '$DATA_DIR/train_partB.jsonl' \
+      --output_dir '$DATA_DIR'"
+    [ "$DRY_RUN" -eq 0 ] && [ ! -f "$SFT_DATA" ] && \
+      fail "SFT data not found after assembly — check sft_dataset_assembler.py logs"
     ok "SFT data generated"
   fi
 fi
@@ -260,11 +262,13 @@ if should_run 2; then
     skip "SFT checkpoint exists: $SFT_CKPT"
   else
     info "Training SFT on Qwen3-0.6B (expected: 2–4 hours on A100)..."
+    info "If this crashed mid-run, it will auto-resume from the latest checkpoint."
     run_or_dry "python '$PIPELINE/2_model_trainer.py' \
       --mode sft \
       --data_dir '$DATA_DIR' \
       --output_dir '$MODELS_DIR' \
-      --output_name checkpoint_sft"
+      --output_name checkpoint_sft \
+      --resume"
     [ "$DRY_RUN" -eq 0 ] && [ ! -f "$SFT_CKPT/adapter_config.json" ] && \
       fail "SFT checkpoint not found after training — check logs"
     ok "SFT training complete"
@@ -359,7 +363,8 @@ if should_run 6; then
       --data_dir '$DATA_DIR' \
       --output_dir '$MODELS_DIR' \
       --output_name checkpoint_grpo_c \
-      --reward_type c"
+      --reward_type c \
+      --resume"
     ok "GRPO-C training complete"
   fi
 fi
@@ -404,7 +409,8 @@ if should_run 7; then
       --data_dir '$DATA_DIR' \
       --output_dir '$MODELS_DIR' \
       --output_name checkpoint_grpo_d \
-      --reward_type d"
+      --reward_type d \
+      --resume"
     ok "GRPO-D training complete"
   fi
 fi

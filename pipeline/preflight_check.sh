@@ -146,23 +146,44 @@ ENV_FILE="$REPO_ROOT/.env"
 if [ -f "$ENV_FILE" ]; then
   pass ".env file present"
   # Check key using argv — avoids embedding path in string
-  KEY_OK=$(python -c "
+  PROVIDER_KEY=$(python -c "
 import sys
 from dotenv import load_dotenv
 import os
 load_dotenv(sys.argv[1])
-key = os.environ.get('ANTHROPIC_API_KEY', '')
-print('ok' if key.startswith('sk-ant') else 'missing')
-" "$ENV_FILE" 2>/dev/null || echo "missing")
-  if [ "$KEY_OK" = "ok" ]; then
-    pass "ANTHROPIC_API_KEY set and looks valid"
+anthropic = os.environ.get('ANTHROPIC_API_KEY', '')
+nvidia    = os.environ.get('NVIDIA_NIM_API_KEY', '')
+groq      = os.environ.get('GROQ_API_KEY', '')
+openai    = os.environ.get('OPENAI_API_KEY', '')
+if anthropic.startswith('sk-ant'):   print('anthropic')
+elif nvidia.startswith('nvapi-'):    print('nvidia_nim')
+elif groq.startswith('gsk_'):        print('groq')
+elif openai.startswith('sk-'):       print('openai')
+else:                                print('none')
+" "$ENV_FILE" 2>/dev/null || echo "none")
+  if [ "$PROVIDER_KEY" != "none" ]; then
+    pass "LLM provider key found: $PROVIDER_KEY (needed for sft_gold_response_generator.py)"
   else
-    fail "ANTHROPIC_API_KEY missing or invalid in .env (needed for --critic_model in SFT)"
-    info "Add to .env:  ANTHROPIC_API_KEY=sk-ant-api03-..."
+    warn "No LLM provider key set — needed for sft_gold_response_generator.py --critic_model"
+    info "Set one of: ANTHROPIC_API_KEY, NVIDIA_NIM_API_KEY, GROQ_API_KEY, OPENAI_API_KEY"
+  fi
+
+  HF_TOKEN_OK=$(python -c "
+import sys
+from dotenv import load_dotenv
+import os
+load_dotenv(sys.argv[1])
+print('ok' if os.environ.get('HF_TOKEN','').startswith('hf_') else 'missing')
+" "$ENV_FILE" 2>/dev/null || echo "missing")
+  if [ "$HF_TOKEN_OK" = "ok" ]; then
+    pass "HF_TOKEN set (needed for publish() to upload to HuggingFace)"
+  else
+    warn "HF_TOKEN not set — publish() will save locally but skip HuggingFace upload"
+    info "Add to .env:  HF_TOKEN=hf_..."
   fi
 else
-  fail ".env not found — create at repo root with ANTHROPIC_API_KEY=sk-ant-..."
-  fail "ANTHROPIC_API_KEY cannot be checked (no .env)"
+  warn ".env not found — create at repo root from pipeline/.env.example"
+  warn "LLM provider key and HF_TOKEN cannot be checked (no .env)"
 fi
 
 # =============================================================================
@@ -189,11 +210,9 @@ check_file "$PIPELINE/3_infererence.py"              "3_infererence.py — infer
 check_file "$PIPELINE/4_benchmark.py"                "4_benchmark.py — benchmark + adversarial suite"
 check_file "$PIPELINE/sft_gold_response_generator.py" "sft_gold_response_generator.py"
 check_file "$PIPELINE/sft_question_generator.py"     "sft_question_generator.py"
-check_file "$PIPELINE/sft_math_question_generator.py" "sft_math_question_generator.py"
-check_file "$PIPELINE/sft_rejection_sampler.py"      "sft_rejection_sampler.py"
+check_file "$PIPELINE/sft_math_pipeline.py"          "sft_math_pipeline.py — math question + rejection sampling"
 check_file "$PIPELINE/sft_dataset_assembler.py"      "sft_dataset_assembler.py"
 check_file "$PIPELINE/2_model_trainer.py"            "2_model_trainer.py — SFT trainer"
-check_file "$PIPELINE/1_dataset_generator.py"        "1_dataset_generator.py — pipeline orchestrator"
 check_file "$PIPELINE/5_context_degradation.py"      "5_context_degradation.py — context degradation eval"
 
 # =============================================================================
@@ -211,12 +230,12 @@ for dir_entry in "data:training data" "models:model checkpoints" "reports:benchm
   fi
 done
 
-SFT_DATA="$PIPELINE/data/train_interleaved.jsonl"
+SFT_DATA="$PIPELINE/data/train_sft_v2.jsonl"
 if [ -f "$SFT_DATA" ]; then
   NLINES=$(wc -l < "$SFT_DATA" | tr -d ' ')
-  pass "SFT data present: train_interleaved.jsonl ($NLINES examples)"
+  pass "SFT data present: train_sft_v2.jsonl ($NLINES examples)"
 else
-  warn "SFT data not found — run: python pipeline/1_dataset_generator.py"
+  warn "SFT data not found — run: bash pipeline/run_all.sh --stages 1"
 fi
 
 # =============================================================================
@@ -251,8 +270,7 @@ check_sym() {
 
 check_sym "$PIPELINE/3_infererence.py"               "_validate_code"         "1a code sandbox"
 check_sym "$PIPELINE/3_infererence.py"               "_sanitise_tool_output"  "1b injection sanitiser"
-check_sym "$PIPELINE/sft_rejection_sampler.py"       "_validate_code"         "1c sampler sandbox"
-check_sym "$PIPELINE/sft_math_question_generator.py" "_validate_code"         "1d math-gen sandbox"
+check_sym "$PIPELINE/sft_math_pipeline.py"           "_validate_code"         "1c+1d math pipeline sandbox"
 check_sym "$PIPELINE/sft_gold_response_generator.py" "rule_check_response"    "2a rule-based verifier"
 check_sym "$PIPELINE/sft_gold_response_generator.py" "_merge_violations"      "2b violation merge"
 check_sym "$PIPELINE/4_benchmark.py"                 "ADVERSARIAL_PROBES"     "3a adversarial suite"

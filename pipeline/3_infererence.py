@@ -39,20 +39,42 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
-# Pipeline modules — imported unconditionally; each degrades gracefully when
-# its flag is off or its optional dependencies are not installed.
+# Pipeline modules — optional imports guarded so the server starts even when
+# optional dependencies (falkordb, etc.) are not installed.
 # ---------------------------------------------------------------------------
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import cfg, PipelineConfig                                    # noqa: E402
-from user_modelling import (                                               # noqa: E402
-    GraphClient, write_pipeline, retrieve_for_query,
-    inspect_memory, contest_belief, correct_belief,
-)
-from empathy import analyse_appraisal, APPRAISAL_SYSTEM_PREFIX            # noqa: E402
-from ontology_verifier import (                                            # noqa: E402
-    OntologyGraph, score_response as _onto_score_response,
-)
+
+try:
+    from user_modelling import (                                           # noqa: E402
+        GraphClient, write_pipeline, retrieve_for_query,
+        inspect_memory, contest_belief, correct_belief,
+    )
+    _user_modelling_available = True
+except ImportError as _e:
+    _user_modelling_available = False
+    GraphClient = write_pipeline = retrieve_for_query = None
+    inspect_memory = contest_belief = correct_belief = None
+    print(f"[INFO] user_modelling not importable ({_e}) — ENABLE_USER_MODELLING will be disabled")
+
+try:
+    from empathy import analyse_appraisal, APPRAISAL_SYSTEM_PREFIX        # noqa: E402
+    _empathy_available = True
+except ImportError as _e:
+    _empathy_available = False
+    analyse_appraisal = APPRAISAL_SYSTEM_PREFIX = None
+    print(f"[INFO] empathy module not importable ({_e}) — ENABLE_EMPATHY will be disabled")
+
+try:
+    from ontology_verifier import (                                        # noqa: E402
+        OntologyGraph, score_response as _onto_score_response,
+    )
+    _ontology_available = True
+except ImportError as _e:
+    _ontology_available = False
+    OntologyGraph = _onto_score_response = None
+    print(f"[INFO] ontology_verifier not importable ({_e}) — ENABLE_ONTOLOGY_VERIF will be disabled")
 
 import torch
 import uvicorn
