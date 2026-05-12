@@ -65,6 +65,12 @@ class PipelineConfig:
     # Requires: ONTOLOGY_PATH points to a valid OWL file.
     ENABLE_ONTOLOGY_VERIF: bool = False
 
+    # ENABLE_HARNESS: Inference-time constitutional validation and correction loop.
+    # After each model response, checks P1/P3/P4/P18 compliance. On violation,
+    # injects a corrective prompt and retries (up to 2 times). Tracks per-principle
+    # failure rates and adaptively reinforces weak principles in the system prompt.
+    ENABLE_HARNESS: bool = False
+
     # ── FalkorDB connection ────────────────────────────────────────────────────
     FALKORDB_HOST: str = "localhost"
     FALKORDB_PORT: int = 6379
@@ -152,10 +158,10 @@ class PipelineConfig:
     def from_env(cls) -> "PipelineConfig":
         """Build config from defaults, then override with PIPELINE_<NAME> env vars."""
         instance = cls()
-        _bool  = {f.name for f in fields(cls) if f.type in ("bool",  "bool")}
-        _str   = {f.name for f in fields(cls) if f.type == "str"}
-        _int   = {f.name for f in fields(cls) if f.type == "int"}
-        _float = {f.name for f in fields(cls) if f.type == "float"}
+        _bool  = {f.name for f in fields(cls) if f.type in ("bool", "bool") or f.type is bool}
+        _str   = {f.name for f in fields(cls) if f.type == "str" or f.type is str}
+        _int   = {f.name for f in fields(cls) if f.type == "int" or f.type is int}
+        _float = {f.name for f in fields(cls) if f.type == "float" or f.type is float}
 
         for name in _bool:
             val = os.environ.get(f"PIPELINE_{name}")
