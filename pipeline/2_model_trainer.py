@@ -55,10 +55,11 @@ SFT_CONFIG = {
     "gradient_accumulation_steps": 8,  # effective batch = 8 (same as before: 2*4)
     "num_train_epochs":            3,
     "learning_rate":               2e-4,
-    "warmup_steps":                100,
+    "warmup_steps":                50,   # ~half an epoch; was 100 (nearly a full epoch on this dataset)
     "logging_steps":               10,
-    "save_steps":                  50,
-    "eval_steps":                  50,
+    "save_steps":                  25,   # ~24% of an epoch; first checkpoint at ~12 min
+    "eval_steps":                  25,
+    "save_total_limit":            4,    # keep last 4 + best; prevents disk bloat
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
@@ -595,6 +596,7 @@ class ModelTrainer:
             logging_steps=SFT_CONFIG["logging_steps"],
             save_steps=SFT_CONFIG["save_steps"],
             eval_steps=SFT_CONFIG["eval_steps"],
+            save_total_limit=SFT_CONFIG["save_total_limit"],
             eval_strategy="steps",
             bf16=SFT_CONFIG["bf16"],
             optim=SFT_CONFIG["optim"],
