@@ -76,6 +76,14 @@ except ImportError as _e:
     OntologyGraph = _onto_score_response = None
     print(f"[INFO] ontology_verifier not importable ({_e}) — ENABLE_ONTOLOGY_VERIF will be disabled")
 
+try:
+    from constitutional_harness import ConstitutionalHarness
+    _harness_available = True
+except ImportError as _e:
+    _harness_available = False
+    ConstitutionalHarness = None
+    print(f"[INFO] constitutional_harness not importable ({_e}) — ENABLE_HARNESS disabled")
+
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -411,6 +419,7 @@ _DEPENDENCY_MONITOR = DependencyMonitor()
 
 _GRAPH_CLIENT: Optional[Any] = None   # GraphClient — User Modelling
 _ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
+_HARNESS: Optional[Any] = None   # ConstitutionalHarness — set at startup when ENABLE_HARNESS=True
 
 # ---------------------------------------------------------------------------
 # Model state — populated on startup, never mutated at request time
@@ -723,6 +732,11 @@ def _build_system_prompt(
     parts.append(base)
     if cfg.ENABLE_PERSONALISATION and user_ctx is not None and not user_ctx.is_empty():
         parts.append("\n" + user_ctx.to_prompt_block())
+    # Harness meta-adaptation: reinforce principles the model is currently failing
+    if cfg.ENABLE_HARNESS and _HARNESS is not None:
+        suffix = _HARNESS.metrics.get_adaptation_suffix()
+        if suffix:
+            parts.append(suffix)
     return "".join(parts)
 
 
@@ -750,6 +764,10 @@ class CompletionRequest(BaseModel):
     tool_mode: str = "xml"  # "xml"  — custom <tool> tags (trained behaviour, default)
                              # "native" — Qwen3 JSON <tool_call> via apply_chat_template tools=
                              #            allows new tools without retraining
+    harness_enabled: Optional[bool] = None
+    # Override cfg.ENABLE_HARNESS for this single request.
+    # None → use server default. True → always run harness. False → skip harness.
+    # Used by 4_benchmark.py --with_harness to toggle per probe without server restart.
 
 
 class ToolRegistration(BaseModel):
@@ -921,6 +939,27 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         if dep_disclosure:
             final = final + DependencyMonitor._DISCLOSURE
 
+        # ── Constitutional Harness: validate + steer ──────────────────────
+        harness_violations: List[str] = []
+        harness_retries: int = 0
+        effective_harness = (
+            req.harness_enabled if req.harness_enabled is not None else cfg.ENABLE_HARNESS
+        )
+        if effective_harness and _HARNESS is not None:
+            adaptation_needed = bool(_HARNESS.metrics.get_adaptation_suffix())
+            final, harness_violations, harness_retries = _HARNESS.check_and_steer(
+                response=final,
+                conv=conv,
+                question=user_turn,
+                tool_profile_label=req.tool_profile,
+                generate_fn=lambda c: _generate(
+                    c, req.max_new_tokens, req.temperature, req.greedy
+                )[0],
+                max_retries=2,
+            )
+            if adaptation_needed != bool(_HARNESS.metrics.get_adaptation_suffix()):
+                _HARNESS.log_adaptation()
+
         # ── Ontology verification: post-hoc claim scoring ─────────────────
         onto_score = None
         if cfg.ENABLE_ONTOLOGY_VERIF and _ONTO_GRAPH is not None:
@@ -955,6 +994,8 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             "user_modelling":  memory_meta,
             "appraisal":       appraisal_ctx.to_dict() if (appraisal_ctx and appraisal_ctx.present) else None,
             "ontology_score":  onto_score.to_dict() if onto_score else None,
+            "harness_violations": harness_violations,
+            "harness_retries":    harness_retries,
         }
 
     except Exception as e:
@@ -970,6 +1011,25 @@ def get_metrics() -> Dict[str, Any]:
 @app.post("/metrics/reset")
 def reset_metrics() -> Dict[str, Any]:
     METRICS.reset()
+    return {"status": "reset"}
+
+
+@app.get("/harness/metrics")
+def harness_metrics() -> Dict[str, Any]:
+    """Per-principle failure rates, retry stats, and current adaptation state."""
+    if _HARNESS is None:
+        raise HTTPException(status_code=404, detail="Harness not enabled (set PIPELINE_ENABLE_HARNESS=true)")
+    return _HARNESS.metrics.snapshot()
+
+
+@app.post("/harness/reset")
+def harness_reset() -> Dict[str, Any]:
+    """Reset rolling harness metrics counters."""
+    if _HARNESS is None:
+        raise HTTPException(status_code=404, detail="Harness not enabled")
+    from constitutional_harness import HarnessMetrics
+    _HARNESS.metrics = HarnessMetrics()
+    print("[HARNESS] Metrics reset")
     return {"status": "reset"}
 
 
@@ -1063,7 +1123,7 @@ def main() -> None:
                         help="Path to a YAML config file (overrides PIPELINE_* env vars)")
     args = parser.parse_args()
 
-    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL
+    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL, _HARNESS
 
     # Load YAML config if provided (overrides env-var defaults)
     if args.config:
@@ -1125,6 +1185,18 @@ def main() -> None:
         print(f"Ontology Verifier: {status}")
     else:
         print("Ontology Verifier: disabled by config")
+
+    # ── Constitutional Harness ────────────────────────────────────────────
+    global _HARNESS
+    if cfg.ENABLE_HARNESS:
+        if _harness_available:
+            _HARNESS = ConstitutionalHarness(metrics_path="reports/harness_metrics.json")
+            print(f"[HARNESS] Constitutional harness enabled (max_retries=2, window=50)")
+            _HARNESS.log_adaptation()
+        else:
+            print("[HARNESS] ENABLE_HARNESS=true but constitutional_harness module not found — skipping")
+    else:
+        print("[HARNESS] Disabled (set PIPELINE_ENABLE_HARNESS=true to enable)")
 
     print(f"\nNext step (in a separate terminal once server is up) → benchmark:")
     print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port}")
