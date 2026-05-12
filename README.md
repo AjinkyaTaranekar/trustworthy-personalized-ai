@@ -61,6 +61,7 @@ All optional modules are off by default. Enable them via environment variables (
 | `PIPELINE_ENABLE_EMPATHY` | `false` | Appraisal-conditioned generation; requires `data/appraisal_labels.jsonl` |
 | `PIPELINE_ENABLE_PERSONALISATION` | `false` | Per-query retrieval gating; requires `ENABLE_USER_MODELLING` |
 | `PIPELINE_ENABLE_ONTOLOGY_VERIF` | `false` | Post-hoc SPARQL claim scoring against a loaded OWL ontology |
+| `PIPELINE_ENABLE_HARNESS` | `false` | Inference-time constitutional validation loop — checks P1/P3/P4/P18 on every response, retries with corrective prompt on failure, adapts system prompt to reinforce weak principles |
 
 ```bash
 # Enable flags inline for a single run
@@ -389,6 +390,20 @@ Drift mitigation (in order of escalation):
 2. Increase the KL coefficient `kl_coef` in `GRPO_CONFIG` in `2_model_trainer.py`
 3. Add SFT replay buffer — mix 20% SFT examples into each GRPO batch
 
+### Harness comparison benchmark
+
+Run the constitutional probe suite with and without the inference-time harness to quantify its contribution:
+
+```bash
+# Start server with harness enabled
+PIPELINE_ENABLE_HARNESS=true \
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft
+
+# In a second terminal — runs probes twice and prints per-principle delta
+python pipeline/4_benchmark.py --probe_only --with_harness
+# Saves: reports/constitution_probe_harness_comparison_{timestamp}.json
+```
+
 ---
 
 ## Evaluation: adversarial probes
@@ -470,6 +485,8 @@ DELETE /v1/tools/{name}                 remove a tool
 POST /v1/chat/completions               generate (tool loop server-side)
 GET  /metrics                           latency p50/p95/p99, throughput, tool counts
 POST /metrics/reset                     reset counters
+GET  /harness/metrics                   per-principle failure rates, retry stats, adaptation state
+POST /harness/reset                     reset rolling harness counters
 
 # Dependency monitoring (Blocker 4 — OWASP LLM09)
 GET  /dependency/status/{session_id}    interaction frequency + disclosure state
