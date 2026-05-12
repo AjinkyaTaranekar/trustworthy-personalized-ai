@@ -23,6 +23,7 @@ If any `[FAIL]` lines appear, fix them before continuing. `[WARN]` lines are saf
 ```bash
 pip install datasets trl fastapi uvicorn pydantic requests litellm python-dotenv
 pip install unsloth accelerate bitsandbytes  # GPU training only
+pip install rouge-score huggingface_hub      # ROUGE evaluation + HuggingFace publish
 pip install rdflib                           # Ontology Verifier (local OWL)
 pip install SPARQLWrapper                    # Ontology Verifier (remote endpoint)
 pip install falkordb                         # User Modelling graph backend
@@ -131,7 +132,7 @@ export PIPELINE_ONTOLOGY_SPARQL_ENDPOINT=https://dbpedia.org/sparql
 │  │  Reasoning Module  │    │  User Modelling Module           │    │
 │  │  Qwen3-0.6B        │    │  5W+H graph — FalkorDB           │    │
 │  │  SFT + GRPO/DAPO   │    │  Mem0g write pipeline            │    │
-│  │  Constitution: 19P │    │  Scrutability layer              │    │
+│  │  Constitution: 23P │    │  Scrutability layer              │    │
 │  │  ENABLE_GRPO       │    │  ENABLE_USER_MODELLING           │    │
 │  └────────────────────┘    └──────────────────────────────────┘    │
 │                                                                      │
@@ -158,16 +159,14 @@ pipeline/
 ├── config.py                       Feature flags singleton — single source of truth
 │
 │   ─── Data generation ───
-├── sft_question_generator.py       SFT step 1a — 12 categories incl. appraisal_empathy
-├── sft_gold_response_generator.py  SFT step 1b — teacher generates + critiques (19 principles)
-├── sft_math_question_generator.py  SFT step 2a — math/code questions (7 types)
-├── sft_rejection_sampler.py        SFT step 2b — keep only correct code executions
-├── sft_dataset_assembler.py        SFT step 3  — merge, filter, train/eval split
-├── 1_dataset_generator.py          V1 template-based generator (legacy prototype)
+├── sft_question_generator.py       SFT step 1a — 13 categories incl. appraisal_empathy + interleaved_tool_reasoning
+├── sft_gold_response_generator.py  SFT step 1b — teacher generates + critiques (23 principles)
+├── sft_math_pipeline.py            SFT step 2  — math/code questions (7 types) + rejection sampling
+├── sft_dataset_assembler.py        SFT step 3  — merge, filter, v2→v3 multi-turn transform, native JSON tools, robustness variants, train/eval split
 ├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
-├── 2_model_trainer.py              Phase 1: SFT  |  Phase 2: GRPO (DAPO improvements)
+├── 2_model_trainer.py              Phase 1: SFT  |  Phase 2: GRPO (DAPO improvements)  |  Publish: upload checkpoint to HuggingFace
 │
 │   ─── Inference + evaluation ───
 ├── 3_infererence.py                FastAPI server — model + all four module hooks
@@ -226,24 +225,21 @@ python sft_gold_response_generator.py \
 # python sft_gold_response_generator.py --questions data/questions_partA.jsonl \
 #   --model claude-sonnet-4-6 --critic_model claude-opus-4-7 --output data/train_partA.jsonl
 
-python sft_math_question_generator.py --output data/questions_partB.jsonl
-
-python sft_rejection_sampler.py \
-  --questions data/questions_partB.jsonl \
-  --output    data/train_partB.jsonl \
-  --use_api_model
+python sft_math_pipeline.py --output data/train_partB.jsonl
 
 python sft_dataset_assembler.py \
-  --input_a data/train_partA.jsonl \
-  --input_b data/train_partB.jsonl \
-  --output  data/train_interleaved.jsonl
+  --part_a    data/train_partA.jsonl \
+  --part_b    data/train_partB.jsonl \
+  --output_dir data
+# Produces data/train_sft_v3_robust.jsonl (1,983 examples — multi-turn, native JSON tools, robustness variants)
 
-# Step 2: Train (requires GPU — ~2–4h on A100)
+# Step 2: Train (requires GPU — ~50 min on A4000 / 2–4h on A100)
 python 2_model_trainer.py \
   --mode sft \
   --data_dir data \
   --output_dir models \
-  --output_name checkpoint_sft
+  --output_name checkpoint_sft \
+  --resume
 
 # Step 3: Save SFT constitutional baseline (run BEFORE any GRPO)
 python 3_infererence.py --model_dir models/checkpoint_sft --port 8000 &
@@ -269,14 +265,16 @@ python 2_model_trainer.py \
   --mode grpo \
   --sft_checkpoint models/checkpoint_sft \
   --reward_type c \
-  --output_name checkpoint_grpo_c
+  --output_name checkpoint_grpo_c \
+  --resume
 
 # Condition D — full composite reward (format + accuracy + tool integrity + constitution)
 python 2_model_trainer.py \
   --mode grpo \
   --sft_checkpoint models/checkpoint_sft \
   --reward_type d \
-  --output_name checkpoint_grpo_d
+  --output_name checkpoint_grpo_d \
+  --resume
 ```
 
 **Composite reward (Condition D):**
@@ -286,6 +284,24 @@ reward = 0.30 × format_score       (CAPABILITY_CHECK + think + answer tags pres
        + 0.15 × tool_integrity     (no hallucinated or unavailable tools)
        + 0.15 × constitution_score (broader rule check: P1 + P3 + P4 + P14 + P18)
 ```
+
+Each component is logged separately by TRL's multi-function reward system — visible as `rewards/format_reward_mean`, `rewards/accuracy_reward_mean`, etc. in `grpo_loss_history.json`.
+
+### Publishing a checkpoint to HuggingFace
+
+After training, the model is automatically pushed to HuggingFace unless `--no_publish` is set. If the push failed (network error, missing token), re-upload without retraining:
+
+```bash
+# Set HF_TOKEN in pipeline/.env first: HF_TOKEN=hf_...
+
+# Re-upload SFT checkpoint
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft --hf_username AjinkyaTaranekar
+
+# Re-upload a GRPO checkpoint
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d --hf_username AjinkyaTaranekar
+```
+
+Publish merges LoRA adapters → 16-bit safetensors, exports GGUF (Q4_K_M), computes ROUGE vs baseline, and pushes both formats with retry (3 attempts, exponential backoff). If `HF_TOKEN` is unset, it saves locally and skips the upload.
 
 ---
 
@@ -313,7 +329,7 @@ bash pipeline/run_all.sh --stages 3,4,5
 |---|---|---|---|
 | 0 | Infrastructure setup (FalkorDB) | `ENABLE_USER_MODELLING=true` | FalkorDB running on port 6379 |
 | 0.5 | Appraisal labelling | `ENABLE_EMPATHY=true` | `data/appraisal_labels.jsonl` |
-| 1 | SFT data check | always | `data/train_interleaved.jsonl` |
+| 1 | SFT data check | always | `data/train_sft_v2.jsonl` (existence check; `train_sft_v3_robust.jsonl` consumed at training time) |
 | 2 | SFT training | always | `models/checkpoint_sft/` |
 | 3 | SFT constitutional baseline | always | `reports/constitution_baseline.json` |
 | 4 | Experiment 0 (reasoning comparison) | always | `reports/experiment0_*.json` |
@@ -583,7 +599,7 @@ Four pre-GRPO security blockers are implemented and verified by `preflight_check
 |---|---|---|
 | 1a — code sandbox | `3_infererence.py` | AST-validates LLM-generated code before `subprocess.run`; blocks `os`, `sys`, `socket`, dangerous builtins |
 | 1b — injection sanitiser | `3_infererence.py` | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context |
-| 1c/1d — sampler sandbox | `sft_rejection_sampler.py`, `sft_math_question_generator.py` | Same AST validation for verification code |
+| 1c/1d — sampler sandbox | `sft_math_pipeline.py` | Same AST validation for verification code (math question generation + rejection sampling merged into one script) |
 | 2a — rule verifier | `sft_gold_response_generator.py` | `rule_check_response()`: deterministic P1/P3/P4/P14/P18 checks before LLM critique |
 | 2b — violation merge | `sft_gold_response_generator.py` | `_merge_violations()`: rule violations survive even if LLM critic says NO_VIOLATIONS |
 | 3a/3b — adversarial suite | `4_benchmark.py` | 14 probes across jailbreak/injection/regression; run before GRPO |
@@ -603,7 +619,7 @@ python server.py
 
 ## Constitution
 
-The 19 principles in `pipeline/constitution.md` define the model's target behaviour: capability honesty, correct tool use, honest refusal, uncertainty quantification, sycophancy resistance. Read it first to understand what the model is being trained to do and why.
+The 23 principles in `pipeline/constitution.md` define the model's target behaviour: capability honesty, correct tool use, honest refusal, uncertainty quantification, sycophancy resistance, first-principles reasoning, 5W+H framing, consequence checking, and interleaved tool chaining. Read it first to understand what the model is being trained to do and why.
 
 ---
 

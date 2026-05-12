@@ -6,6 +6,12 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-12] refactor | Documentation sync — last 15 commits reflected in README and wiki
+
+- **README.md**: updated `sft_dataset_assembler.py` CLI args (`--part_a`/`--part_b`/`--output_dir`); replaced `sft_math_question_generator.py` + `sft_rejection_sampler.py` with `sft_math_pipeline.py` in repo layout; added `--resume` to all training commands; added publish mode section; updated constitution count (19→23); updated requirements (`rouge-score`, `huggingface_hub`); updated Stage 1 data filename (`train_sft_v2.jsonl`); updated blocker 1c/1d reference; added GRPO per-component reward logging note.
+- **wiki/sources/code/training-and-benchmark.md**: added loss masking section; documented `make_reward_fns` per-component logging; added `--mode publish` section; updated GRPO hyperparameters (G=4, A4000 note); updated SFT hyperparameters (batch=1, save_steps=25); replaced stale script references; updated sources frontmatter.
+- **Commits covered:** `40f152d` (publish mode) → `013fec0` (A4000 config) — 15 commits total including loss masking, dataset v3, assembler v3, GRPO reward refactor, inference optional imports, preflight multi-provider, run_all.sh auto-resume.
+
 ## [2026-05-12] refactor | SFT dataset v3 — tool call format fix, system prompt sync, native JSON tool calling, robustness variants
 
 ### Bug 1: training/inference tool call format mismatch (critical)

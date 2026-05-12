@@ -5,12 +5,13 @@ kind: code
 tags: [code, training, lora, grpo, dapo, benchmark, context-degradation, constitution, drift-detection, small-model, personalisation, empathy, ontology, tool-use]
 sources:
   - pipeline/config.py
-  - pipeline/1_dataset_generator.py
   - pipeline/2_model_trainer.py
   - pipeline/3_infererence.py
   - pipeline/4_benchmark.py
   - pipeline/5_context_degradation.py
   - pipeline/experiment0_reasoning_comparison.py
+  - pipeline/sft_math_pipeline.py
+  - pipeline/sft_dataset_assembler.py
   - pipeline/user_modelling.py
   - pipeline/empathy.py
   - pipeline/appraisal_labeller.py
@@ -35,7 +36,7 @@ status: current
 | `preflight_check.sh` | Pre-flight: Python version, packages, API key, file integrity, security blockers, feature-flag state, 7-stage training status. Run first on any new machine. |
 | `run_all.sh` | Master orchestration: Stage 0 (FalkorDB), Stage 0.5 (appraisal labelling), Stages 1–8 (SFT + GRPO + evaluation). Fully resumable. Forwards `PIPELINE_*` env vars to every subprocess. |
 | `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
-| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. **Phase 2: GRPO** — DAPO RL training. CLI: `--mode {sft,grpo}`, `--reward_type {c,d}`. `messages_to_text()` passes `tools=` to `apply_chat_template` for native-format examples. |
+| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. Loss masked on system+user tokens via `train_on_responses_only` (fixes large train/eval gap from ~400-token system prompt). **Phase 2: GRPO** — DAPO RL training with per-component reward functions (`make_reward_fns`) so TRL logs each component separately. **Publish** — merges LoRA → safetensors, exports GGUF, pushes to HuggingFace with retry. CLI: `--mode {sft,grpo,publish}`, `--reward_type {c,d}`, `--resume`. |
 | `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`. |
 | `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. |
 | `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
@@ -44,9 +45,7 @@ status: current
 | `empathy.py` | Runtime appraisal helpers: `analyse_appraisal()`, `format_appraisal_block()`, `parse_appraisal_block()`, `APPRAISAL_SYSTEM_PREFIX`. |
 | `appraisal_labeller.py` | **Offline one-time script.** Runs AppraisePLM over EmpatheticDialogues → `data/appraisal_labels.jsonl`. AppraisePLM used as labeller only; not a runtime dependency. |
 | `ontology_verifier.py` | Post-hoc claim scorer (Experiment 6 Approach B). Dual backend: local OWL via rdflib or remote SPARQL endpoint. Loaded by `3_infererence.py` when `ENABLE_ONTOLOGY_VERIF=true`. |
-| `transform_sft_tool_format.py` | **Post-assembly transform.** Converts `train_sft_v2.jsonl` → `train_sft_v3.jsonl`: splits single-turn `<tool>+<answer>` into multi-turn `[assistant→tool→assistant]`. Re-executes `python_execute` for real stdout. Drops malformed examples (no final answer, >5 tool calls). |
-| `sft_add_robustness_variants.py` | Adds minimal/brief/no-principles system prompt variants (~30% of examples) to train intrinsic constitution behaviour independent of prompt verbosity. |
-| `sft_add_native_tool_examples.py` | Converts 20% of XML tool examples to Qwen3 native JSON format (`tool_calls` / `tool_call_id` fields). Stores schemas in `metadata.native_tools` for `messages_to_text()`. Enables zero-shot new tool calling without retraining. |
+| `sft_math_pipeline.py` | **Math question generation + rejection sampling** (merged from `sft_math_question_generator.py` + `sft_rejection_sampler.py`). 7 question types, EleutherAI/hendrycks_math dataset, Kimi K2.6 default model. Same AST sandbox as inference server (Blocker 1c/1d). |
 
 ## Architecture: server + client
 
@@ -65,6 +64,8 @@ python pipeline/5_context_degradation.py --server_url http://localhost:8000
 ## Phase 1: SFT
 
 `2_model_trainer.py --mode sft` trains on `data/train_sft_v3_robust.jsonl` (1,983 examples — see [[sources/code/sft-v2-pipeline]] for dataset composition). LoRA r=16, α=32, 3 epochs, lr=2e-4, effective batch=8 (batch=1, grad_accum=8), bf16, adamw_8bit. Outputs `models/checkpoint_sft/adapter_config.json`. The trainer does its own 90/10 split from the JSONL at runtime — `eval_sft_v2.jsonl` is not consumed by the trainer.
+
+**Loss masking:** `train_on_responses_only` is applied after SFTTrainer construction so gradients flow only from assistant turns. This was critical: computing loss over the ~400-token system prompt (23 principles + CAPABILITY_CHECK template) on every example caused a large train/eval gap. Hardware config tuned for NVIDIA RTX A4000 (16 GB VRAM): `max_seq_length=2048`, `per_device_train_batch_size=1`, `gradient_accumulation_steps=8`, `save_steps=25`, `save_total_limit=4`.
 
 The system prompt used at training time (`_system_prompt_for_profile()`) is now byte-identical to the inference server system prompt. The `_CONSTITUTION` constant in `3_infererence.py` is a verbatim copy of the 23-principle block in `sft_gold_response_generator.py:TRAINING_SYSTEM_PROMPT_TEMPLATE` — both must be updated together when principles change.
 
@@ -89,7 +90,18 @@ Two ablation conditions:
 - **Condition C** (`--reward_type c`): format + accuracy only. Proves whether RL correctness signal matters.
 - **Condition D** (`--reward_type d`): full composite. Full thesis contribution.
 
-Reference policy = `checkpoint_sft` (not base model) — this anchors the constitution throughout RL.
+Reference policy = `checkpoint_sft` (not base model) — this anchors the constitution throughout RL. GRPO `num_generations=4` (reduced from 8 to fit A4000 16 GB VRAM; 8 requires 24 GB+).
+
+**Per-component reward logging:** `make_reward_fns()` returns a list of functions (one per component). TRL sums them and automatically logs each under `rewards/{fn_name}_mean` in `grpo_loss_history.json` — enables per-component breakdown in the analysis notebook without extra instrumentation. The old `make_reward_fn()` (singular) is retained only for ROUGE evaluation during publish.
+
+## Publish mode (`--mode publish`)
+
+Re-uploads an already-trained checkpoint without retraining. Use when the automatic post-training push failed (network error, expired token). Loads the LoRA adapter via `load_checkpoint()`, merges → 16-bit safetensors, exports GGUF (Q4_K_M), computes ROUGE vs baseline, pushes both formats with `_retry_hf_push()` (3 attempts, exponential backoff). Falls back to local save if `HF_TOKEN` is unset.
+
+```bash
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft --hf_username AjinkyaTaranekar
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d --hf_username AjinkyaTaranekar
+```
 
 ## Experiment 0: Reasoning Paradigm Comparison
 
@@ -135,7 +147,7 @@ Score = fraction of attacks resisted. `adversarial_score < 0.8` before GRPO = do
 
 All four blockers are verified by `preflight_check.sh` section 9. Each is a structural code check, not a runtime policy:
 
-- **Blocker 1** (`3_infererence.py`, `sft_rejection_sampler.py`, `sft_math_question_generator.py`): AST-based import whitelist + dangerous-builtin block before any `subprocess.run`; `_sanitise_tool_output` strips injection patterns from web content.
+- **Blocker 1** (`3_infererence.py`, `sft_math_pipeline.py`): AST-based import whitelist + dangerous-builtin block before any `subprocess.run`; `_sanitise_tool_output` strips injection patterns from web content. (`sft_math_question_generator.py` + `sft_rejection_sampler.py` merged into `sft_math_pipeline.py`.)
 - **Blocker 2** (`sft_gold_response_generator.py`): `rule_check_response()` provides deterministic out-of-band checks for P1/P3/P4/P14/P18 before the LLM critique; `_merge_violations()` ensures rule violations survive a `NO_VIOLATIONS` LLM response.
 - **Blocker 3** (`4_benchmark.py`): 14-probe adversarial suite; run before GRPO.
 - **Blocker 4** (`3_infererence.py`): `DependencyMonitor` tracks interaction frequency + burst patterns, appends wellbeing disclosure when dependency signals detected.
@@ -164,8 +176,8 @@ In native mode `_generate()` passes `tools=[…]` (OpenAI schemas from `_to_open
 
 ## Hyperparameters
 
-**SFT**: LoRA r=16 α=32, 3 epochs, lr=2e-4, batch=1, grad_accum=8 (effective batch=8), bf16, adamw_8bit, packing=True. Hardware: NVIDIA RTX A4000 16.8 GB. Expected ~50 min.
-**GRPO**: G=4, β=0.001, lr=1e-6, ε_low=0.2, ε_high=0.28, rollout temp=1.0, max_new_tokens=512, 1 epoch.
+**SFT**: LoRA r=16 α=32, 3 epochs, lr=2e-4, batch=1, grad_accum=8 (effective batch=8), bf16, adamw_8bit, packing=True, max_seq_length=2048, save_steps=25, eval_steps=25, save_total_limit=4. Hardware: NVIDIA RTX A4000 16.8 GB. Expected ~50 min.
+**GRPO**: G=4 (reduced from 8 for 16 GB VRAM), β=0.001, lr=1e-6, ε_low=0.2, ε_high=0.28, rollout temp=1.0, max_new_tokens=512, 1 epoch.
 
 ## Feature flags and module lifecycle
 
