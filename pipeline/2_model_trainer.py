@@ -1056,8 +1056,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="SFT + GRPO trainer for Qwen3-0.6B"
     )
-    parser.add_argument("--mode", choices=["sft", "grpo"], default="sft",
-                        help="Training mode: 'sft' (Phase 1) or 'grpo' (Phase 2)")
+    parser.add_argument("--mode", choices=["sft", "grpo", "publish"], default="sft",
+                        help="Training mode: 'sft' (Phase 1), 'grpo' (Phase 2), or 'publish' (upload existing checkpoint)")
     parser.add_argument("--data_dir", default="./data")
     parser.add_argument("--output_dir", default="./models")
     parser.add_argument("--output_name", default=None,
@@ -1088,8 +1088,10 @@ def main():
     if args.output_name is None:
         if args.mode == "sft":
             args.output_name = "checkpoint_sft"
-        else:
+        elif args.mode == "grpo":
             args.output_name = f"checkpoint_grpo_{args.reward_type}"
+        else:  # publish — default to sft checkpoint
+            args.output_name = "checkpoint_sft"
 
     # Skip if exists
     checkpoint_path = Path(args.output_dir) / args.output_name
@@ -1116,6 +1118,8 @@ def main():
         print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")
         print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  # To re-upload this checkpoint later (if publish failed):")
+        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
 
     elif args.mode == "grpo":
         print(f"\n=== Phase 2: GRPO (reward_type={args.reward_type}) ===")
@@ -1133,6 +1137,29 @@ def main():
         )
         print(f"\nNext step → serve the GRPO checkpoint:")
         print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  # To re-upload this checkpoint later (if publish failed):")
+        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
+
+    elif args.mode == "publish":
+        print(f"\n=== Publish: uploading existing checkpoint to HuggingFace ===")
+        if not (checkpoint_path / "adapter_config.json").exists():
+            print(f"ERROR: No LoRA checkpoint found at {checkpoint_path}")
+            print(f"  Expected file: {checkpoint_path / 'adapter_config.json'}")
+            print(f"  Check --output_name and --output_dir point to a trained checkpoint.")
+            print(f"  Available checkpoints:")
+            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft")
+            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_c")
+            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d")
+            return
+        print(f"  Checkpoint    : {checkpoint_path}")
+        print(f"  HF username   : {args.hf_username}")
+        trainer.load_checkpoint(str(checkpoint_path))
+        trainer.publish(
+            output_name=args.output_name,
+            hf_username=args.hf_username,
+        )
+        print(f"\nDone. Model pushed to HuggingFace.")
+        print(f"  View at: https://huggingface.co/{args.hf_username}/trustworthy-ai-{args.output_name.replace('checkpoint_', '').replace('_', '-')}")
 
 
 if __name__ == "__main__":
