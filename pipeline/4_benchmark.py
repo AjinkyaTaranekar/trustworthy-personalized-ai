@@ -317,14 +317,24 @@ def run_constitution_probes(
     temperature: float = 0.7,
     baseline_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
+    total = len(CONSTITUTIONAL_PROBES)
     print(f"\n{'='*60}")
     print("  CONSTITUTIONAL DRIFT PROBE SUITE")
     print(f"{'='*60}")
+    print(f"  Server       : {server_url}")
+    print(f"  Probes       : {total}")
+    print(f"  Max tokens   : {max_new_tokens}  |  Temperature: {temperature}")
+    if baseline_path:
+        if baseline_path.exists():
+            bl = str(baseline_path)
+        else:
+            bl = f"{baseline_path} (missing)"
+        print(f"  Baseline     : {bl}")
 
     results = []
-    for probe in CONSTITUTIONAL_PROBES:
+    for idx, probe in enumerate(CONSTITUTIONAL_PROBES, 1):
         q_short = (probe["question"][0] if isinstance(probe["question"], list) else probe["question"])[:60]
-        print(f"\n  [{probe['id']}] {q_short}...")
+        print(f"\n  [{idx}/{total}] [{probe['id']}] {q_short}...")
         result = run_probe(server_url, probe, max_new_tokens, temperature)
         results.append(result)
         status = "PASS" if result["passed"] else "FAIL"
@@ -571,15 +581,18 @@ def run_adversarial_probes(
         if attack_types is None or p["attack_type"] in attack_types
     ]
 
+    total = len(active)
     print(f"\n{'='*60}")
     print("  ADVERSARIAL PROBE SUITE  (Blocker 3 — OWASP LLM01/LLM04)")
-    print(f"  {len(active)} probes  |  types: {attack_types or _ATTACK_TYPES}")
+    print(f"  {total} probes  |  types: {attack_types or _ATTACK_TYPES}")
     print(f"{'='*60}")
+    print(f"  Server       : {server_url}")
+    print(f"  Max tokens   : {max_new_tokens}  |  Temperature: {temperature}")
 
     results: List[Dict[str, Any]] = []
     by_type: Dict[str, List[float]] = {t: [] for t in _ATTACK_TYPES}
 
-    for probe in active:
+    for idx, probe in enumerate(active, 1):
         questions = probe["question"] if isinstance(probe["question"], list) else [probe["question"]]
         history: List[Dict] = []
         final_response = ""
@@ -605,7 +618,7 @@ def run_adversarial_probes(
 
         q_short = (questions[0])[:55]
         status = "RESIST" if passed else "FAILED"
-        print(f"\n  [{probe['attack_type'].upper():10}] [{probe['id']}]")
+        print(f"\n  [{idx}/{total}] [{probe['attack_type'].upper():10}] [{probe['id']}]")
         print(f"  Q: {q_short}...")
         print(f"  → {status}  {probe['description']}")
 
@@ -701,6 +714,9 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     print(f"\n{'='*60}")
     print(f"  MULTI-TURN CONVERSATION BENCHMARK{tag}")
     print(f"{'='*60}")
+    print(f"  Server       : {server_url}")
+    print(f"  Turns        : {len(qs)}")
+    print(f"  Max tokens   : {max_new_tokens}  |  Temperature: {temperature}")
 
     history: List[Dict] = []
     turns = []
@@ -720,7 +736,7 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     print(f"\n  EDGE CASE PROBES")
     edge_results = []
     for ec in EDGE_CASE_QUESTIONS:
-        print(f"  [{ec['label']}] {ec['q'][:60]}...")
+        print(f"  [{ec['label']}] ({ec['profile']}) {ec['q'][:60]}...")
         result = _complete(server_url, [{"role": "user", "content": ec["q"]}],
                            ec["profile"], max_new_tokens=512, temperature=temperature)
         edge_results.append({
@@ -742,10 +758,12 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     answer_rate = sum(1 for t in turns if t["has_answer"]) / len(turns)
     cap_rate = sum(1 for t in turns if t["has_capability_check"]) / len(turns)
     total_tool_calls = sum(sum(t["tool_calls"].values()) for t in turns)
+    total_tokens = sum(t["tokens_generated"] for t in turns)
 
     print(f"\n  Answer-tag rate   : {answer_rate:.0%}")
     print(f"  CAPABILITY_CHECK  : {cap_rate:.0%}")
     print(f"  Total tool calls  : {total_tool_calls}")
+    print(f"  Total tokens      : {total_tokens}")
     print(f"  Avg latency       : {sum(latencies)/len(latencies):.1f}s")
     print(f"  Avg throughput    : {sum(tps)/len(tps):.0f} tok/s")
 
@@ -874,6 +892,9 @@ Examples:
     baseline_path = Path(args.baseline) if args.baseline else None
     custom_questions = [q.strip() for q in args.questions.split(",")] if args.questions else None
     attack_types = [t.strip() for t in args.attack_types.split(",")] if args.attack_types else None
+
+    print(f"\nBenchmark run: {timestamp}")
+    print(f"  Output dir   : {output_dir}")
 
     # Verify primary server is alive
     try:

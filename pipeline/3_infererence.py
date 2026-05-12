@@ -434,6 +434,7 @@ def _resolve_gguf_path(gguf_arg: str) -> str:
     if p.exists():
         if not gguf_arg.lower().endswith(".gguf"):
             raise ValueError(f"Local GGUF path must end in .gguf, got: {gguf_arg}")
+        print(f"  Using local GGUF: {p}")
         return str(p)
     # HuggingFace repo ID (contains '/' but not a local path)
     from huggingface_hub import hf_hub_download, list_repo_files
@@ -941,6 +942,8 @@ def main() -> None:
     if args.config:
         cfg = PipelineConfig.from_yaml(args.config)
         print(f"Config loaded from: {args.config}")
+    else:
+        print("Config loaded from: env vars / defaults")
 
     # Surface any dependency-rule violations as warnings (not hard errors —
     # the server starts anyway so dry-run / smoke-test modes work without all deps)
@@ -955,7 +958,7 @@ def main() -> None:
         _USE_GGUF = True
         gguf_path = _resolve_gguf_path(args.gguf)
         from llama_cpp import Llama
-        print(f"Loading GGUF model: {gguf_path}")
+        print(f"Loading GGUF model: {gguf_path} (n_ctx={args.max_seq_length})")
         _GGUF_MODEL = Llama(
             model_path=gguf_path,
             n_ctx=args.max_seq_length,
@@ -967,13 +970,19 @@ def main() -> None:
     else:
         from unsloth import FastModel  # deferred so the module imports without GPU
         model_path = Path(args.model_dir)
-        source = str(model_path) if model_path.exists() else args.base_model
+        if model_path.exists():
+            source = str(model_path)
+            print(f"Loading LoRA checkpoint: {source}")
+        else:
+            source = args.base_model
+            print(f"Model dir not found ({model_path}); using base model: {source}")
+        print(f"  max_seq_length={args.max_seq_length}  load_in_4bit=True")
         _MODEL_LABEL = source
-        print(f"Loading model: {source}")
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
             model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
         )
         FastModel.for_inference(_MODEL)
+        print(f"Model ready: {_MODEL_LABEL}")
 
     # ── Initialise optional modules ─────────────────────────────────────────
     _GRAPH_CLIENT = GraphClient(cfg)
@@ -982,9 +991,13 @@ def main() -> None:
     if cfg.ENABLE_USER_MODELLING:
         status = "connected" if _GRAPH_CLIENT.available else "UNAVAILABLE (check docker compose up -d)"
         print(f"User Modelling: {status}")
+    else:
+        print("User Modelling: disabled by config")
     if cfg.ENABLE_ONTOLOGY_VERIF:
         status = "loaded" if _ONTO_GRAPH.available else "UNAVAILABLE (check ONTOLOGY_PATH / ONTOLOGY_SPARQL_ENDPOINT)"
         print(f"Ontology Verifier: {status}")
+    else:
+        print("Ontology Verifier: disabled by config")
 
     print(f"Ready. Listening on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

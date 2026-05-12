@@ -556,6 +556,17 @@ class ModelTrainer:
 
     def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft",
                   resume_from_checkpoint=False):
+        print(f"  SFT dataset   : {dataset_path}")
+        print(f"  Output dir    : {self.output_dir / output_name}")
+        print(f"  Resume        : {resume_from_checkpoint}")
+        print(
+            "  Config        : epochs="
+            f"{SFT_CONFIG['num_train_epochs']} "
+            f"batch={SFT_CONFIG['per_device_train_batch_size']} "
+            f"grad_accum={SFT_CONFIG['gradient_accumulation_steps']} "
+            f"lr={SFT_CONFIG['learning_rate']} "
+            f"max_seq={MODEL_CONFIG['max_seq_length']}"
+        )
         raw = load_dataset("json", data_files=dataset_path)
         # Split the raw dataset BEFORE text-formatting so we keep 'messages' for ROUGE
         raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
@@ -606,12 +617,15 @@ class ModelTrainer:
         loss_path.parent.mkdir(parents=True, exist_ok=True)
         with open(loss_path, "w") as f:
             json.dump(trainer.state.log_history, f, indent=2)
+        print(f"  Loss history  : {loss_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
 
         # Auto-publish unless suppressed
-        if not self._no_publish:
+        if self._no_publish:
+            print("  Publish       : skipped (--no_publish)")
+        else:
             self.publish(
                 output_name=output_name,
                 hf_username=self._hf_username,
@@ -643,6 +657,20 @@ class ModelTrainer:
         self.load_checkpoint(sft_checkpoint)
         # Re-enable training (FastModel.from_pretrained sets for inference)
         FastModel.for_training(self.model)
+
+                print(f"  Output dir    : {self.output_dir / output_name}")
+                print(f"  Resume        : {resume_from_checkpoint}")
+                print(f"  GRPO dataset  : {dataset_path}")
+                print(
+                        "  Config        : epochs="
+                        f"{GRPO_CONFIG['num_train_epochs']} "
+                        f"G={GRPO_CONFIG['num_generations']} "
+                        f"lr={GRPO_CONFIG['learning_rate']} "
+                        f"kl={GRPO_CONFIG['kl_coef']} "
+                        f"temp={GRPO_CONFIG['temperature']} "
+                        f"max_new={GRPO_CONFIG['max_new_tokens']}"
+                )
+                print(f"  Dynamic sampling: {GRPO_CONFIG['dynamic_sampling']}")
 
         print(f"  Building GRPO dataset from {dataset_path}...")
         full_grpo = build_grpo_dataset(dataset_path)
@@ -713,12 +741,15 @@ class ModelTrainer:
         loss_path.parent.mkdir(parents=True, exist_ok=True)
         with open(loss_path, "w") as f:
             json.dump(trainer.state.log_history, f, indent=2)
+        print(f"  GRPO loss history: {loss_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")
 
         # Auto-publish unless suppressed
-        if not self._no_publish:
+        if self._no_publish:
+            print("  Publish       : skipped (--no_publish)")
+        else:
             self.publish(
                 output_name=output_name,
                 hf_username=self._hf_username,
@@ -771,6 +802,7 @@ class ModelTrainer:
         eval_raw = getattr(self, "_eval_raw", [])
         if eval_raw:
             sample = eval_raw[:max_eval_examples]
+            print(f"  Eval split examples: {len(sample)}/{len(eval_raw)}")
             hypotheses, references = [], []
             for ex in sample:
                 msgs = ex.get("messages", [])
@@ -801,6 +833,7 @@ class ModelTrainer:
             with open(bp, encoding="utf-8") as f:
                 baseline = json.load(f)
             probe_results = baseline.get("probe_results", [])
+            print(f"  Probe baseline examples: {len(probe_results)}")
             hypotheses, references = [], []
             for pr in probe_results:
                 q = pr.get("question", "")
@@ -828,6 +861,7 @@ class ModelTrainer:
         if grpo_eval is not None and len(grpo_eval) > 0:
             reward_fn = make_reward_fn("d")   # always use full reward for evaluation
             sample = grpo_eval.select(range(min(50, len(grpo_eval))))
+            print(f"  GRPO held-out examples: {len(sample)}/{len(grpo_eval)}")
             all_rewards = []
             for row in sample:
                 prompt = row["prompt"]
@@ -906,6 +940,7 @@ class ModelTrainer:
         gguf_dir    = str(self.output_dir / f"{output_name}_gguf")
 
         print(f"\n=== Publishing {output_name} ===")
+        print(f"  Repo ID      : {repo_id}")
 
         # 1. Switch to inference mode for ROUGE generation
         FastModel.for_inference(self.model)

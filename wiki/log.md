@@ -198,6 +198,13 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - **Applied to:** `_python_execute()` in `3_infererence.py`; `execute_code_blocks()` in `sft_rejection_sampler.py`; `verify_answer_with_execution()` in `sft_math_question_generator.py`. Tool loop in `chat_completions()` (`3_infererence.py`) now routes all tool results through `_sanitise_tool_output` before appending to conversation.
 - **OWASP mapping:** Addresses LLM01 (Prompt Injection) at the tool-output boundary and the code-execution boundary. Partial address of LLM04 (Data and Model Poisoning) — adversarially crafted web content can no longer embed instructions into SFT training data via the rejection sampler.
 - **Remaining open (Blocker 1):** The `_python_execute` validator only covers the allowlist approach. A proper sandbox (process isolation, seccomp on Linux) would be the production fix. This is the training/research context minimum viable hardening.
+
+## [2026-05-12] refactor | Pipeline logging clarity — trainer, server, benchmark
+- Added structured progress prints for SFT/GRPO setup, ROUGE sampling, and publish metadata in `pipeline/2_model_trainer.py`.
+- Expanded inference server startup logs with config source, model selection details, and module status in `pipeline/3_infererence.py`.
+- Improved benchmark suite output with server context, probe counts, progress indexing, and summary totals in `pipeline/4_benchmark.py`.
+- Why: make training, serving, and evaluation runs easier to trace and debug in logs.
+- Files changed: `pipeline/2_model_trainer.py`, `pipeline/3_infererence.py`, `pipeline/4_benchmark.py`.
 - **Files changed:** `pipeline/3_infererence.py`, `pipeline/sft_rejection_sampler.py`, `pipeline/sft_math_question_generator.py`.
 
 ## [2026-05-01] decision | Source-document alignment pass — researchplan.tex + security-review.tex corrections
