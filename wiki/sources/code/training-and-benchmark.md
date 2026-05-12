@@ -19,7 +19,7 @@ sources:
   - pipeline/preflight_check.sh
   - docker-compose.yml
   - README.md
-updated: 2026-05-02
+updated: 2026-05-12
 status: current
 ---
 
@@ -35,8 +35,8 @@ status: current
 | `preflight_check.sh` | Pre-flight: Python version, packages, API key, file integrity, security blockers, feature-flag state, 7-stage training status. Run first on any new machine. |
 | `run_all.sh` | Master orchestration: Stage 0 (FalkorDB), Stage 0.5 (appraisal labelling), Stages 1–8 (SFT + GRPO + evaluation). Fully resumable. Forwards `PIPELINE_*` env vars to every subprocess. |
 | `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
-| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]]. **Phase 2: GRPO** — DAPO RL training. CLI: `--mode {sft,grpo}`, `--reward_type {c,d}`. |
-| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Five built-in tools. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. New endpoints: `/memory/inspect\|contest\|correct`, `/config`. |
+| `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. **Phase 2: GRPO** — DAPO RL training. CLI: `--mode {sft,grpo}`, `--reward_type {c,d}`. `messages_to_text()` passes `tools=` to `apply_chat_template` for native-format examples. |
+| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`. |
 | `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. |
 | `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
 | `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers. |
@@ -44,6 +44,9 @@ status: current
 | `empathy.py` | Runtime appraisal helpers: `analyse_appraisal()`, `format_appraisal_block()`, `parse_appraisal_block()`, `APPRAISAL_SYSTEM_PREFIX`. |
 | `appraisal_labeller.py` | **Offline one-time script.** Runs AppraisePLM over EmpatheticDialogues → `data/appraisal_labels.jsonl`. AppraisePLM used as labeller only; not a runtime dependency. |
 | `ontology_verifier.py` | Post-hoc claim scorer (Experiment 6 Approach B). Dual backend: local OWL via rdflib or remote SPARQL endpoint. Loaded by `3_infererence.py` when `ENABLE_ONTOLOGY_VERIF=true`. |
+| `transform_sft_tool_format.py` | **Post-assembly transform.** Converts `train_sft_v2.jsonl` → `train_sft_v3.jsonl`: splits single-turn `<tool>+<answer>` into multi-turn `[assistant→tool→assistant]`. Re-executes `python_execute` for real stdout. Drops malformed examples (no final answer, >5 tool calls). |
+| `sft_add_robustness_variants.py` | Adds minimal/brief/no-principles system prompt variants (~30% of examples) to train intrinsic constitution behaviour independent of prompt verbosity. |
+| `sft_add_native_tool_examples.py` | Converts 20% of XML tool examples to Qwen3 native JSON format (`tool_calls` / `tool_call_id` fields). Stores schemas in `metadata.native_tools` for `messages_to_text()`. Enables zero-shot new tool calling without retraining. |
 
 ## Architecture: server + client
 
@@ -61,7 +64,9 @@ python pipeline/5_context_degradation.py --server_url http://localhost:8000
 
 ## Phase 1: SFT
 
-`2_model_trainer.py --mode sft` trains on `data/train_interleaved.jsonl` (output of `sft_dataset_assembler.py`). LoRA r=16, α=32, 3 epochs, lr=2e-4. Outputs `models/checkpoint_sft/adapter_config.json`.
+`2_model_trainer.py --mode sft` trains on `data/train_sft_v3_robust.jsonl` (1,983 examples — see [[sources/code/sft-v2-pipeline]] for dataset composition). LoRA r=16, α=32, 3 epochs, lr=2e-4, effective batch=8 (batch=1, grad_accum=8), bf16, adamw_8bit. Outputs `models/checkpoint_sft/adapter_config.json`. The trainer does its own 90/10 split from the JSONL at runtime — `eval_sft_v2.jsonl` is not consumed by the trainer.
+
+The system prompt used at training time (`_system_prompt_for_profile()`) is now byte-identical to the inference server system prompt. The `_CONSTITUTION` constant in `3_infererence.py` is a verbatim copy of the 23-principle block in `sft_gold_response_generator.py:TRAINING_SYSTEM_PROMPT_TEMPLATE` — both must be updated together when principles change.
 
 ## Phase 2: GRPO (DAPO improvements)
 
@@ -146,10 +151,21 @@ All four blockers are verified by `preflight_check.sh` section 9. Each is a stru
 
 The primary thesis argument: D outperforms A on constitutional adherence, accuracy, and sycophancy resistance — at a fraction of the compute of frontier models.
 
+## Inference server: dual tool-call modes (2026-05-12)
+
+`3_infererence.py` supports two tool-call modes selectable per request via `tool_mode`:
+
+| Mode | Format | Parser | Training | New tools |
+|---|---|---|---|---|
+| `xml` (default) | `<tool>name(arg='val')</tool>` | `_parse_tool_call()` regex | ✓ SFT examples | Requires retraining |
+| `native` | `<tool_call>{"name":…,"arguments":{…}}</tool_call>` | `_parse_native_tool_call()` JSON | ✓ 133 native SFT examples | Zero-shot via pre-training |
+
+In native mode `_generate()` passes `tools=[…]` (OpenAI schemas from `_to_openai_schemas()`) to `apply_chat_template` — identical to what the training examples were rendered with via `messages_to_text()`. GGUF path normalises structured `tool_calls` output to inline `<tool_call>` text so both backends share one parser.
+
 ## Hyperparameters
 
-**SFT**: LoRA r=16 α=32, 3 epochs, lr=2e-4, batch=2, grad_accum=4, bf16, adamw_8bit.
-**GRPO**: G=8, β=0.001, lr=1e-6, ε_low=0.2, ε_high=0.28, rollout temp=1.0, max_new_tokens=512, 1 epoch.
+**SFT**: LoRA r=16 α=32, 3 epochs, lr=2e-4, batch=1, grad_accum=8 (effective batch=8), bf16, adamw_8bit, packing=True. Hardware: NVIDIA RTX A4000 16.8 GB. Expected ~50 min.
+**GRPO**: G=4, β=0.001, lr=1e-6, ε_low=0.2, ε_high=0.28, rollout temp=1.0, max_new_tokens=512, 1 epoch.
 
 ## Feature flags and module lifecycle
 

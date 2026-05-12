@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-05-07
+updated: 2026-05-12
 ---
 
 # Index
@@ -144,9 +144,9 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/dissertation/security-privacy-social-ethics]] — security analysis: local-first privacy argument, Log-To-Leak, alignment regression, critique-loop SPOF, dependency/deskilling ethics
 
 ### Code (pipeline summaries)
-- [[sources/code/sft-v2-pipeline]] — SFT data generation pipeline with security blockers 1+2
+- [[sources/code/sft-v2-pipeline]] — SFT v2/v3 data generation pipeline: Part A + Part B → transform → robustness variants → native tool examples → train_sft_v3_robust.jsonl
 - [[sources/code/constitution-document]] — full 23-principle source
-- [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + Experiment 0 + adversarial suite + run_all.sh + preflight
+- [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + dual tool-call modes (xml/native) + Experiment 0 + adversarial suite + run_all.sh + preflight
 
 ## Experiments
 

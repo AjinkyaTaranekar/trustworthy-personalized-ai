@@ -487,11 +487,15 @@ def build_grpo_dataset(sft_jsonl_path: str) -> "Dataset":
 # ---------------------------------------------------------------------------
 
 def messages_to_text(example, tokenizer):
+    # Native examples store their OpenAI-schema tool list in metadata so
+    # apply_chat_template renders tool definitions identically to inference.
+    native_tools = example.get("metadata", {}).get("native_tools") or None
     return {
         "text": tokenizer.apply_chat_template(
             example["messages"],
             tokenize=False,
             add_generation_prompt=False,
+            tools=native_tools,
         )
     }
 
@@ -658,19 +662,19 @@ class ModelTrainer:
         # Re-enable training (FastModel.from_pretrained sets for inference)
         FastModel.for_training(self.model)
 
-                print(f"  Output dir    : {self.output_dir / output_name}")
-                print(f"  Resume        : {resume_from_checkpoint}")
-                print(f"  GRPO dataset  : {dataset_path}")
-                print(
-                        "  Config        : epochs="
-                        f"{GRPO_CONFIG['num_train_epochs']} "
-                        f"G={GRPO_CONFIG['num_generations']} "
-                        f"lr={GRPO_CONFIG['learning_rate']} "
-                        f"kl={GRPO_CONFIG['kl_coef']} "
-                        f"temp={GRPO_CONFIG['temperature']} "
-                        f"max_new={GRPO_CONFIG['max_new_tokens']}"
-                )
-                print(f"  Dynamic sampling: {GRPO_CONFIG['dynamic_sampling']}")
+        print(f"  Output dir    : {self.output_dir / output_name}")
+        print(f"  Resume        : {resume_from_checkpoint}")
+        print(f"  GRPO dataset  : {dataset_path}")
+        print(
+                "  Config        : epochs="
+                f"{GRPO_CONFIG['num_train_epochs']} "
+                f"G={GRPO_CONFIG['num_generations']} "
+                f"lr={GRPO_CONFIG['learning_rate']} "
+                f"kl={GRPO_CONFIG['kl_coef']} "
+                f"temp={GRPO_CONFIG['temperature']} "
+                f"max_new={GRPO_CONFIG['max_new_tokens']}"
+        )
+        print(f"  Dynamic sampling: {GRPO_CONFIG['dynamic_sampling']}")
 
         print(f"  Building GRPO dataset from {dataset_path}...")
         full_grpo = build_grpo_dataset(dataset_path)
@@ -761,7 +765,7 @@ class ModelTrainer:
     def train(self):
         self.load_base_model()
         self.apply_lora()
-        dataset_path = self.data_dir / "train_sft_v2.jsonl"
+        dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
     def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
@@ -1091,7 +1095,7 @@ def main():
         print("\n=== Phase 1: SFT ===")
         trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_sft_v2.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
         trainer.train_sft(str(dataset_path), args.output_name,
                           resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
@@ -1105,7 +1109,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_sft_v2.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),

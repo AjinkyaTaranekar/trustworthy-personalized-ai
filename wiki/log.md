@@ -6,6 +6,41 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-12] refactor | SFT dataset v3 — tool call format fix, system prompt sync, native JSON tool calling, robustness variants
+
+### Bug 1: training/inference tool call format mismatch (critical)
+- **Root cause:** every training example taught the model to produce `<tool>name(args)</tool><answer>…</answer>` in a **single assistant turn**. The inference server loop in `3_infererence.py` checks for `<answer>` first (line 769) and breaks before `_parse_tool_call()` is ever reached — so no tool ever actually executed at inference time. `metrics.tool_calls: {}` and `tool_iterations: 0` confirmed this in benchmark output.
+- **Fix — `pipeline/transform_sft_tool_format.py`** (new script): reads `train_sft_v2.jsonl`, splits every single-turn tool example into the multi-turn format `[assistant: <think>…<tool>…] → [tool: [TOOL_RESULT:…]] → [assistant: <answer>…]`. Re-executes `python_execute` code locally so `[TOOL_RESULT:]` contains real stdout. Synthetic placeholders used for `web_search`/`read_url` (live results not replayable). Drops 34 malformed examples (no final answer, or >5 tool calls — LLM was echoing the prompt template).
+- **Output:** `train_sft_v3.jsonl` — 1,416 examples (679 multi-turn tool, 737 no-tool, 34 dropped).
+- **Files changed:** `pipeline/transform_sft_tool_format.py` (new), `pipeline/sft_dataset_assembler.py` (quality filter updated — `passes_quality_filter()` now checks first assistant message for length/CAPABILITY_CHECK, last for `<answer>`), `pipeline/2_model_trainer.py` (3 path references updated: `train_sft_v2.jsonl` → `train_sft_v3_robust.jsonl`).
+
+### Bug 2: three different system prompts across pipeline (critical)
+- **Root cause:** `sft_gold_response_generator.py` training prompt listed all 23 constitution principles; `sft_math_pipeline.py` used a 438-char minimal prompt with no principles; `3_infererence.py` `_system_prompt_for_profile()` used a medium-length prompt with no principles and a different format. Model learned: "produce constitution behaviour only when I see the 23-principle prompt." At inference with the different prompt, generic output resulted.
+- **Fix — `_system_prompt_for_profile()` rewritten** in `3_infererence.py`: now produces output byte-identical to `make_system_prompt()` in the training generator. Canonical constants added: `_TOOL_ORDER`, `_PROFILE_NOTES`, `_CONSTITUTION` (23 principles verbatim with a comment requiring both files to stay in sync). `Session tools:` format changed from newline-separated to pipe-separated (`python_execute ✓ | web_search ✓ | …`) to match training. `<answer>` block example and tool note included in correct order.
+
+### Robustness variants — intrinsic vs in-context behaviour
+- **Problem:** 100% of training examples used the full 23-principle system prompt; model learned in-context behaviour (follows constitution because the prompt says to) not intrinsic behaviour (follows constitution regardless of prompt wording).
+- **Fix — `pipeline/sft_add_robustness_variants.py`** (new script): adds variants with three reduced system prompt levels — `minimal` (role only + tool list), `brief` (one-sentence behavioural instruction), `no_principles` (full CAPABILITY_CHECK template without the enumerated principle list). Applied at ~15%/10%/5% independent Bernoulli rates. Trains the model to produce CAPABILITY_CHECK + constitution-compliant output even when not explicitly instructed to.
+
+### Native JSON tool calling — new tools without retraining
+- **Finding (web search):** Qwen3-0.6B scored 0.880 in a tool-calling benchmark (tied #1 across all sizes) using its **native** pre-training tool format (`<tool_call>{"name":…,"arguments":{…}}</tool_call>` via `apply_chat_template(tools=[…])`). The custom XML format used in this project required the model to pattern-match specific tool names seen in SFT; native format uses pre-training generalisation and works on any schema-described tool without retraining.
+- **Fix — `pipeline/sft_add_native_tool_examples.py`** (new script): converts 20% of XML tool training examples to native format — `tool_calls`/`tool_call_id` fields in messages, schemas stored in `metadata.native_tools`. `messages_to_text()` in `2_model_trainer.py` updated to pass `tools=` to `apply_chat_template` for these examples — training text is then byte-identical to what the inference server produces in native mode.
+- **Fix — `3_infererence.py`**: added `_to_openai_schemas()`, `_parse_native_tool_call()`, `tools=` parameter to `_generate()` and `_generate_gguf()`, `tool_mode` field to `CompletionRequest` (`"xml"` default | `"native"` for new tools). In native mode `_generate_gguf` normalises GGUF's structured `tool_calls` dict to inline `<tool_call>` text so both backends share one parser.
+- **New tool procedure (no retraining):** `register_tool()` in server → add schema to `sft_add_native_tool_examples.py:TOOL_SCHEMAS` → call with `tool_mode="native"`.
+
+### Final dataset: train_sft_v3_robust.jsonl — 1,983 examples
+| Slice | Count | % |
+|---|---|---|
+| XML tool (trained behaviour) | 679 | 34.2 |
+| Native JSON tool (new-tool generalisation) | 133 | 6.7 |
+| No-tool (constitution reasoning) | 737 | 37.2 |
+| Robustness variants (minimal/brief/no-principles prompts) | 434 | 21.9 |
+
+- **SFT training started** 2026-05-12 on NVIDIA RTX A4000 (16.8 GB VRAM). Qwen3-0.6B base, LoRA r=16 α=32, 3 epochs, lr=2e-4, effective batch=8. Expected duration ~50 min.
+- **Files created:** `pipeline/transform_sft_tool_format.py`, `pipeline/sft_add_robustness_variants.py`, `pipeline/sft_add_native_tool_examples.py`.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/2_model_trainer.py`, `pipeline/sft_dataset_assembler.py`.
+- **Wiki updated:** `wiki/sources/code/training-and-benchmark.md`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/index.md`.
+
 ## [2026-05-07] query | Training data analysis — train_partA.jsonl quality report
 - **Source:** `pipeline/pipeline/data/train_partA.jsonl` — 296 records, 1.76 MB.
 - **Category distribution:** 5 categories present (exact split not logged here; see CMEM S189 for full breakdown).

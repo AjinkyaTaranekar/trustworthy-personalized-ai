@@ -34,44 +34,48 @@ CAPABILITY_CHECK_REQUIRED = True
 
 
 def passes_quality_filter(example: dict) -> tuple[bool, str]:
-    """Return (passes, reason_if_failed)."""
+    """Return (passes, reason_if_failed).
+
+    Handles both v2 (single-turn: think+tool+answer in one assistant message)
+    and v3 (multi-turn: separate assistant/tool/assistant messages) formats.
+    In v3 the last assistant message is just <answer>…</answer>, so structural
+    checks (length, CAPABILITY_CHECK) run against the first assistant message
+    while tag checks (<answer>) run against the last.
+    """
     messages = example.get("messages", [])
 
     if len(messages) < 3:
         return False, "too_few_messages"
 
-    # Find last assistant message
     assistant_msgs = [m for m in messages if m.get("role") == "assistant"]
     if not assistant_msgs:
         return False, "no_assistant_message"
 
+    is_v3 = any(m.get("role") == "tool" for m in messages)
+
+    # Length + CAPABILITY_CHECK: use first assistant message (has the think block in both formats)
+    first_response = assistant_msgs[0].get("content", "")
+    if len(first_response) < MIN_RESPONSE_LENGTH:
+        return False, f"response_too_short_{len(first_response)}"
+
+    # <answer> tag: must appear in the last assistant message
     last_response = assistant_msgs[-1].get("content", "")
-
-    if len(last_response) < MIN_RESPONSE_LENGTH:
-        return False, f"response_too_short_{len(last_response)}"
-
-    # if len(last_response) > MAX_RESPONSE_LENGTH:
-    #     return False, f"response_too_long_{len(last_response)}"
-
-    # Check required structural tags
     for tag in REQUIRED_TAGS:
         if tag not in last_response:
             return False, f"missing_tag_{tag}"
 
-    # Check CAPABILITY_CHECK is present in think block.
-    # appraisal_empathy examples also require an <appraisal> block.
+    # CAPABILITY_CHECK: look in the first assistant message's think block
     category = example.get("metadata", {}).get("category", "")
     if CAPABILITY_CHECK_REQUIRED:
-        think_match = last_response.find("<think>")
-        think_end = last_response.find("</think>")
+        think_match = first_response.find("<think>")
+        think_end   = first_response.find("</think>")
         if think_match != -1 and think_end != -1:
-            think_content = last_response[think_match:think_end]
+            think_content = first_response[think_match:think_end]
             if "CAPABILITY_CHECK" not in think_content:
                 return False, "missing_capability_check"
             if category == "appraisal_empathy" and "<appraisal>" not in think_content:
                 return False, "missing_appraisal_block"
 
-    # Check system message is present
     system_msgs = [m for m in messages if m.get("role") == "system"]
     if not system_msgs:
         return False, "no_system_message"
@@ -259,7 +263,7 @@ def main():
     print(f"\nSplit: {n_train} train / {n_eval} eval")
 
     # Write output files
-    train_path = output_dir / "train_sft_v2.jsonl"
+    train_path = output_dir / "train_sft_v2.jsonl"   # transform_sft_tool_format.py produces v3
     eval_path = output_dir / "eval_sft_v2.jsonl"
     stats_path = output_dir / "sft_v2_stats.json"
 

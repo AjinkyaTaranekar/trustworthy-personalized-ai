@@ -449,38 +449,91 @@ def _resolve_gguf_path(gguf_arg: str) -> str:
     return hf_hub_download(repo_id=gguf_arg, filename=target)
 
 
+# Canonical tool order — must match sft_gold_response_generator.py TOOL_PROFILES context strings
+_TOOL_ORDER = ["python_execute", "web_search", "read_url", "get_datetime"]
+
+# Profile notes — identical to sft_gold_response_generator.py system_note fields
+_PROFILE_NOTES: Dict[str, str] = {
+    "all_tools":          "All four tools are available in this session.",
+    "compute_only":       "Only python_execute is available. No internet or time access.",
+    "compute_and_search": "python_execute and web_search/read_url are available. No datetime tool.",
+    "no_tools":           "No tools are available in this session. Training knowledge only.",
+}
+
+# 23-principle constitution — verbatim copy from sft_gold_response_generator.py
+# Keeping both files in sync is intentional: the model is trained on this exact text,
+# so serving a different set of principles at inference would break the learned behaviour.
+_CONSTITUTION = """You follow all 23 constitution principles:
+1. DECOMPOSE FIRST — list requirements before answering
+2. TOOL INVENTORY — state exactly which tools you have this session
+3. TOOL DISCIPLINE — never invent a tool
+4. MATH = CODE — use python_execute for any precision arithmetic
+5. REAL-TIME HONESTY — live data: use web_search if available; if not, say so
+6. USER CONTEXT GATE — missing personal context → ask ONE question
+7. UNCERTAINTY QUANTIFICATION — hedge genuine uncertainty; never hedge well-known facts
+8. IMPOSSIBILITY ACKNOWLEDGMENT — explain WHY it's impossible; redirect usefully
+9. TRADEOFF PRESENTATION — subjective questions → enumerate dimensions; never declare a winner
+10. CORRECT TOOL USE — if tool is available and needed, call it correctly
+11. TOOL AVOIDANCE — stable knowledge → no tool; entity facts → web_search if available
+12. TOOL FAILURE HANDLING — fail once → retry; fail twice → honest about gap
+13. NO TOOL FAKING — never call a tool just to appear rigorous
+14. HOLD UNDER PRESSURE — user insists you guess after correct refusal → explain WHY guessing is harmful
+15. EXPLICIT SELF-CORRECTION — catch own error → label it, correct explicitly
+16. KNOWLEDGE CUTOFF AWARENESS — time-sensitive: web_search if available, else state cutoff
+17. MULTI-STEP CLARIFICATION — multiple unknowns → ask the single most critical one first
+18. EXPLICIT I DON'T KNOW — no basis for answer → say so clearly
+19. SEARCH FOR ENTITY FACTS — proper nouns → web_search if available
+20. FIRST PRINCIPLES — break non-trivial questions to irreducible truths; name unverified assumptions
+21. 5W+H QUESTIONING — address WHO/WHAT/WHEN/WHERE/WHY/HOW in every CAPABILITY_CHECK
+22. CONSEQUENCE_CHECK — assess stakes, failure mode, user action, accountability in every response
+23. INTERLEAVED TOOL CHAINING — data + computation → chain web_search → python_execute; never stop at one tool"""
+
+
 def _system_prompt_for_profile(profile: str) -> str:
+    """Build the system prompt for a given tool profile.
+
+    Produces output identical to sft_gold_response_generator.make_system_prompt()
+    so that the model sees the same prompt format it was trained on.
+    """
     available = TOOL_PROFILES.get(profile, set())
-    tool_lines = "\n".join(
-        f"  {t} {'✓' if t in available else '✗'}"
-        for t in ["python_execute", "web_search", "read_url", "get_datetime"]
+
+    # Pipe-separated context string — same format as training TOOL_PROFILES[*]["context"]
+    tool_context = " | ".join(
+        f"{t} {'✓' if t in available else '✗'}" for t in _TOOL_ORDER
     )
-    call_examples = []
+
+    tool_note = _PROFILE_NOTES.get(
+        profile,
+        f"Active tools: {sorted(available) if available else ['none']}.",
+    )
+
+    call_lines = []
     if "python_execute" in available:
-        call_examples.append("  <tool>python_execute(code='print(2+2)')</tool>")
+        call_lines.append("  <tool>python_execute(code='...')</tool>")
     if "web_search" in available:
-        call_examples.append("  <tool>web_search(query='your query here')</tool>")
+        call_lines.append("  <tool>web_search(query='...')</tool>")
     if "read_url" in available:
-        call_examples.append("  <tool>read_url(url='https://example.com', prompt='what to extract')</tool>")
+        call_lines.append("  <tool>read_url(url='...', prompt='what to extract')</tool>")
     if "get_datetime" in available:
-        call_examples.append("  <tool>get_datetime()</tool>")
-    examples_text = "\n".join(call_examples) if call_examples else "  (no tools available this session)"
+        call_lines.append("  <tool>get_datetime()</tool>")
+    call_examples = "\n".join(call_lines) if call_lines else "  (no tools available this session)"
+
     return (
         "You are a trustworthy AI assistant. Before answering any question, complete a full "
         "CAPABILITY_CHECK inside your <think> block using this exact structure:\n\n"
         "<think>\n"
         "CAPABILITY_CHECK:\n\n"
         "  5W+H:\n"
-        "    WHO is affected: [user / third parties / institutions]\n"
+        "    WHO is affected: [the user / third parties / institutions involved]\n"
         "    WHAT is required: [list requirements to answer correctly]\n"
-        "    WHEN: [time-sensitivity — live data, training cutoff, dated context]\n"
+        "    WHEN: [time-sensitivity — live data needed, training cutoff relevant, dated context]\n"
         "    WHERE: [jurisdiction, region, domain, platform]\n"
         "    WHY: [inferred intent and underlying goal]\n"
         "    HOW: [tool selection and method]\n\n"
         "  First Principles:\n"
-        "    Core truth: [irreducible fact this answer rests on]\n"
+        "    Core truth: [the irreducible fact this answer rests on]\n"
         "    Assumptions: [what I am taking for granted — flag if unverified]\n\n"
-        f"  Session tools:\n{tool_lines}\n"
+        f"  Session tools: {tool_context}\n"
         "  Gap: [what I cannot obtain]\n"
         "  Strategy: [tool chain plan or honest refusal]\n\n"
         "  CONSEQUENCE_CHECK:\n"
@@ -488,18 +541,49 @@ def _system_prompt_for_profile(profile: str) -> str:
         "    If wrong: [concrete harm to the user]\n"
         "    User will likely: [action they will take with this answer]\n"
         "    Accountability: [what to hedge or flag in the answer]\n"
-        "</think>\n\n"
-        f"Tool call syntax (only call ✓ tools):\n{examples_text}\n\n"
-        "Rules:\n"
-        "- Chain tools when both data AND computation are needed (web_search → python_execute)\n"
-        "- Pass prompt= to read_url so you remember what you are extracting\n"
-        "- Use web_search for ALL external data (rates, prices, tax, weather, versions)\n"
-        "- MATH = CODE: never approximate arithmetic mentally when python_execute is available\n"
-        "- High-stakes answers (finance, health, legal) must surface the CONSEQUENCE_CHECK caveat in <answer>\n\n"
-        "Response format:\n"
-        "<think>CAPABILITY_CHECK ... tool calls ... </think>\n"
-        "<answer>your final answer to the user</answer>"
+        "</think>\n"
+        "<answer>\n"
+        "[response to the user — high-stakes answers include explicit caveat]\n"
+        "</answer>\n\n"
+        f"{tool_note}\n\n"
+        "Tool call syntax (place between </think> and <answer>, or inside <think> before the final answer):\n"
+        f"{call_examples}\n\n"
+        f"{_CONSTITUTION}"
     )
+
+
+def _to_openai_schemas(active_tools: set) -> List[Dict[str, Any]]:
+    """Convert active registry entries to OpenAI function-calling schema format.
+
+    Used by native mode: passed as tools= to apply_chat_template so the model
+    receives tool definitions in the format it was pre-trained on, allowing
+    zero-shot use of any tool described by a JSON schema — no retraining needed.
+    """
+    return [
+        {"type": "function", "function": spec.schema()}
+        for name, spec in _REGISTRY.items()
+        if name in active_tools
+    ]
+
+
+def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
+    """Parse Qwen3 Hermes-style <tool_call>{"name":…,"arguments":{…}}</tool_call>.
+
+    Returns the same {"function": name, "kwargs": dict} shape as _parse_tool_call
+    so the execution loop needs no branching beyond the parse step.
+    """
+    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(1))
+        name = obj.get("name", "")
+        args = obj.get("arguments", {})
+        if isinstance(args, str):       # some models serialise args as a JSON string
+            args = json.loads(args)
+        return {"function": name, "kwargs": args if isinstance(args, dict) else {}}
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
 
 
 def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -530,11 +614,18 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
-              greedy: bool = False) -> tuple:
-    """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s)."""
+              greedy: bool = False,
+              tools: Optional[List[Dict[str, Any]]] = None) -> tuple:
+    """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s).
+
+    tools — OpenAI-schema list for native JSON tool calling (tool_mode="native").
+    When None the call is identical to the previous XML-only behaviour.
+    """
     if _USE_GGUF:
-        return _generate_gguf(conversation, max_new_tokens, temperature, greedy)
-    prompt = _TOKENIZER.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
+        return _generate_gguf(conversation, max_new_tokens, temperature, greedy, tools)
+    prompt = _TOKENIZER.apply_chat_template(
+        conversation, tokenize=False, add_generation_prompt=True, tools=tools,
+    )
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     n_in = inputs["input_ids"].shape[1]
     t0 = time.perf_counter()
@@ -578,25 +669,38 @@ def _raw_generate(prompt: str, max_new_tokens: int = 256) -> str:
 
 
 def _generate_gguf(conversation: list, max_new_tokens: int, temperature: float,
-                   greedy: bool = False) -> tuple:
+                   greedy: bool = False,
+                   tools: Optional[List[Dict[str, Any]]] = None) -> tuple:
     """Generation via llama-cpp-python for GGUF models.
 
     Returns the same (response_text, n_input_tokens, n_output_tokens, elapsed_s)
     tuple as _generate() so all callers stay compatible.
+    tools — passed through to create_chat_completion for native JSON tool calling.
     """
     if _GGUF_MODEL is None:
         raise RuntimeError("_generate_gguf() called but GGUF model is not loaded.")
     t0 = time.perf_counter()
-    result = _GGUF_MODEL.create_chat_completion(
+    kwargs: Dict[str, Any] = dict(
         messages=conversation,
         max_tokens=max_new_tokens,
         temperature=1e-6 if greedy else max(temperature, 1e-6),
         top_p=0.9 if not greedy else 1.0,
     )
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+    result = _GGUF_MODEL.create_chat_completion(**kwargs)
     elapsed = time.perf_counter() - t0
-    text  = result["choices"][0]["message"]["content"]
+    msg   = result["choices"][0]["message"]
     n_in  = result["usage"]["prompt_tokens"]
     n_out = result["usage"]["completion_tokens"]
+    # GGUF returns structured tool_calls — normalise to inline <tool_call> text
+    # so the loop's _parse_native_tool_call() handles both HF and GGUF paths uniformly.
+    if tools and msg.get("tool_calls"):
+        tc   = msg["tool_calls"][0]["function"]
+        text = f'<tool_call>\n{{"name": "{tc["name"]}", "arguments": {tc["arguments"]}}}\n</tool_call>'
+    else:
+        text = msg.get("content") or ""
     return text, n_in, n_out, elapsed
 
 
@@ -643,6 +747,9 @@ class CompletionRequest(BaseModel):
     max_tool_iterations: int = 8
     greedy: bool = False   # deterministic decoding — set True for reproducible degradation evals
     session_id: str = "anonymous"  # per-user/session identifier for dependency monitoring
+    tool_mode: str = "xml"  # "xml"  — custom <tool> tags (trained behaviour, default)
+                             # "native" — Qwen3 JSON <tool_call> via apply_chat_template tools=
+                             #            allows new tools without retraining
 
 
 class ToolRegistration(BaseModel):
@@ -753,6 +860,13 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     for m in req.messages:
         conv.append({"role": m.role, "content": m.content})
 
+    # Native mode: build OpenAI-schema list for all active tools so apply_chat_template
+    # injects them into the prompt — the model uses pre-training to call any schema-described tool.
+    use_native  = req.tool_mode == "native"
+    tool_schemas: Optional[List[Dict[str, Any]]] = (
+        _to_openai_schemas(active_tools) if use_native else None
+    )
+
     tools_used: Dict[str, int] = {}
     total_tokens = 0
     first_input_tokens = 0
@@ -760,7 +874,10 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
 
     try:
         for iteration in range(req.max_tool_iterations):
-            response, n_in, n_tok, _ = _generate(conv, req.max_new_tokens, req.temperature, req.greedy)
+            response, n_in, n_tok, _ = _generate(
+                conv, req.max_new_tokens, req.temperature, req.greedy,
+                tools=tool_schemas,
+            )
             if iteration == 0:
                 first_input_tokens = n_in
             total_tokens += n_tok
@@ -769,11 +886,14 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             if "<answer>" in response.lower():
                 break
 
-            tc = _parse_tool_call(response)
+            # Parse tool call — XML path for trained tools, JSON path for native/new tools
+            tc = _parse_native_tool_call(response) if use_native else _parse_tool_call(response)
             if tc:
                 fn_name = tc["function"]
-                if fn_name not in active_tools or fn_name not in _REGISTRY:
-                    result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
+                if fn_name not in _REGISTRY:
+                    raw_result = f"Error: tool '{fn_name}' is not registered on this server."
+                elif not use_native and fn_name not in active_tools:
+                    raw_result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
                 else:
                     try:
                         raw_result = _REGISTRY[fn_name].fn(**tc["kwargs"])

@@ -1,47 +1,71 @@
 ---
-title: SFT v2 Pipeline (constitution-driven, domain-unbounded)
+title: SFT v2/v3 Pipeline (constitution-driven, domain-unbounded)
 type: source
 kind: code
-tags: [code, sft, pipeline, constitution, security]
+tags: [code, sft, pipeline, constitution, security, tool-use]
 sources:
   - pipeline/sft_question_generator.py
   - pipeline/sft_gold_response_generator.py
-  - pipeline/sft_math_question_generator.py
-  - pipeline/sft_rejection_sampler.py
+  - pipeline/sft_math_pipeline.py
   - pipeline/sft_dataset_assembler.py
+  - pipeline/transform_sft_tool_format.py
+  - pipeline/sft_add_robustness_variants.py
+  - pipeline/sft_add_native_tool_examples.py
   - pipeline/constitution.md
   - README.md
-updated: 2026-05-07
+updated: 2026-05-12
 status: current
 ---
 
-# SFT v2 Pipeline
+# SFT v2/v3 Pipeline
 
-**Replaces the v1 42-template scenario approach with a constitution-driven, LLM-teacher system. Two parallel tracks (Part A behavioural, Part B verifiable-math) feed into a merged train set.**
+**Replaces the v1 42-template scenario approach with a constitution-driven, LLM-teacher system. Two parallel tracks (Part A behavioural, Part B verifiable-math) feed into a merged train set. Post-assembly, three transformation scripts convert the dataset to the multi-turn tool format expected by the inference server (`train_sft_v3_robust.jsonl`).**
 
 ## Flow
 
 ```
 Part A (behavioural)                         Part B (math)
 ─────────────────────────────────────        ──────────────────────────────
-sft_question_generator.py                    sft_math_question_generator.py
-  13 categories, ~2,000 Qs                     7 types, ~1,050 Qs
-        │                                              │
-        ▼                                              ▼
-sft_gold_response_generator.py               sft_rejection_sampler.py
-  draft → rule_check_response() [Blocker 2]    N candidates → score
-  → LLM critique (23 principles)               keep +1 (code + correct)
-  → _merge_violations() [Blocker 2]            AST code sandbox [Blocker 1]
-  → revise on merged violations
+sft_question_generator.py                    sft_math_pipeline.py
+  13 categories, ~2,000 Qs                     GSM8K + MATH datasets
+        │                                       code executed locally
+        ▼                                       answer verified vs expected
+sft_gold_response_generator.py                        │
+  draft → rule_check_response() [Blocker 2]            │
+  → LLM critique (23 principles)                       │
+  → _merge_violations() [Blocker 2]                    │
+  → revise on merged violations                        │
         │                                              │
         └────────────────┬─────────────────────────────┘
                          ▼
                 sft_dataset_assembler.py
-               • filter: CAPABILITY_CHECK present
-               • dedupe · category balance · split
+               • filter: CAPABILITY_CHECK present (v3-aware)
+               • dedupe · category balance · 90/10 split
                          ▼
-               train_interleaved.jsonl (~2,700)
-               eval_interleaved.jsonl  (5%)
+               train_sft_v2.jsonl  (1,450 — single-turn tool calls)
+                         │
+                         ▼
+          transform_sft_tool_format.py      ← re-executes python_execute code
+               • split <tool>+<answer> → multi-turn [assistant→tool→assistant]
+               • drops 34 malformed examples
+                         ▼
+               train_sft_v3.jsonl  (1,416)
+                         │
+           ┌─────────────┴──────────────────┐
+           ▼                                ▼
+  sft_add_native_tool_examples.py    sft_add_robustness_variants.py
+    20% of tool examples →              15% minimal prompt variants
+    native JSON tool_calls format       10% brief prompt variants
+    (uses apply_chat_template           5%  no-principles variants
+     tools= at training time)
+           │                                │
+           └─────────────┬──────────────────┘
+                         ▼
+          train_sft_v3_with_native.jsonl (1,549)
+                         ▼
+          sft_add_robustness_variants.py
+                         ▼
+          train_sft_v3_robust.jsonl  (1,983 — final training set)
 ```
 
 ## Categories
@@ -101,11 +125,46 @@ Part B uses `sft_math_question_generator.py`. Dataset source switched to **Eleut
 - `-1` code fails or wrong answer
 - For `no_tool_control` questions, +1 is reserved for honest refusal.
 
+## Dataset composition — train_sft_v3_robust.jsonl (1,983 examples)
+
+| Slice | Count | % | Purpose |
+|---|---|---|---|
+| XML multi-turn tool | 679 | 34.2 | Trained tool-call behaviour (4 known tools) |
+| Native JSON tool | 133 | 6.7 | Qwen3 pre-training generalisation — new tools without retraining |
+| No-tool | 737 | 37.2 | Constitution reasoning, refusals, empathy |
+| Robustness variants | 434 | 21.9 | Minimal/brief system prompts — trains intrinsic behaviour |
+
+## Tool format: v2 vs v3
+
+**v2 (single-turn, broken):** The LLM teacher produced `<tool>name(args)</tool><answer>…</answer>` in one assistant message. At inference, `3_infererence.py` checks for `<answer>` first — tool never executed; answers were hallucinated.
+
+**v3 (multi-turn, correct):** Each tool call occupies its own `[assistant]→[tool]→[assistant]` turn triplet. `python_execute` results are real stdout from local re-execution. The `[TOOL_RESULT: name]…[/TOOL_RESULT]` envelope matches what `_sanitise_tool_output()` in the inference server injects at runtime.
+
+## System prompt consistency (2026-05-12)
+
+All three contexts now use the same format — critical for the model to activate constitution behaviour at inference without re-instruction:
+
+| Context | Prompt | 23 principles listed |
+|---|---|---|
+| Part A training | `TRAINING_SYSTEM_PROMPT_TEMPLATE` in `sft_gold_response_generator.py` | ✓ |
+| Inference | `_system_prompt_for_profile()` in `3_infererence.py` | ✓ (synced 2026-05-12) |
+| Part B training (math) | Short minimal prompt | ✗ (by design — math examples teach tool execution format, not constitution reasoning) |
+| Robustness variants | Minimal/brief/no-principles | ✗ (by design — trains intrinsic behaviour) |
+
+The `_CONSTITUTION` constant in `3_infererence.py` is a verbatim copy of the 23-principle block from `TRAINING_SYSTEM_PROMPT_TEMPLATE`. Both must be updated together when principles change.
+
+## Native JSON tool calling (2026-05-12)
+
+Qwen3-0.6B has native function-calling capability from pre-training (0.880 score, tied #1 in tool-calling benchmark). When the inference server is called with `tool_mode="native"`, it passes `tools=[…]` (OpenAI schemas) to `apply_chat_template` — the model reads the schema and calls any described tool without SFT examples for that specific tool. Training examples with `metadata.native_tools` are rendered with the same `apply_chat_template(tools=…)` call, keeping training and inference text identical.
+
+**Adding a new tool (no retraining):** register in `3_infererence.py` → add schema to `sft_add_native_tool_examples.py:TOOL_SCHEMAS` → call endpoint with `tool_mode="native"`.
+
 ## Related
 
 - [[sources/code/constitution-document]] — the 23 principles critiqued against
 - [[entities/constitution]] — entity-level summary
 - [[sources/code/training-and-benchmark]] — the training stage that consumes this output
+- [[topics/tool-use-and-verification]] — PAL/ReAct delegation; native vs custom tool formats
 - [[sources/papers/auto-cot]] — methodological precedent for automated exemplars
 - [[sources/papers/deepseek-r1]] — overall SFT→RL recipe
 
@@ -113,8 +172,10 @@ Part B uses `sft_math_question_generator.py`. Dataset source switched to **Eleut
 
 - `pipeline/sft_question_generator.py`
 - `pipeline/sft_gold_response_generator.py`
-- `pipeline/sft_math_question_generator.py`
-- `pipeline/sft_rejection_sampler.py`
+- `pipeline/sft_math_pipeline.py`
 - `pipeline/sft_dataset_assembler.py`
+- `pipeline/transform_sft_tool_format.py`
+- `pipeline/sft_add_robustness_variants.py`
+- `pipeline/sft_add_native_tool_examples.py`
 - `pipeline/constitution.md`
-- `README.md` §"SFT v2 Pipeline"
+- `README.md` §"SFT v2/v3 Pipeline"
