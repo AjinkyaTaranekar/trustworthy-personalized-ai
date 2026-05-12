@@ -937,6 +937,21 @@ class ModelTrainer:
                 "Call train_sft(), train_grpo(), or load_base_model() first."
             )
 
+        # When called via --mode publish, train_sft() was never run so _eval_raw is empty.
+        # Load the eval split from disk so ROUGE has real references.
+        if not self._eval_raw:
+            dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
+            if dataset_path.exists():
+                try:
+                    raw = load_dataset("json", data_files=str(dataset_path))
+                    raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+                    self._eval_raw = [dict(ex) for ex in raw_split["test"]]
+                    print(f"  [publish] Loaded {len(self._eval_raw)} eval examples from {dataset_path.name}")
+                except Exception as e:
+                    print(f"  [publish] Could not load eval split: {e} — eval ROUGE skipped")
+            else:
+                print(f"  [publish] {dataset_path.name} not found — eval ROUGE skipped")
+
         import os
         from unsloth import FastModel
 

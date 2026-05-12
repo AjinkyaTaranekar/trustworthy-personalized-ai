@@ -768,6 +768,7 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     print(f"  Avg throughput    : {sum(tps)/len(tps):.0f} tok/s")
 
     return {
+        "conversation": history,   # full message list — consumed by analysis.ipynb Section 6
         "turns": turns,
         "edge_cases": edge_results,
         "summary": {
@@ -999,6 +1000,22 @@ Examples:
             pass
         runs[compare_label] = bench_cmp
         save_report(bench_cmp, output_dir, f"benchmark_compare_{timestamp}.json")
+
+        # Save combined comparison file so analysis.ipynb comparison_*.json glob works
+        comparison_report = {
+            "timestamp": timestamp,
+            "prompt": custom_questions[0] if custom_questions else BENCHMARK_QUESTIONS[0],
+            "config": {"primary_url": args.server_url, "compare_url": args.compare_url},
+            "base_model_no_tools": {
+                "conversation": bench_cmp["conversation"],
+                "num_turns": len([m for m in bench_cmp["conversation"] if m["role"] == "assistant"]),
+            },
+            "custom_model_output": {
+                "conversation": bench["conversation"],
+                "num_turns": len([m for m in bench["conversation"] if m["role"] == "assistant"]),
+            },
+        }
+        save_report(comparison_report, output_dir, f"comparison_{timestamp}.json")
 
     _print_comparison_table(runs)
 
