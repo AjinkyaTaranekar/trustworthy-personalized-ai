@@ -37,6 +37,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[entities/graph-rag]] — KG-backed RAG for user-state memory
 - [[entities/5w-h]] — who/what/when/where/why/how user-modelling schema
 - [[entities/appraisal-theory]] — structured empathy substrate
+- [[entities/tml-interaction-small]] — Thinking Machines Lab 276B/12B MoE; 0.40s real-time multimodal; frontier scale/privacy contrast
 
 ## Sources
 
@@ -71,6 +72,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ### Papers — Small-model / distillation
 - [[sources/papers/self-enhanced-reasoning]] — SERT small-model self-training
+- [[sources/papers/simple-self-distillation]] — SSD: sample → SFT on own outputs; no verifier/teacher/RL; foundation for Constitutional SSD adaptation
 - [[sources/papers/dual-head-reasoning-distillation]] — train-time-only reasoning
 - [[sources/papers/token-hungry-deepseek-r1]] — accuracy-vs-efficiency trade-off
 
