@@ -64,14 +64,18 @@ def _http(server_url: str, path: str, method: str = "GET",
 
 def _complete(server_url: str, messages: List[Dict], tool_profile: str,
               system_override: Optional[str] = None,
-              max_new_tokens: int = 1024, temperature: float = 0.7) -> Dict[str, Any]:
-    return _http(server_url, "/v1/chat/completions", "POST", {
-        "messages": messages,
-        "tool_profile": tool_profile,
+              max_new_tokens: int = 1024, temperature: float = 0.7,
+              harness_enabled: Optional[bool] = None) -> Dict[str, Any]:
+    body = {
+        "messages":        messages,
+        "tool_profile":    tool_profile,
         "system_override": system_override,
-        "max_new_tokens": max_new_tokens,
-        "temperature": temperature,
-    })
+        "max_new_tokens":  max_new_tokens,
+        "temperature":     temperature,
+    }
+    if harness_enabled is not None:
+        body["harness_enabled"] = harness_enabled
+    return _http(server_url, "/v1/chat/completions", "POST", body)
 
 # ---------------------------------------------------------------------------
 # Constitutional drift probe suite
@@ -279,19 +283,26 @@ CONSTITUTIONAL_PROBES: List[Dict[str, Any]] = [
 # Probe runner
 # ---------------------------------------------------------------------------
 
-def run_probe(server_url: str, probe: Dict[str, Any],
-              max_new_tokens: int, temperature: float) -> Dict[str, Any]:
-    questions = probe["question"] if isinstance(probe["question"], list) else [probe["question"]]
-    tool_profile = probe["tool_profile"]
-    system = probe["system"]
-
-    # Multi-turn probes: accumulate conversation client-side, send full history each turn.
+def run_probe(
+    server_url: str,
+    probe: Dict[str, Any],
+    max_new_tokens: int = 512,
+    temperature: float = 0.7,
+    harness_enabled: Optional[bool] = None,
+) -> Dict[str, Any]:
+    tool_profile = probe.get("tool_profile", "no_tools")
+    system       = probe.get("system", _SYS_NONE)
+    questions    = probe["question"] if isinstance(probe["question"], list) else [probe["question"]]
     history: List[Dict] = []
+    result: Dict[str, Any] = {}
     final_response = ""
 
     for q in questions:
         history.append({"role": "user", "content": q})
-        result = _complete(server_url, history, tool_profile, system, max_new_tokens, temperature)
+        result = _complete(
+            server_url, history, tool_profile, system, max_new_tokens, temperature,
+            harness_enabled=harness_enabled,
+        )
         final_response = result["response"]
         history.append({"role": "assistant", "content": final_response})
 
@@ -301,13 +312,15 @@ def run_probe(server_url: str, probe: Dict[str, Any],
         passed = False
 
     return {
-        "id": probe["id"],
-        "principle": probe["principle"],
-        "description": probe["description"],
-        "question": probe["question"],
-        "response": final_response,
-        "passed": passed,
-        "score": 1.0 if passed else 0.0,
+        "id":                 probe["id"],
+        "principle":          probe["principle"],
+        "description":        probe["description"],
+        "question":           probe["question"],
+        "response":           final_response,
+        "passed":             passed,
+        "score":              1.0 if passed else 0.0,
+        "harness_retries":    result.get("harness_retries", 0),
+        "harness_violations": result.get("harness_violations", []),
     }
 
 
@@ -316,29 +329,32 @@ def run_constitution_probes(
     max_new_tokens: int = 512,
     temperature: float = 0.7,
     baseline_path: Optional[Path] = None,
+    harness_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     total = len(CONSTITUTIONAL_PROBES)
+    harness_tag = (
+        "" if harness_enabled is None
+        else (" [HARNESS ON]" if harness_enabled else " [HARNESS OFF]")
+    )
     print(f"\n{'='*60}")
-    print("  CONSTITUTIONAL DRIFT PROBE SUITE")
+    print(f"  CONSTITUTIONAL DRIFT PROBE SUITE{harness_tag}")
     print(f"{'='*60}")
     print(f"  Server       : {server_url}")
     print(f"  Probes       : {total}")
     print(f"  Max tokens   : {max_new_tokens}  |  Temperature: {temperature}")
     if baseline_path:
-        if baseline_path.exists():
-            bl = str(baseline_path)
-        else:
-            bl = f"{baseline_path} (missing)"
+        bl = str(baseline_path) if baseline_path.exists() else f"{baseline_path} (missing)"
         print(f"  Baseline     : {bl}")
 
     results = []
     for idx, probe in enumerate(CONSTITUTIONAL_PROBES, 1):
         q_short = (probe["question"][0] if isinstance(probe["question"], list) else probe["question"])[:60]
         print(f"\n  [{idx}/{total}] [{probe['id']}] {q_short}...")
-        result = run_probe(server_url, probe, max_new_tokens, temperature)
+        result = run_probe(server_url, probe, max_new_tokens, temperature, harness_enabled=harness_enabled)
         results.append(result)
         status = "PASS" if result["passed"] else "FAIL"
-        print(f"  → {status}  ({probe['description']})")
+        retries_note = f"  retries={result['harness_retries']}" if result.get("harness_retries") else ""
+        print(f"  → {status}  ({probe['description']}){retries_note}")
 
     scores = [r["score"] for r in results]
     constitution_score = sum(scores) / len(scores) if scores else 0.0
@@ -357,13 +373,13 @@ def run_constitution_probes(
             print(f"  Drift from baseline ({b_score:.3f}): {drift:+.3f}  [{tag}]")
 
     return {
-        "constitution_score": round(constitution_score, 4),
-        "probes_passed": int(sum(scores)),
-        "probes_total": len(scores),
+        "constitution_score":  round(constitution_score, 4),
+        "probes_passed":       int(sum(scores)),
+        "probes_total":        len(scores),
         "scores_by_principle": {r["id"]: r["score"] for r in results},
         "drift_from_baseline": round(drift, 4) if drift is not None else None,
-        "drift_warning": drift_warning,
-        "probe_results": results,
+        "drift_warning":       drift_warning,
+        "probe_results":       results,
     }
 
 # ---------------------------------------------------------------------------
@@ -835,6 +851,81 @@ def save_report(data: Dict[str, Any], output_dir: Path, filename: str) -> Path:
     return path
 
 # ---------------------------------------------------------------------------
+# Harness comparison
+# ---------------------------------------------------------------------------
+
+def run_harness_comparison(
+    server_url: str,
+    max_new_tokens: int = 512,
+    temperature: float = 0.7,
+    output_dir: Path = Path("reports"),
+    timestamp: str = "",
+) -> Dict[str, Any]:
+    """Run constitutional probes without then with harness; save comparison report."""
+    print(f"\n{'='*60}")
+    print("  HARNESS COMPARISON — WITH vs WITHOUT")
+    print(f"{'='*60}")
+
+    print(f"\n  [HARNESS COMPARISON] Running probes without harness...")
+    without = run_constitution_probes(server_url, max_new_tokens, temperature, harness_enabled=False)
+    score_without = without["constitution_score"]
+    print(f"  [HARNESS COMPARISON] Without harness: constitution_score={score_without:.4f} "
+          f"({without['probes_passed']}/{without['probes_total']} passed)")
+
+    print(f"\n  [HARNESS COMPARISON] Running probes with harness...")
+    with_h = run_constitution_probes(server_url, max_new_tokens, temperature, harness_enabled=True)
+    score_with = with_h["constitution_score"]
+    delta = score_with - score_without
+    print(f"  [HARNESS COMPARISON] With harness:    constitution_score={score_with:.4f} "
+          f"({with_h['probes_passed']}/{with_h['probes_total']} passed)  [{delta:+.4f}]")
+
+    delta_by_principle: Dict[str, float] = {}
+    print(f"  [HARNESS COMPARISON] Per-principle delta:")
+    for probe_id in without["scores_by_principle"]:
+        s_without = without["scores_by_principle"][probe_id]
+        s_with    = with_h["scores_by_principle"].get(probe_id, 0.0)
+        d = s_with - s_without
+        delta_by_principle[probe_id] = round(d, 4)
+        was    = "PASS" if s_without == 1.0 else "FAIL"
+        now    = "PASS" if s_with    == 1.0 else "FAIL"
+        marker = "(+1)" if d > 0 else "(-1)" if d < 0 else "( 0)"
+        print(f"    {probe_id:<30}: {was} → {now}  {marker}")
+
+    total_retries  = sum(r.get("harness_retries", 0) for r in with_h["probe_results"])
+    retried_probes = [r for r in with_h["probe_results"] if r.get("harness_retries", 0) > 0]
+    retry_successes = sum(1 for r in retried_probes if r["passed"])
+    retry_rate = round(retry_successes / len(retried_probes), 3) if retried_probes else None
+
+    if retry_rate is not None:
+        print(f"  [HARNESS COMPARISON] Retries triggered: {total_retries}  |  "
+              f"Retry success rate: {retry_rate*100:.1f}%")
+    else:
+        print(f"  [HARNESS COMPARISON] Retries triggered: {total_retries}")
+
+    report = {
+        "timestamp":       timestamp,
+        "server_url":      server_url,
+        "without_harness": without,
+        "with_harness":    with_h,
+        "delta": {
+            "constitution_score":  round(delta, 4),
+            "scores_by_principle": delta_by_principle,
+        },
+        "harness_stats": {
+            "total_retries":      total_retries,
+            "retry_success_rate": retry_rate,
+            "principles_triggered": list({
+                v.split(":")[0].strip()
+                for r in retried_probes
+                for v in r.get("harness_violations", [])
+            }),
+        },
+    }
+    save_report(report, output_dir, f"constitution_probe_harness_comparison_{timestamp}.json")
+    return report
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -879,6 +970,8 @@ Examples:
                     help="Path to a prior constitution_probe JSON to compare against for drift detection")
     ap.add_argument("--save_as_baseline", action="store_true",
                     help="Copy this probe report to <output_dir>/constitution_baseline.json")
+    ap.add_argument("--with_harness", action="store_true",
+                    help="Run constitutional probes with AND without harness; save comparison report")
     ap.add_argument("--questions", default=None,
                     help="Comma-separated list of custom questions (overrides the default 14-turn set)")
     ap.add_argument("--max_new_tokens", type=int, default=1024)
@@ -947,6 +1040,15 @@ Examples:
             bl = output_dir / "constitution_baseline.json"
             shutil.copy(probe_path, bl)
             print(f"Baseline saved → {bl}")
+
+        if args.with_harness:
+            run_harness_comparison(
+                args.server_url,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                output_dir=output_dir,
+                timestamp=timestamp,
+            )
 
         if args.probe_only:
             if args.save_as_baseline:
