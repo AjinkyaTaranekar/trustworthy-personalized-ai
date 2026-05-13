@@ -18,6 +18,7 @@ Usage (from 3_infererence.py):
 import json
 import re
 from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -46,6 +47,7 @@ _MATH_SIGNAL_RE = re.compile(
 
 _CHECKED_PRINCIPLES = ("P1", "P3", "P4", "P18")
 _ADAPTATION_THRESHOLD = 0.30
+_RETRY_TEMP_SCALES = (1.3, 1.6)
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +265,30 @@ class HarnessMetrics:
 class ConstitutionalHarness:
     """Inference-time constitutional validation and correction loop."""
 
-    def __init__(self, metrics_path: str = "reports/harness_metrics.json") -> None:
+    def __init__(
+        self,
+        metrics_path: str = "reports/harness_metrics.json",
+        ssd_log_path: Optional[str] = None,
+    ) -> None:
         self.metrics_path = metrics_path
+        self.ssd_log_path = ssd_log_path
         self.metrics = HarnessMetrics()
         self.metrics.load(metrics_path)
+
+    def _log_ssd_candidate(self, question: str, response: str, retried: bool) -> None:
+        """Append a constitutionally-passing response to the SSD training log."""
+        if self.ssd_log_path is None:
+            return
+        entry = {
+            "question": question,
+            "response": response,
+            "retried": retried,
+            "principles_checked": list(_CHECKED_PRINCIPLES),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        Path(self.ssd_log_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(self.ssd_log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
 
     def check_and_steer(
         self,
@@ -274,10 +296,13 @@ class ConstitutionalHarness:
         conv: List[Dict],
         question: str,
         tool_profile_label: str,
-        generate_fn: Callable[[List[Dict]], str],
+        generate_fn: Callable[[List[Dict], float], str],
         max_retries: int = 2,
     ) -> Tuple[str, List[str], int]:
-        """Validate response; retry with corrective prompt on failure.
+        """Validate response; retry with corrective prompt and escalating temperature on failure.
+
+        generate_fn(conv, temp_scale) — temp_scale=1.0 on normal generation; >1.0 on retries
+        to explore more of the model's output distribution (SSD insight).
 
         Returns: (final_response, final_violations, retries_used)
         """
@@ -289,21 +314,27 @@ class ConstitutionalHarness:
             print(f"[HARNESS] ✓ No violations — response passed (P1, P3, P4, P18)")
             self.metrics.record([], retried=False)
             self.metrics.save(self.metrics_path)
+            self._log_ssd_candidate(question, response, retried=False)
             return response, [], 0
 
         print(f"[HARNESS] ✗ Violations found ({len(violations)}):")
         for v in violations:
             print(f"[HARNESS]   · {v}")
 
-        retries_used      = 0
-        current_response  = response
+        retries_used       = 0
+        current_response   = response
         current_violations = violations
 
         for attempt in range(1, max_retries + 1):
+            temp_scale = (
+                _RETRY_TEMP_SCALES[attempt - 1]
+                if attempt - 1 < len(_RETRY_TEMP_SCALES)
+                else _RETRY_TEMP_SCALES[-1]
+            )
             corrective = build_corrective_prompt(current_violations)
             retry_conv = conv + [{"role": "user", "content": corrective}]
-            print(f"[HARNESS] Injecting corrective prompt → retry {attempt}/{max_retries}...")
-            current_response   = generate_fn(retry_conv)
+            print(f"[HARNESS] Injecting corrective prompt → retry {attempt}/{max_retries} (temp_scale={temp_scale})...")
+            current_response   = generate_fn(retry_conv, temp_scale)
             retries_used       = attempt
             current_violations = run_checks(current_response, question, tool_profile_label)
 
@@ -311,6 +342,7 @@ class ConstitutionalHarness:
                 print(f"[HARNESS] ✓ Retry {attempt} passed — violations cleared")
                 self.metrics.record([], retried=True, retry_cleared=True)
                 self.metrics.save(self.metrics_path)
+                self._log_ssd_candidate(question, current_response, retried=True)
                 return current_response, [], retries_used
 
             print(f"[HARNESS] ✗ Retry {attempt} still violated ({', '.join(v.split(':')[0] for v in current_violations)})")
