@@ -6,6 +6,24 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-14] refactor | Tool error fallback in inference loop
+
+- **Why:** repeated tool calls on safety-validator failures (e.g., blocked imports) caused retry loops and no final answer.
+- **Fix:** classify tool errors, mark safety-validator failures as non-retryable, and fall back to a no-tool answer after repeated tool errors.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/training-and-benchmark.md`, `wiki/log.md`.
+
+## [2026-05-14] refactor | Enforce v3-style tool turns at inference
+
+- **Why:** even with v3 training, the model can emit `<tool>…</tool><answer>…</answer>` in a single turn; keeping the answer wrapper in the conversation can bias the follow-up response.
+- **Fix:** when a tool call is detected, the server strips any `<answer>…</answer>` wrapper in that assistant turn (preserving the tool call), ensuring the tool result always appears before the final answer.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/log.md`.
+
+## [2026-05-14] refactor | Execute tool calls inside <answer>
+
+- **Why:** the model often emits `<tool>…</tool><answer>…</answer>` in a single assistant turn; the server broke on `<answer>` before parsing tools, so calls were skipped.
+- **Fix:** `chat_completions()` now parses tool calls before the `<answer>` check; if a tool is found it executes and continues the loop, otherwise it exits on `<answer>`.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/log.md`.
+
 ## [2026-05-14] refactor | Add --skip_gguf flag to bypass llama.cpp on no-sudo machines
 
 - **Why:** `publish()` calls Unsloth's `save_pretrained_gguf` which internally runs `sudo apt-get` via `check_llama_cpp()` before raising `RuntimeError: llama.cpp folder does not exist` — the sudo prompt blocks the process even though the outer try/except would catch the error. On the A4000 node (no sudo), GGUF export can never succeed.

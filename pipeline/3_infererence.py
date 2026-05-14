@@ -158,6 +158,55 @@ def _sanitise_tool_output(tool_name: str, raw: str) -> str:
     return f"[TOOL_RESULT: {tool_name}]\n{cleaned}\n[/TOOL_RESULT]"
 
 
+def _is_tool_error(raw: str) -> bool:
+    if not raw:
+        return False
+    text = raw.strip().lower()
+    return text.startswith((
+        "error:",
+        "tool execution error:",
+        "web_search unavailable:",
+        "read_url failed:",
+    ))
+
+
+def _is_non_retryable_tool_error(raw: str) -> bool:
+    text = raw.lower()
+    if "blocked_import" in text or "blocked_builtin" in text:
+        return True
+    if "code rejected by safety validator" in text and "syntax_error" not in text:
+        return True
+    if "not registered" in text or "not available in profile" in text:
+        return True
+    return False
+
+
+def _tool_failure_prompt(tool_name: str, raw: str, non_retryable: bool, available_tools: set[str]) -> str:
+    reason = raw.strip()
+    alternatives = sorted(t for t in available_tools if t != tool_name)
+    if alternatives:
+        guidance = (
+            "Do not call this tool again in this response. "
+            "If another tool is available and relevant, use it now. "
+        )
+    else:
+        guidance = (
+            "Do not call any tools again in this response. "
+            "Provide the best possible answer without tools. "
+        )
+    alt_text = ", ".join(alternatives) if alternatives else "none"
+    suffix = " The failure is non-retryable due to safety or configuration constraints." if non_retryable else ""
+    return (
+        "[TOOL_FAILURE] The previous tool call failed.\n"
+        f"Tool: {tool_name}\n"
+        f"Error: {reason}\n"
+        f"Available alternatives: {alt_text}.\n"
+        f"{guidance}"
+        "If the tool failure blocks a reliable answer, say so clearly."
+        + suffix
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -212,6 +261,7 @@ def _web_search(query: str = "", **_) -> str:
         )
         with urllib.request.urlopen(url, timeout=8) as r:
             data = json.loads(r.read())
+        print(data)
         abstract = data.get("Abstract", "").strip()
         related = [
             t.get("Text", "")
@@ -543,26 +593,26 @@ def _system_prompt_for_profile(profile: str) -> str:
         "<think>\n"
         "CAPABILITY_CHECK:\n\n"
         "  5W+H:\n"
-        "    WHO is affected: [the user / third parties / institutions involved]\n"
-        "    WHAT is required: [list requirements to answer correctly]\n"
-        "    WHEN: [time-sensitivity — live data needed, training cutoff relevant, dated context]\n"
-        "    WHERE: [jurisdiction, region, domain, platform]\n"
-        "    WHY: [inferred intent and underlying goal]\n"
-        "    HOW: [tool selection and method]\n\n"
+        "    WHO is affected: ...\n"
+        "    WHAT is required: ...\n"
+        "    WHEN: ...\n"
+        "    WHERE: ...\n"
+        "    WHY: ...\n"
+        "    HOW: ...\n\n"
         "  First Principles:\n"
-        "    Core truth: [the irreducible fact this answer rests on]\n"
-        "    Assumptions: [what I am taking for granted — flag if unverified]\n\n"
+        "    Core truth: ...\n"
+        "    Assumptions: ...\n\n"
         f"  Session tools: {tool_context}\n"
-        "  Gap: [what I cannot obtain]\n"
-        "  Strategy: [tool chain plan or honest refusal]\n\n"
+        "  Gap: ...\n"
+        "  Strategy: ...\n\n"
         "  CONSEQUENCE_CHECK:\n"
-        "    Stakes: [low / medium / high + reason]\n"
-        "    If wrong: [concrete harm to the user]\n"
-        "    User will likely: [action they will take with this answer]\n"
-        "    Accountability: [what to hedge or flag in the answer]\n"
+        "    Stakes: ...\n"
+        "    If wrong: ...\n"
+        "    User will likely: ...\n"
+        "    Accountability: ...\n"
         "</think>\n"
         "<answer>\n"
-        "[response to the user — high-stakes answers include explicit caveat]\n"
+        "...\n"
         "</answer>\n\n"
         f"{tool_note}\n\n"
         "Tool call syntax (place between </think> and <answer>, or inside <think> before the final answer):\n"
@@ -630,6 +680,24 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
             pass
         kwargs[key] = val
     return {"function": name, "kwargs": kwargs}
+
+
+_ANSWER_BLOCK_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE)
+_TOOL_XML_RE = re.compile(r"<tool>.*?</tool>", re.DOTALL | re.IGNORECASE)
+_TOOL_NATIVE_RE = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_answer_block(text: str, use_native: bool) -> str:
+    """Remove <answer> wrappers when a tool call is present, preserving the tool call if it lives inside."""
+    m = _ANSWER_BLOCK_RE.search(text)
+    if not m:
+        return text
+    answer_block = m.group(0)
+    tool_re = _TOOL_NATIVE_RE if use_native else _TOOL_XML_RE
+    tool_match = tool_re.search(answer_block)
+    replacement = tool_match.group(0) if tool_match else ""
+    cleaned = _ANSWER_BLOCK_RE.sub(replacement, text)
+    return cleaned.strip()
 
 
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
@@ -898,6 +966,8 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     )
 
     tools_used: Dict[str, int] = {}
+    tool_failures: Dict[str, int] = {}
+    max_tool_failures = 2
     total_tokens = 0
     first_input_tokens = 0
     t_start = time.perf_counter()
@@ -911,13 +981,13 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             if iteration == 0:
                 first_input_tokens = n_in
             total_tokens += n_tok
-            conv.append({"role": "assistant", "content": response})
-
-            if "<answer>" in response.lower():
-                break
-
             # Parse tool call — XML path for trained tools, JSON path for native/new tools
             tc = _parse_native_tool_call(response) if use_native else _parse_tool_call(response)
+            has_answer = "<answer>" in response.lower()
+            if tc and has_answer:
+                response = _strip_answer_block(response, use_native)
+
+            conv.append({"role": "assistant", "content": response})
             if tc:
                 fn_name = tc["function"]
                 kwargs_preview = str(tc["kwargs"])[:120]
@@ -937,10 +1007,29 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                         raw_result = f"Tool execution error: {e}"
                         print(f"[TOOL] Execution error in {fn_name}: {e}")
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
+                is_error = _is_tool_error(str(raw_result))
+                non_retryable_error = _is_non_retryable_tool_error(str(raw_result)) if is_error else False
+                if is_error:
+                    tool_failures[fn_name] = tool_failures.get(fn_name, 0) + 1
                 result = _sanitise_tool_output(fn_name, str(raw_result))
                 conv.append({"role": "tool", "content": result})
-            else:
+                if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
+                    conv.append({
+                        "role": "user",
+                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error),
+                    })
+                    fallback, _, n_tok, _ = _generate(
+                        conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
+                    )
+                    total_tokens += n_tok
+                    conv.append({"role": "assistant", "content": fallback})
+                    break
+                continue
+
+            if has_answer:
                 break
+
+            break
 
         latency = time.perf_counter() - t_start
         final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
