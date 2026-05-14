@@ -6,6 +6,12 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-14] refactor | Add --skip_gguf flag to bypass llama.cpp on no-sudo machines
+
+- **Why:** `publish()` calls Unsloth's `save_pretrained_gguf` which internally runs `sudo apt-get` via `check_llama_cpp()` before raising `RuntimeError: llama.cpp folder does not exist` — the sudo prompt blocks the process even though the outer try/except would catch the error. On the A4000 node (no sudo), GGUF export can never succeed.
+- **Fix:** added `--skip_gguf` CLI flag; threaded `skip_gguf: bool` through `ModelTrainer.__init__`; both GGUF steps (save + push_to_hub_gguf) are guarded by `if not self._skip_gguf`; the existing try/except on `save_pretrained_gguf` now also prints a hint to use `--skip_gguf`.
+- **Files changed:** `pipeline/2_model_trainer.py`, `README.md` (publish section updated with `--skip_gguf` example and description).
+
 ## [2026-05-12] refactor | Documentation sync — last 15 commits reflected in README and wiki
 
 - **README.md**: updated `sft_dataset_assembler.py` CLI args (`--part_a`/`--part_b`/`--output_dir`); replaced `sft_math_question_generator.py` + `sft_rejection_sampler.py` with `sft_math_pipeline.py` in repo layout; added `--resume` to all training commands; added publish mode section; updated constitution count (19→23); updated requirements (`rouge-score`, `huggingface_hub`); updated Stage 1 data filename (`train_sft_v2.jsonl`); updated blocker 1c/1d reference; added GRPO per-component reward logging note.

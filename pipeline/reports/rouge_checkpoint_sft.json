@@ -1,0 +1,22 @@
+{
+  "checkpoint": "checkpoint_sft",
+  "eval_split_rouge": {
+    "rouge1": {
+      "precision": 0.3339,
+      "recall": 0.1933,
+      "fmeasure": 0.2074
+    },
+    "rouge2": {
+      "precision": 0.1354,
+      "recall": 0.0655,
+      "fmeasure": 0.0837
+    },
+    "rougeL": {
+      "precision": 0.2262,
+      "recall": 0.1435,
+      "fmeasure": 0.1431
+    }
+  },
+  "probe_baseline_rouge": null,
+  "grpo_held_out_reward": null
+}

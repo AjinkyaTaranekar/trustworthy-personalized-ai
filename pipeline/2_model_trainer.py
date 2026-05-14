@@ -511,13 +511,15 @@ class ModelTrainer:
     def __init__(self, data_dir: str, output_dir: str,
                  output_name: str = "checkpoint_sft",
                  hf_username: str = "AjinkyaTaranekar",
-                 no_publish: bool = False):
+                 no_publish: bool = False,
+                 skip_gguf: bool = False):
         self.data_dir    = Path(data_dir)
         self.output_dir  = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.output_name  = output_name
         self._hf_username = hf_username
         self._no_publish  = no_publish
+        self._skip_gguf   = skip_gguf
         self.model        = None
         self.tokenizer    = None
         # Populated during training; used by publish()
@@ -605,8 +607,7 @@ class ModelTrainer:
             max_seq_length=MODEL_CONFIG["max_seq_length"],
             dataset_text_field="text",
             report_to="none",
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
+            load_best_model_at_end=False,
         )
 
         trainer = SFTTrainer(
@@ -1006,15 +1007,19 @@ class ModelTrainer:
                 print(f"  [ERROR] Re-run upload manually: python 2_model_trainer.py --mode sft --no_publish")
                 print(f"  [ERROR] Or push directly: huggingface-cli upload {repo_id} {merged_dir}")
 
-        # 5. Export GGUF (Q4_K_M quantisation)
-        print(f"  Exporting GGUF → {gguf_dir}")
-        try:
-            self.model.save_pretrained_gguf(gguf_dir, self.tokenizer, quantization_method="q4_k_m")
-        except Exception as e:
-            print(f"  [WARNING] GGUF export failed: {e}")
+        # 5. Export GGUF (Q4_K_M quantisation) — skipped if llama.cpp unavailable
+        if self._skip_gguf:
+            print("  Skipping GGUF export (--skip_gguf set — llama.cpp / sudo not available)")
+        else:
+            print(f"  Exporting GGUF → {gguf_dir}")
+            try:
+                self.model.save_pretrained_gguf(gguf_dir, self.tokenizer, quantization_method="q4_k_m")
+            except Exception as e:
+                print(f"  [WARNING] GGUF export failed: {e}")
+                print("  [WARNING] Re-run with --skip_gguf to bypass this step.")
 
         # 6. Push GGUF to same HuggingFace repo (with retry)
-        if hf_token:
+        if hf_token and not self._skip_gguf:
             print(f"  Pushing GGUF → {repo_id}")
             try:
                 _retry_hf_push(
@@ -1084,6 +1089,10 @@ def main():
                         help="HuggingFace username for model repo (e.g. AjinkyaTaranekar)")
     parser.add_argument("--no_publish", action="store_true",
                         help="Skip HuggingFace upload, GGUF export, and ROUGE computation")
+    parser.add_argument("--skip_gguf", action="store_true", default=True,
+                        help="Skip GGUF export and GGUF HF push (default: True; use --no_skip_gguf to enable)")
+    parser.add_argument("--no_skip_gguf", dest="skip_gguf", action="store_false",
+                        help="Enable GGUF export (requires llama.cpp and sudo access)")
     # GRPO args
     parser.add_argument("--sft_checkpoint", default="./models/checkpoint_sft",
                         help="Path to SFT checkpoint (starting point for GRPO)")
@@ -1120,6 +1129,7 @@ def main():
         args.output_name,
         hf_username=args.hf_username,
         no_publish=args.no_publish,
+        skip_gguf=args.skip_gguf,
     )
 
     if args.mode == "sft":

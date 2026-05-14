@@ -300,9 +300,12 @@ python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft -
 
 # Re-upload a GRPO checkpoint
 python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d --hf_username AjinkyaTaranekar
+
+# Skip GGUF export (use on machines without llama.cpp or sudo access)
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft --skip_gguf
 ```
 
-Publish merges LoRA adapters → 16-bit safetensors, exports GGUF (Q4_K_M), computes ROUGE vs baseline, and pushes both formats with retry (3 attempts, exponential backoff). If `HF_TOKEN` is unset, it saves locally and skips the upload.
+Publish merges LoRA adapters → 16-bit safetensors, exports GGUF (Q4_K_M), computes ROUGE vs baseline, and pushes both formats with retry (3 attempts, exponential backoff). If `HF_TOKEN` is unset, it saves locally and skips the upload. Pass `--skip_gguf` to bypass GGUF export and push entirely (required on machines without `llama.cpp` or `sudo` access).
 
 ---
 
