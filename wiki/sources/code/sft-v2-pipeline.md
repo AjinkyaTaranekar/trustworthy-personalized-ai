@@ -136,9 +136,11 @@ Part B uses `sft_math_question_generator.py`. Dataset source switched to **Eleut
 
 ## Tool format: v2 vs v3
 
-**v2 (single-turn, broken):** The LLM teacher produced `<tool>name(args)</tool><answer>…</answer>` in one assistant message. At inference, `3_infererence.py` checks for `<answer>` first — tool never executed; answers were hallucinated.
+**v2 (single-turn, historically broken):** The LLM teacher produced `<tool>name(args)</tool><answer>…</answer>` in one assistant message. Earlier inference loop logic checked for `<answer>` before parsing tools, so tool calls were skipped and answers were hallucinated. The server now parses tool calls before the answer check, so single-turn outputs execute, but v3 remains preferred for clearer turn structure and alignment with tool-result envelopes.
 
 **v3 (multi-turn, correct):** Each tool call occupies its own `[assistant]→[tool]→[assistant]` turn triplet. `python_execute` results are real stdout from local re-execution. The `[TOOL_RESULT: name]…[/TOOL_RESULT]` envelope matches what `_sanitise_tool_output()` in the inference server injects at runtime.
+
+**Server enforcement:** when a tool call is present, the server strips any `<answer>…</answer>` wrapper in that same assistant turn (preserving the tool call) so the tool result always appears in its own turn before the final answer.
 
 ## System prompt consistency (2026-05-12)
 

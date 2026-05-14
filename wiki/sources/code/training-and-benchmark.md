@@ -20,7 +20,7 @@ sources:
   - pipeline/preflight_check.sh
   - docker-compose.yml
   - README.md
-updated: 2026-05-12
+updated: 2026-05-14
 status: current
 ---
 
@@ -37,7 +37,7 @@ status: current
 | `run_all.sh` | Master orchestration: Stage 0 (FalkorDB), Stage 0.5 (appraisal labelling), Stages 1–8 (SFT + GRPO + evaluation). Fully resumable. Forwards `PIPELINE_*` env vars to every subprocess. |
 | `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
 | `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. Loss masked on system+user tokens via `train_on_responses_only` (fixes large train/eval gap from ~400-token system prompt). **Phase 2: GRPO** — DAPO RL training with per-component reward functions (`make_reward_fns`) so TRL logs each component separately. **Publish** — merges LoRA → safetensors, exports GGUF, pushes to HuggingFace with retry. CLI: `--mode {sft,grpo,publish}`, `--reward_type {c,d}`, `--resume`. |
-| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`. |
+| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Tool loop treats safety-validator failures as non-retryable and falls back to a no-tool answer after repeated tool errors. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`. |
 | `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. |
 | `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
 | `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers. |
