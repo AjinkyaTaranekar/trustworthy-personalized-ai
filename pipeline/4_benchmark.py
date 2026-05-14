@@ -766,6 +766,8 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
         print(f"  → {tm['latency_s']:.1f}s  {tm['tokens_per_sec']:.0f} tok/s  "
               f"tools={tm['tool_calls']}  answer={'✓' if tm['has_answer'] else '✗'}  "
               f"cap_check={'✓' if tm['has_capability_check'] else '✗'}")
+        resp_preview = result.get("response", "")[:400].replace("\n", " ")
+        print(f"     Response : {resp_preview}")
 
     print(f"\n  EDGE CASE PROBES")
     edge_results = []
@@ -785,6 +787,8 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
         })
         print(f"  → answer={'✓' if edge_results[-1]['has_answer'] else '✗'}  "
               f"cap_check={'✓' if edge_results[-1]['has_capability_check'] else '✗'}")
+        resp_preview = result.get("response", "")[:400].replace("\n", " ")
+        print(f"     Response : {resp_preview}")
 
     # Summary stats
     latencies = [t["latency_s"] for t in turns]

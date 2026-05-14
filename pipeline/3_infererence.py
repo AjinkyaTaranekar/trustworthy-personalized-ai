@@ -28,10 +28,14 @@ Benchmark client (4_benchmark.py) calls POST /v1/chat/completions.
 import argparse
 import ast
 import json
+import logging
 import re
 import subprocess
 import sys
 import time
+import traceback
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 try:
     from dotenv import load_dotenv
@@ -852,6 +856,8 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     user_turn = next(
         (m.content for m in reversed(req.messages) if m.role == "user"), ""
     )
+    logging.info("[REQ] profile=%s turns=%d query=%r",
+                 req.tool_profile, len(req.messages), user_turn[:120])
 
     # ── User Modelling: run the 4-stage Mem0g write pipeline ───────────────
     # Triggered before generation so the graph is up-to-date when we retrieve.
@@ -987,6 +993,10 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 "conflict_count": len(write_result.conflicts),
             }
 
+        logging.info("[RESP] tools=%s tokens=%d latency=%.1fs answer=%s resp=%r",
+                     tools_used, total_tokens, latency,
+                     "✓" if "<answer>" in final.lower() else "✗",
+                     final[:200])
         return {
             "response":             final,
             "dependency_disclosure": dep_disclosure,
@@ -1009,6 +1019,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
 
     except Exception as e:
         METRICS.record(0, 0, {}, ok=False)
+        logging.error("POST /v1/chat/completions failed:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
