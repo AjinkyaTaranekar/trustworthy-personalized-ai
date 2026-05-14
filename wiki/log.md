@@ -6,6 +6,13 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-14] refactor | SFT v3 Asymmetric Distillation Pipeline
+- Added `pipeline/sft_v3_generator.py`: teacher prompt with full 25-principle constitution, stop-sequence intercept loop for live tool execution via exa.ai, failure injection for `inventory_constraint` (missing tool) and `environment_timeout` (503 injection) categories, context swap replacing teacher system prompt with ≤50-word student prompt before saving to JSONL
+- Added `pipeline/validate_sft_data.py`: pre-flight quality gate enforcing 5 invariants (system prompt length, think block length, banned placeholders, tool sequence integrity, end-to-end resolution)
+- Updated `pipeline/sft_question_generator.py`: added `inventory_constraint` (60 questions) and `environment_timeout` (60 questions) negative trajectory categories
+- Updated `pipeline/2_model_trainer.py`: `--curriculum_stage {1,2,3}` for staged SFT, `--from_checkpoint` for loading prior stage checkpoint, `--v3_format` to disable CAPABILITY_CHECK requirement in GRPO format reward
+- Rationale: capacity paradox (0.6B model wastes attention on rule-recitation), synthetic laziness (single-pass generation with placeholder think blocks), hallucinated execution (no real tool results during teacher generation)
+
 ## [2026-05-14] decision | Scratchpad tool + P24/P25 — implementation complete
 
 - Created `pipeline/scratchpad.py` — `ScratchpadStore`: session-scoped in-memory working memory. `read(session_id)` returns full pad with constitution TLDR + context + tasks + notes. `update(session_id, section, content)` overwrites a writable section. `get_task_status(session_id)` returns compact task line for injection. `destroy(session_id)` clears the session. 14 unit tests.

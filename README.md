@@ -21,7 +21,7 @@ If any `[FAIL]` lines appear, fix them before continuing. `[WARN]` lines are saf
 **Core Python dependencies:**
 
 ```bash
-pip install datasets trl fastapi uvicorn pydantic requests litellm python-dotenv
+pip install datasets trl fastapi uvicorn pydantic requests litellm python-dotenv exa-py
 pip install unsloth accelerate bitsandbytes  # GPU training only
 pip install rouge-score huggingface_hub      # ROUGE evaluation + HuggingFace publish
 pip install rdflib                           # Ontology Verifier (local OWL)
@@ -42,6 +42,7 @@ Supported providers via [litellm](https://github.com/BerriAI/litellm) — swap w
 |---|---|---|---|
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/moonshotai/kimi-k2.6` | Free tier |
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/minimaxai/minimax-m2.7` | Free tier |
+| **exa.ai** ✅ web search | `EXA_API_KEY=...` | Used by `sft_v3_generator.py` for live semantic web search | $10 free credits |
 | Groq | `GROQ_API_KEY=gsk_...` | `groq/llama-3.3-70b-versatile` | Free tier |
 | Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | `claude-sonnet-4-6` | ~$10–15 for full run |
 | OpenAI | `OPENAI_API_KEY=sk-...` | `gpt-4o-mini` | Paid |
@@ -246,6 +247,41 @@ python 2_model_trainer.py \
 python 3_infererence.py --model_dir models/checkpoint_sft --port 8000 &
 python 4_benchmark.py --probe_only --save_as_baseline
 ```
+
+### SFT v3 — Asymmetric Distillation (recommended for sub-1B models)
+
+The v3 pipeline eliminates context-window starvation in 0.6B models by keeping the 25-principle constitution teacher-side only. The student model only sees a ≤50-word system prompt.
+
+    # 1. Generate questions (same as v2)
+    python pipeline/sft_question_generator.py --count 200 --output pipeline/data/questions_v3.jsonl
+
+    # 2. Generate gold responses with live tool execution and exa.ai web search
+    python pipeline/sft_v3_generator.py \
+        --questions pipeline/data/questions_v3.jsonl \
+        --output pipeline/data/train_v3.jsonl \
+        --model nvidia_nim/moonshotai/kimi-k2.6
+
+    # 2b. Negative trajectories (inventory constraints + environment timeouts)
+    python pipeline/sft_v3_generator.py \
+        --questions pipeline/data/questions_v3.jsonl \
+        --type inventory_constraint \
+        --output pipeline/data/train_v3_negative.jsonl
+
+    # 3. Pre-flight validation (fails if >5% of rows are malformed)
+    python pipeline/validate_sft_data.py --input pipeline/data/train_v3.jsonl
+
+    # 4. Assemble dataset (same assembler as v2)
+    python pipeline/sft_dataset_assembler.py \
+        --part_a pipeline/data/train_v3.jsonl \
+        --output_dir pipeline/data/
+
+    # 5. Curriculum training — 3 stages
+    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 1 --output_name checkpoint_sft_s1
+    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 2 --from_checkpoint models/checkpoint_sft_s1 --output_name checkpoint_sft_s2
+    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 3 --from_checkpoint models/checkpoint_sft_s2 --output_name checkpoint_sft
+
+    # 6. GRPO (add --v3_format flag when base is a v3-trained model)
+    python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft --v3_format
 
 ### Phase 2 — GRPO Reinforcement Learning
 

@@ -113,6 +113,40 @@ REWARD_WEIGHTS = {
 
 
 # ---------------------------------------------------------------------------
+# Curriculum learning — three-stage data split
+# ---------------------------------------------------------------------------
+
+def _split_curriculum_stages(
+    examples: list[dict],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split examples into three curriculum stages.
+
+    Stage 1: short, no-tool examples — format establishment.
+    Stage 2: all examples — complexity scaling.
+    Stage 3: all + 20% Stage-1 replay — anti-drift.
+    Returns (stage1, stage2, stage3).
+    """
+    import random as _random
+    stage1 = []
+    stage2 = list(examples)
+
+    for ex in examples:
+        msgs = ex.get("messages", [])
+        has_tool = any(m.get("role") == "tool" for m in msgs)
+        asst_text = " ".join(
+            m.get("content", "") or ""
+            for m in msgs if m.get("role") == "assistant"
+        )
+        if not has_tool and len(asst_text) < 600:
+            stage1.append(ex)
+
+    replay_n = min(len(stage1), max(1, len(stage2) // 5))
+    replay = _random.sample(stage1, replay_n) if stage1 else []
+    stage3 = stage2 + replay
+    return stage1, stage2, stage3
+
+
+# ---------------------------------------------------------------------------
 # ROUGE evaluation helper
 # ---------------------------------------------------------------------------
 
@@ -236,11 +270,17 @@ def _answers_match(a: str, b: str, tol: float = 0.01) -> bool:
         return a.strip() == b.strip()
 
 
+# Set to True when training on v3 data (no CAPABILITY_CHECK in student outputs)
+_V3_FORMAT_MODE: bool = False
+
+
 def _format_reward(response: str) -> float:
-    """P1 structural check: <think> + CAPABILITY_CHECK + <answer> all present."""
+    """Structural check: <think> + <answer> required; CAPABILITY_CHECK required in v2 mode only."""
     has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
-    has_cap   = "CAPABILITY_CHECK" in response
     has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+    if _V3_FORMAT_MODE:
+        return 1.0 if (has_think and has_ans) else 0.0
+    has_cap = "CAPABILITY_CHECK" in response
     return 1.0 if (has_think and has_cap and has_ans) else 0.0
 
 
@@ -1107,8 +1147,25 @@ def main():
                         help="c=format+accuracy only  d=full composite (default)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from latest checkpoint in output_dir/output_name")
+    parser.add_argument(
+        "--from_checkpoint", type=str, default=None,
+        help="Path to a prior SFT checkpoint to resume from (for curriculum staging)",
+    )
+    parser.add_argument(
+        "--curriculum_stage", type=int, choices=[1, 2, 3], default=None,
+        help="Curriculum stage for SFT: 1=short format, 2=all examples, 3=anti-drift replay mix",
+    )
+    parser.add_argument(
+        "--v3_format", action="store_true",
+        help="Use v3 format rewards (no CAPABILITY_CHECK requirement) for GRPO on v3-trained models",
+    )
 
     args = parser.parse_args()
+
+    if hasattr(args, "v3_format") and args.v3_format:
+        global _V3_FORMAT_MODE
+        _V3_FORMAT_MODE = True
+        print("GRPO format reward: v3 mode (no CAPABILITY_CHECK requirement)")
 
     if not HAS_LIBS:
         print("Required libraries not installed.")
@@ -1141,10 +1198,39 @@ def main():
 
     if args.mode == "sft":
         print("\n=== Phase 1: SFT ===")
-        trainer.load_base_model()
+        _base_to_load = (args.from_checkpoint
+                         if (hasattr(args, "from_checkpoint") and args.from_checkpoint and args.mode == "sft")
+                         else MODEL_CONFIG["base_model"])
+        if _base_to_load != MODEL_CONFIG["base_model"]:
+            print(f"  Loading from checkpoint: {_base_to_load}")
+            trainer.load_checkpoint(_base_to_load)
+        else:
+            trainer.load_base_model()
         trainer.apply_lora()
         dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
-        trainer.train_sft(str(dataset_path), args.output_name,
+        _effective_dataset_path = str(dataset_path)
+        if args.curriculum_stage:
+            all_examples = []
+            with open(dataset_path, encoding="utf-8") as _f:
+                for _line in _f:
+                    try:
+                        all_examples.append(json.loads(_line))
+                    except json.JSONDecodeError:
+                        pass
+            _s1, _s2, _s3 = _split_curriculum_stages(all_examples)
+            _stage_map = {1: _s1, 2: _s2, 3: _s3}
+            all_examples = _stage_map[args.curriculum_stage]
+            print(f"Curriculum stage {args.curriculum_stage}: {len(all_examples)} examples "
+                  f"(S1={len(_s1)} S2={len(_s2)} S3={len(_s3)})")
+            import tempfile as _tempfile
+            _tmp = _tempfile.NamedTemporaryFile(
+                mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+            )
+            for _ex in all_examples:
+                _tmp.write(json.dumps(_ex) + "\n")
+            _tmp.close()
+            _effective_dataset_path = _tmp.name
+        trainer.train_sft(_effective_dataset_path, args.output_name,
                           resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
         print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")

@@ -147,6 +147,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ### Code (pipeline summaries)
 - [[sources/code/sft-v2-pipeline]] — SFT v2/v3 data generation pipeline: Part A + Part B → transform → robustness variants → native tool examples → train_sft_v3_robust.jsonl
+- [[sources/code/sft-v3-pipeline]] — v3 asymmetric distillation: intercept loop, negative trajectories, curriculum training
 - [[sources/code/constitution-document]] — full 23-principle source
 - [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + dual tool-call modes (xml/native) + Experiment 0 + adversarial suite + run_all.sh + preflight
 

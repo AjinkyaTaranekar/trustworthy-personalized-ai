@@ -65,6 +65,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `ppo` | 1 | Proximal Policy Optimization (value-based RL baseline) |
 | `mcp` | 2 | Model Context Protocol |
 | `constitution` | 3 | The 23-principle constitution |
+| `constitutional-ai` | 1 | Asymmetric context distillation approach (CAI-style teacher→student behaviour transfer, distinct from the project's constitution entity) |
 | `principles` | 2 | The individual constitution principles |
 | `graph-rag` | 1 | KG-backed RAG for user memory |
 | `graph-memory` | 1 | Graph-based agent memory systems (Mem0g, Cognee, FalkorDB patterns) — distinct from graph-rag in that it covers the write/update pipeline, not just retrieval |
@@ -116,6 +117,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `code` | 3 | Code-scoped source pages |
 | `pipeline` | 1 | The SFT/RL pipeline as a whole |
 | `training` | 2 | Training-time concerns |
+| `curriculum-learning` | 1 | Staged training: easy→hard sequencing or replay-based anti-drift across multiple SFT stages |
 | `benchmark` | 1 | Benchmark harness / script |
 | `context-degradation` | 1 | Multi-turn context-length eval |
 | `experiments` | 2 | Experiment catalog / design |
