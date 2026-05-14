@@ -20,7 +20,7 @@ import re
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -28,6 +28,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 _ALL_TOOL_NAMES = frozenset({
     "python_execute", "web_search", "read_url", "get_datetime",
+    "scratchpad_read", "scratchpad_update",
 })
 
 _TOOL_PROFILE_MAP: Dict[str, frozenset] = {
@@ -58,11 +59,13 @@ def run_checks(
     response: str,
     question: str,
     tool_profile_label: str,
+    scratchpad_store: Optional[Any] = None,
+    session_id: Optional[str] = None,
 ) -> List[str]:
-    """Deterministic constitutional checks for P1, P3, P4, P18.
+    """Deterministic constitutional checks for P1, P3, P4, P18, P24a, P24b.
 
-    Returns a list of violation strings in 'PRINCIPLE_N: description' format.
-    Empty list means the response is compliant.
+    scratchpad_store and session_id are optional — when absent, P24 checks are skipped.
+    Returns a list of violation strings. Empty list = compliant.
     """
     violations: List[str] = []
     active_tools = _TOOL_PROFILE_MAP.get(tool_profile_label, frozenset())
@@ -128,6 +131,29 @@ def run_checks(
             "PRINCIPLE_18: <answer> block is absent. "
             "Every response must end with <answer>...</answer>."
         )
+
+    # ── P24a: scratchpad-first ───────────────────────────────────────────────
+    if scratchpad_store is not None:
+        non_pad_calls = len(re.findall(r"<tool>(?!scratchpad_)", response))
+        pad_read_present = bool(re.search(r"<tool>\s*scratchpad_read", response))
+        if non_pad_calls >= 3 and not pad_read_present:
+            violations.append(
+                "PRINCIPLE_24a: Response uses 3+ tool calls but scratchpad_read() was never called. "
+                "Complex queries (3+ requirements or 2+ tools) require scratchpad-first: "
+                "read the pad, write context and tasks, re-check constitution, then execute."
+            )
+
+    # ── P24b: task completion ────────────────────────────────────────────────
+    if scratchpad_store is not None and session_id is not None:
+        tasks_text = scratchpad_store.get_section(session_id, "tasks")
+        incomplete = re.findall(r"\[YES(?:-NEXT)?\]", tasks_text)
+        answer_present = bool(re.search(r"<answer\b", response, re.IGNORECASE))
+        if incomplete and answer_present:
+            violations.append(
+                f"PRINCIPLE_24b: {len(incomplete)} task(s) marked [YES] or [YES-NEXT] in the "
+                f"scratchpad were not completed before <answer>. The scratchpad is a contract — "
+                f"do not close it with planned work undone. Complete all [YES] tasks first."
+            )
 
     return violations
 
@@ -269,9 +295,11 @@ class ConstitutionalHarness:
         self,
         metrics_path: str = "reports/harness_metrics.json",
         ssd_log_path: Optional[str] = None,
+        scratchpad_store: Optional[Any] = None,
     ) -> None:
         self.metrics_path = metrics_path
         self.ssd_log_path = ssd_log_path
+        self.scratchpad_store = scratchpad_store
         self.metrics = HarnessMetrics()
         self.metrics.load(metrics_path)
 
@@ -298,17 +326,21 @@ class ConstitutionalHarness:
         tool_profile_label: str,
         generate_fn: Callable[[List[Dict], float], str],
         max_retries: int = 2,
+        session_id: Optional[str] = None,
     ) -> Tuple[str, List[str], int]:
         """Validate response; retry with corrective prompt and escalating temperature on failure.
 
-        generate_fn(conv, temp_scale) — temp_scale=1.0 on normal generation; >1.0 on retries
-        to explore more of the model's output distribution (SSD insight).
-
+        generate_fn(conv, temp_scale) — temp_scale=1.0 on normal generation; >1.0 on retries.
+        session_id — used for P24b scratchpad task-completion check.
         Returns: (final_response, final_violations, retries_used)
         """
         print(f"[HARNESS] Checking response for constitutional violations...")
 
-        violations = run_checks(response, question, tool_profile_label)
+        violations = run_checks(
+            response, question, tool_profile_label,
+            scratchpad_store=self.scratchpad_store,
+            session_id=session_id,
+        )
 
         if not violations:
             print(f"[HARNESS] ✓ No violations — response passed (P1, P3, P4, P18)")
@@ -336,7 +368,11 @@ class ConstitutionalHarness:
             print(f"[HARNESS] Injecting corrective prompt → retry {attempt}/{max_retries} (temp_scale={temp_scale})...")
             current_response   = generate_fn(retry_conv, temp_scale)
             retries_used       = attempt
-            current_violations = run_checks(current_response, question, tool_profile_label)
+            current_violations = run_checks(
+                current_response, question, tool_profile_label,
+                scratchpad_store=self.scratchpad_store,
+                session_id=session_id,
+            )
 
             if not current_violations:
                 print(f"[HARNESS] ✓ Retry {attempt} passed — violations cleared")

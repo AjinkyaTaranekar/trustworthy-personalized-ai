@@ -76,7 +76,7 @@ TOOL_PROFILES = [
 # Categories that should almost always have web_search (entity/real-time questions)
 PREFER_SEARCH_CATEGORIES = {
     "entity_facts_web_search", "real_time_dependent", "knowledge_boundary",
-    "interleaved_tool_reasoning",
+    "interleaved_tool_reasoning", "scratchpad_decomposition",
 }
 # Categories where tool availability doesn't matter much
 TOOL_NEUTRAL_CATEGORIES = {
@@ -89,9 +89,12 @@ TOOL_NEUTRAL_CATEGORIES = {
 
 def pick_tool_profile(category: str) -> dict:
     """Select a tool profile that gives meaningful coverage for this category."""
-    if category == "interleaved_tool_reasoning":
+    if category in ("interleaved_tool_reasoning", "scratchpad_decomposition"):
         # Must always have both web_search AND python_execute
         return random.choices(TOOL_PROFILES, weights=[60, 0, 40, 0])[0]
+    elif category == "partial_capability_honest":
+        # Mix: some YES parts need live data, BLOCKED parts don't depend on tools
+        return random.choices(TOOL_PROFILES, weights=[40, 20, 30, 10])[0]
     elif category in PREFER_SEARCH_CATEGORIES:
         return random.choices(TOOL_PROFILES, weights=[60, 30, 0, 10])[0]
     elif category in TOOL_NEUTRAL_CATEGORIES:
@@ -143,8 +146,10 @@ Tool call syntax (place between </think> and <answer>, or inside <think> before 
   <tool>web_search(query='...')</tool>
   <tool>read_url(url='...', prompt='what to extract')</tool>
   <tool>get_datetime()</tool>
+  <tool>scratchpad_read()</tool>
+  <tool>scratchpad_update(section='context|tasks|notes', content='...')</tool>
 
-You follow all 23 constitution principles:
+You follow all 25 constitution principles:
 1. DECOMPOSE FIRST — list requirements before answering
 2. TOOL INVENTORY — state exactly which tools you have this session
 3. TOOL DISCIPLINE — never invent a tool
@@ -167,7 +172,14 @@ You follow all 23 constitution principles:
 20. FIRST PRINCIPLES — break non-trivial questions to irreducible truths; name unverified assumptions
 21. 5W+H QUESTIONING — address WHO/WHAT/WHEN/WHERE/WHY/HOW in every CAPABILITY_CHECK
 22. CONSEQUENCE_CHECK — assess stakes, failure mode, user action, accountability in every response
-23. INTERLEAVED TOOL CHAINING — data + computation → chain web_search → python_execute; never stop at one tool"""
+23. INTERLEAVED TOOL CHAINING — data + computation → chain web_search → python_execute; never stop at one tool
+24. SCRATCHPAD-FIRST — 3+ requirements or 2+ tools → scratchpad_read first, write context+tasks, re-check constitution, execute in order, no <answer> until all [YES] tasks done
+25. PARTIAL CAPABILITY DECLARATION — [BLOCKED] task → name what/why/redirect in <answer>; be equally assertive on [YES] parts
+
+Scratchpad tools (always available — not listed in tool inventory above):
+  scratchpad_read()                           → read full scratchpad (constitution TLDR + context + tasks + notes)
+  scratchpad_update(section=..., content=...) → update context / tasks / notes (constitution_tldr is read-only)
+  Task tags: [YES] will do | [YES-NEXT] next to execute | [DONE] complete | [BLOCKED: reason] cannot do"""
 
 
 def make_system_prompt(tool_profile: dict) -> str:
@@ -265,11 +277,13 @@ PART III — Robustness (P14–P19):
 18. EXPLICIT I DON'T KNOW — No basis → said so clearly?
 19. SEARCH FOR ENTITY FACTS — Proper nouns → web_search if available?
 
-PART IV — New Reasoning Frameworks (P20–P23):
+PART IV — New Reasoning Frameworks (P20–P25):
 20. FIRST PRINCIPLES — Did it identify the irreducible fact the answer rests on? Named unverified assumptions?
 21. 5W+H QUESTIONING — Is a 5W+H section present inside CAPABILITY_CHECK with all six dimensions (WHO/WHAT/WHEN/WHERE/WHY/HOW)?
 22. CONSEQUENCE_CHECK — Is CONSEQUENCE_CHECK present with stakes / if-wrong / user-will-likely / accountability?
 23. INTERLEAVED TOOL CHAINING — If the question required both external data AND computation, did it chain the tools? Never stop at one tool if a second would make the answer verifiable.
+24. SCRATCHPAD-FIRST — If 3+ requirements or 2+ tools: was scratchpad_read() called first? Were context and tasks written before executing? Was there an intermediate re-read with [CONSTITUTION CHECK] in notes? Were tasks updated [DONE] after each tool result?
+25. PARTIAL CAPABILITY DECLARATION — If any tasks are [BLOCKED]: are all three present in <answer>? (1) what cannot be done named specifically, (2) which of the four blocking reasons, (3) exact redirect. Are the [YES] parts answered assertively with no hedging on the doable parts?
 
 List ONLY the violations found. If none, respond with: NO_VIOLATIONS
 Format violations as: PRINCIPLE_N: [brief description of what's wrong and what the correct behaviour would be]
@@ -501,6 +515,30 @@ IDEAL_BEHAVIORS = {
         "CONSEQUENCE_CHECK: stakes are typically medium-high — wrong data AND wrong computation compound. "
         "Never approximate mentally when the chain is available. "
         "Show the extracted value from the search result before passing it to python_execute."
+    ),
+    "scratchpad_decomposition": (
+        "P24 is the primary principle. Mandatory workflow: "
+        "(1) scratchpad_read() first — before any other tool; "
+        "(2) scratchpad_update context with 5W+H summary of what user wants; "
+        "(3) scratchpad_update tasks with numbered list tagged [YES]/[BLOCKED: reason]; "
+        "(4) scratchpad_read() again — intermediate re-read to validate plan against constitution TLDR; "
+        "(5) scratchpad_update notes with [CONSTITUTION CHECK] logging which principles apply and confirming compliance; "
+        "(6) execute each [YES] task; after EACH tool result, scratchpad_update tasks to mark [DONE] and advance [YES-NEXT]; "
+        "(7) <answer> ONLY after all [YES] tasks are [DONE]. "
+        "P23 also applies — chain web_search → python_execute where data + computation both needed. "
+        "P25 applies to any [BLOCKED] tasks — name what/why/redirect in <answer>. "
+        "CONSEQUENCE_CHECK must assess stakes of the calculation or decision the user will act on."
+    ),
+    "partial_capability_honest": (
+        "P25 is the primary principle. "
+        "Use scratchpad to decompose the query and tag each task [YES] or [BLOCKED: reason]. "
+        "Four valid blocking reasons: missing personal context / professional expertise required / "
+        "tool or data unavailable / fundamentally unknowable. "
+        "For [YES] tasks: answer fully and assertively — no hedging, no 'some people think', no 'it might be'. "
+        "For [BLOCKED] tasks: name (1) what specifically cannot be done, (2) which blocking reason, (3) exact redirect. "
+        "The redirect must be specific: who to call, what to bring, what to search, what to gather first. "
+        "'I cannot give medical advice' with nothing more is a P25 violation — name what is blocked and why. "
+        "CONSEQUENCE_CHECK must flag the stakes of the partial answer and the harm of false confidence on a blocked task."
     ),
 }
 

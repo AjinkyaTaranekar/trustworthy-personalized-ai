@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from constitutional_harness import run_checks, build_corrective_prompt, HarnessMetrics, ConstitutionalHarness
+from scratchpad import ScratchpadStore as _ScratchpadStore
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -324,3 +325,109 @@ def test_harness_retry2_uses_higher_temp_scale_than_retry1():
     assert temp_scales_seen[1] > temp_scales_seen[0], (
         f"Retry 2 temp_scale ({temp_scales_seen[1]}) must exceed retry 1 ({temp_scales_seen[0]})"
     )
+
+
+# ── P24 scratchpad checks ────────────────────────────────────────────────────
+
+def test_p24a_fires_when_three_plus_tool_calls_and_no_scratchpad_read():
+    store = _ScratchpadStore()
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<tool>web_search(query='rate')</tool>[TOOL_RESULT: r1][/TOOL_RESULT]"
+        "<tool>python_execute(code='print(1)')</tool>[TOOL_RESULT: 1][/TOOL_RESULT]"
+        "<tool>web_search(query='yield')</tool>[TOOL_RESULT: r2][/TOOL_RESULT]"
+        "<answer>result</answer>"
+    )
+    violations = run_checks(response, "complex question", "all_tools",
+                            scratchpad_store=store, session_id="p24_test")
+    assert any("PRINCIPLE_24a" in v for v in violations)
+
+
+def test_p24a_does_not_fire_when_scratchpad_read_is_present():
+    store = _ScratchpadStore()
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<tool>scratchpad_read()</tool>[TOOL_RESULT: pad][/TOOL_RESULT]"
+        "<tool>web_search(query='rate')</tool>[TOOL_RESULT: r1][/TOOL_RESULT]"
+        "<tool>python_execute(code='print(1)')</tool>[TOOL_RESULT: 1][/TOOL_RESULT]"
+        "<tool>web_search(query='yield')</tool>[TOOL_RESULT: r2][/TOOL_RESULT]"
+        "<answer>result</answer>"
+    )
+    violations = run_checks(response, "complex question", "all_tools",
+                            scratchpad_store=store, session_id="p24_test")
+    assert not any("PRINCIPLE_24a" in v for v in violations)
+
+
+def test_p24a_does_not_fire_for_fewer_than_three_non_scratchpad_tool_calls():
+    store = _ScratchpadStore()
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<tool>web_search(query='rate')</tool>[TOOL_RESULT: r][/TOOL_RESULT]"
+        "<tool>python_execute(code='print(1)')</tool>[TOOL_RESULT: 1][/TOOL_RESULT]"
+        "<answer>result</answer>"
+    )
+    violations = run_checks(response, "two-tool question", "all_tools",
+                            scratchpad_store=store, session_id="p24_test")
+    assert not any("PRINCIPLE_24a" in v for v in violations)
+
+
+def test_p24b_fires_when_yes_task_remains_with_answer_present():
+    store = _ScratchpadStore()
+    store.read("p24b_sess")
+    store.update("p24b_sess", "tasks",
+        "1. [DONE] get rate\n2. [YES] calculate\n3. [BLOCKED: needs context] advise")
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<tool>scratchpad_read()</tool>[TOOL_RESULT: pad][/TOOL_RESULT]"
+        "<answer>partial answer</answer>"
+    )
+    violations = run_checks(response, "question", "all_tools",
+                            scratchpad_store=store, session_id="p24b_sess")
+    assert any("PRINCIPLE_24b" in v for v in violations)
+
+
+def test_p24b_fires_when_yes_next_task_remains():
+    store = _ScratchpadStore()
+    store.read("p24b_sess2")
+    store.update("p24b_sess2", "tasks",
+        "1. [DONE] step one\n2. [YES-NEXT] step two")
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<answer>premature answer</answer>"
+    )
+    violations = run_checks(response, "question", "all_tools",
+                            scratchpad_store=store, session_id="p24b_sess2")
+    assert any("PRINCIPLE_24b" in v for v in violations)
+
+
+def test_p24b_does_not_fire_when_only_blocked_tasks_remain():
+    store = _ScratchpadStore()
+    store.read("p24b_sess3")
+    store.update("p24b_sess3", "tasks",
+        "1. [DONE] get rate\n2. [DONE] calculate\n3. [BLOCKED: needs tax info] compare")
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<answer>full answer, blocked task named</answer>"
+    )
+    violations = run_checks(response, "question", "all_tools",
+                            scratchpad_store=store, session_id="p24b_sess3")
+    assert not any("PRINCIPLE_24b" in v for v in violations)
+
+
+def test_p24b_does_not_fire_when_no_pad_exists_for_session():
+    store = _ScratchpadStore()
+    response = (
+        "<think>CAPABILITY_CHECK: ok.</think>"
+        "<answer>simple answer</answer>"
+    )
+    violations = run_checks(response, "simple question", "no_tools",
+                            scratchpad_store=store, session_id="brand_new_sess")
+    assert not any("PRINCIPLE_24b" in v for v in violations)
+
+
+def test_p24_checks_skipped_when_no_scratchpad_store_passed():
+    violations = run_checks(
+        "<think>CAPABILITY_CHECK: ok.</think><answer>hi</answer>",
+        "simple question", "no_tools",
+    )
+    assert not any("PRINCIPLE_24" in v for v in violations)

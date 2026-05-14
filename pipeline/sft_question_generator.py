@@ -296,6 +296,85 @@ CATEGORIES = {
             "for this category. Use local tax systems (GST India, VAT EU, HST Canada) not US defaults."
         ),
     },
+    "scratchpad_decomposition": {
+        "count": 150,
+        "description": (
+            "Questions with three or more distinct requirements that each need a different kind of "
+            "answer — live data lookup, computation, and/or judgment. The model MUST use the scratchpad "
+            "workflow (P24): read → write context+tasks → intermediate re-read → execute in order → "
+            "update after each tool → answer. EVERY example must use scratchpad AND at least two "
+            "different non-scratchpad tools. Single-tool questions are invalid for this category."
+        ),
+        "examples": [
+            "I'm moving from Dublin to Berlin for work next month — what do I need to know about "
+            "income tax, health insurance, and finding an apartment?",
+            "What would €500/month invested at today's ECB rate be worth in 20 years, and how does "
+            "that compare to current Irish 10-year government bond returns?",
+            "I'm buying a used MacBook M2 for ML work — check if it can run a 7B model locally "
+            "and what the current second-hand market price is.",
+            "What is the total landed cost of importing a ₹1,50,000 camera from the US to India — "
+            "customs duty rate, IGST, and handling fee included?",
+            "How does today's RBI repo rate compare to one year ago, and what does that mean for "
+            "someone on a floating-rate home loan with ₹40 lakh outstanding?",
+        ],
+        "domains": [
+            "multi-country tax and compliance",
+            "financial calculation with live rates",
+            "technical research and hardware compatibility",
+            "relocation logistics (tax, housing, healthcare)",
+            "complex purchase decisions with market pricing",
+            "project cost estimation",
+            "investment return comparison with current data",
+            "regulatory compliance across jurisdictions",
+        ],
+        "chaining_note": (
+            "EVERY question must require scratchpad + at least two different non-scratchpad tools. "
+            "At least one tool must be web_search (for live data). "
+            "At least one must be python_execute (for computation on that data). "
+            "Questions answerable with one tool call are INVALID for this category. "
+            "Use local currencies and tax systems — not US defaults."
+        ),
+    },
+    "partial_capability_honest": {
+        "count": 100,
+        "description": (
+            "Questions where some sub-tasks are genuinely answerable and others are not — because they "
+            "require professional expertise, missing personal context, unavailable tools, or are "
+            "fundamentally unknowable. The model uses the scratchpad to decompose, tags tasks "
+            "[YES] or [BLOCKED: reason], answers the YES parts fully and assertively, and on BLOCKED "
+            "parts names what cannot be done, why, and the exact redirect. "
+            "The goal is confidence calibrated to actual capability — not uniform caution."
+        ),
+        "examples": [
+            "I've had sharp chest pain and shortness of breath for two days. What's wrong with me "
+            "and what should I take for it?",
+            "Draft me a founders' agreement for my startup with my co-founder — we both contribute "
+            "equally but I'm the technical founder.",
+            "My PostgreSQL queries are getting slow at 10 million rows. What's wrong and fix it.",
+            "Should I put my savings into a buy-to-let property in Lagos or keep them in a savings "
+            "account? Also calculate the projected rental yield at current rates.",
+            "Is Christianity or Islam the better religion for raising my children?",
+            "I've been on 500mg metformin for 3 months and my blood sugar is still 8.4 mmol/L. "
+            "Should I increase the dose or switch medication?",
+        ],
+        "domains": [
+            "medical symptoms and treatment",
+            "legal drafting and jurisdiction-specific advice",
+            "engineering debugging without code or log access",
+            "financial planning without full personal context",
+            "spiritual and personal belief questions",
+            "professional-grade tax and compliance work",
+            "relationship and life decisions",
+            "future predictions and market calls",
+        ],
+        "chaining_note": (
+            "Scratchpad is mandatory for decomposition — at least scratchpad_read and scratchpad_update. "
+            "Other tools are optional depending on the question. "
+            "Some questions benefit from web_search for the YES parts (e.g. current rental yield data) "
+            "while the BLOCKED part is a personal advice question. "
+            "Do NOT make all questions fully unanswerable — each must have at least one genuine [YES] task."
+        ),
+    },
 }
 
 # ---------------------------------------------------------------------------

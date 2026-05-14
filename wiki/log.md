@@ -6,6 +6,17 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-14] decision | Scratchpad tool + P24/P25 — implementation complete
+
+- Created `pipeline/scratchpad.py` — `ScratchpadStore`: session-scoped in-memory working memory. `read(session_id)` returns full pad with constitution TLDR + context + tasks + notes. `update(session_id, section, content)` overwrites a writable section. `get_task_status(session_id)` returns compact task line for injection. `destroy(session_id)` clears the session. 14 unit tests.
+- Added P24a and P24b to `pipeline/constitutional_harness.py` — P24a fires when 3+ non-scratchpad tool calls with no `scratchpad_read()`. P24b fires when any `[YES]` or `[YES-NEXT]` task remains in pad when `<answer>` appears. Both skipped if `scratchpad_store=None`. 8 new tests; 34 total passing.
+- Updated `pipeline/3_infererence.py` — scratchpad import and global store, `_scratchpad_read` + `_scratchpad_update` handlers, both tools registered, all four `TOOL_PROFILES` now include `scratchpad_read/update`, session binding per request (`_CURRENT_SESSION_ID`), task-status injection after each non-scratchpad tool result, scratchpad note added to `_system_prompt_for_profile`, store passed to harness at startup, `session_id` threaded to `check_and_steer`.
+- Added P24 (SCRATCHPAD-FIRST) and P25 (PARTIAL CAPABILITY DECLARATION) to `pipeline/constitution.md` with full worked examples and summary table rows.
+- Updated `pipeline/sft_gold_response_generator.py` — P24/P25 added to `TRAINING_SYSTEM_PROMPT_TEMPLATE` and `CRITIQUE_PROMPT`; scratchpad tool syntax added to `DRAFT_PROMPT`; two new `IDEAL_BEHAVIORS` entries; `pick_tool_profile` handles new categories; `PREFER_SEARCH_CATEGORIES` includes `scratchpad_decomposition`.
+- Updated `pipeline/sft_question_generator.py` — two new categories: `scratchpad_decomposition` (150 examples, teaches full P24 workflow) and `partial_capability_honest` (100 examples, teaches P25 YES/BLOCKED pattern).
+- Spec: `docs/superpowers/specs/2026-05-13-scratchpad-tool-design.md`.
+- Plan: `docs/superpowers/plans/2026-05-13-scratchpad-tool-implementation.md`.
+
 ## [2026-05-13] ingest | TML-Interaction-Small — Thinking Machines Lab real-time multimodal model
 
 - Created `wiki/entities/tml-interaction-small.md` — entity page for Mira Murati's TML-Interaction-Small (Thinking Machines Lab, May 2026).

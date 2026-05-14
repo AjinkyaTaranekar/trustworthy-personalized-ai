@@ -84,6 +84,14 @@ except ImportError as _e:
     ConstitutionalHarness = None
     print(f"[INFO] constitutional_harness not importable ({_e}) — ENABLE_HARNESS disabled")
 
+try:
+    from scratchpad import ScratchpadStore
+    _scratchpad_available = True
+except ImportError as _e:
+    _scratchpad_available = False
+    ScratchpadStore = None
+    print(f"[INFO] scratchpad not importable ({_e}) — scratchpad tools disabled")
+
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -238,6 +246,18 @@ def _read_url(url: str = "", prompt: str = "", **_) -> str:
         return f"read_url failed: {e}"
 
 
+def _scratchpad_read() -> str:
+    if _SCRATCHPAD_STORE is None or _CURRENT_SESSION_ID is None:
+        return "Error: scratchpad not available in this session."
+    return _SCRATCHPAD_STORE.read(_CURRENT_SESSION_ID)
+
+
+def _scratchpad_update(section: str, content: str) -> str:
+    if _SCRATCHPAD_STORE is None or _CURRENT_SESSION_ID is None:
+        return "Error: scratchpad not available in this session."
+    return _SCRATCHPAD_STORE.update(_CURRENT_SESSION_ID, section, content)
+
+
 register_tool("python_execute", "Execute Python code and return stdout/stderr.", {
     "type": "object",
     "properties": {"code": {"type": "string", "description": "Python source code to run"}},
@@ -263,13 +283,35 @@ register_tool("read_url", "Fetch the text content of a URL. Pass prompt= to stat
     "required": ["url"],
 }, _read_url)
 
+register_tool("scratchpad_read", "Read the full session scratchpad — constitution TLDR, context, tasks, notes.", {
+    "type": "object", "properties": {}, "required": [],
+}, _scratchpad_read)
+
+register_tool("scratchpad_update", "Update one section of the session scratchpad.", {
+    "type": "object",
+    "properties": {
+        "section": {
+            "type": "string",
+            "enum": ["context", "tasks", "notes"],
+            "description": "Section to update. 'constitution_tldr' is read-only.",
+        },
+        "content": {
+            "type": "string",
+            "description": "New content for the section — overwrites the previous value.",
+        },
+    },
+    "required": ["section", "content"],
+}, _scratchpad_update)
+
 
 # Tool profiles (which tools are active per session)
+_SCRATCHPAD_TOOLS = {"scratchpad_read", "scratchpad_update"}
+
 TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"},
-    "compute_only":       {"python_execute"},
-    "compute_and_search": {"python_execute", "web_search", "read_url"},
-    "no_tools":           set(),
+    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"} | _SCRATCHPAD_TOOLS,
+    "compute_only":       {"python_execute"} | _SCRATCHPAD_TOOLS,
+    "compute_and_search": {"python_execute", "web_search", "read_url"} | _SCRATCHPAD_TOOLS,
+    "no_tools":           set(_SCRATCHPAD_TOOLS),
 }
 
 # ---------------------------------------------------------------------------
@@ -420,6 +462,8 @@ _DEPENDENCY_MONITOR = DependencyMonitor()
 _GRAPH_CLIENT: Optional[Any] = None   # GraphClient — User Modelling
 _ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
 _HARNESS: Optional[Any] = None   # ConstitutionalHarness — set at startup when ENABLE_HARNESS=True
+_SCRATCHPAD_STORE: Optional[Any] = None   # ScratchpadStore — set at startup
+_CURRENT_SESSION_ID: Optional[str] = None  # Set per-request, read by scratchpad tool handlers
 
 # ---------------------------------------------------------------------------
 # Model state — populated on startup, never mutated at request time
@@ -737,7 +781,13 @@ def _build_system_prompt(
         suffix = _HARNESS.metrics.get_adaptation_suffix()
         if suffix:
             parts.append(suffix)
-    return "".join(parts)
+    _SCRATCHPAD_NOTE = (
+        "\n\nScratchpad (always available — not listed in tool inventory above):\n"
+        "  scratchpad_read()                           → read your full scratchpad\n"
+        "  scratchpad_update(section=..., content=...) → update context / tasks / notes\n"
+        "Use the scratchpad on any query with 3+ requirements or 2+ tool calls (P24)."
+    )
+    return "".join(parts) + _SCRATCHPAD_NOTE
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +935,13 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         _to_openai_schemas(active_tools) if use_native else None
     )
 
+    # ── Scratchpad session binding ────────────────────────────────────────
+    global _CURRENT_SESSION_ID
+    if _SCRATCHPAD_STORE is not None:
+        _CURRENT_SESSION_ID = req.session_id or _SCRATCHPAD_STORE.new_session_id()
+    else:
+        _CURRENT_SESSION_ID = req.session_id
+
     tools_used: Dict[str, int] = {}
     total_tokens = 0
     first_input_tokens = 0
@@ -926,6 +983,14 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                         print(f"[TOOL] Execution error in {fn_name}: {e}")
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
                 result = _sanitise_tool_output(fn_name, str(raw_result))
+                if (
+                    _SCRATCHPAD_STORE is not None
+                    and _CURRENT_SESSION_ID
+                    and fn_name not in ("scratchpad_read", "scratchpad_update")
+                ):
+                    task_status = _SCRATCHPAD_STORE.get_task_status(_CURRENT_SESSION_ID)
+                    if task_status:
+                        result = result + f"\n{task_status}"
                 conv.append({"role": "tool", "content": result})
             else:
                 break
@@ -958,6 +1023,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     max(req.temperature, 0.3) * ts if ts != 1.0 else req.temperature,
                     req.greedy and ts == 1.0,
                 )[0],
+                session_id=_CURRENT_SESSION_ID,
                 max_retries=2,
             )
             if adaptation_needed != bool(_HARNESS.metrics.get_adaptation_suffix()):
@@ -1189,6 +1255,14 @@ def main() -> None:
     else:
         print("Ontology Verifier: disabled by config")
 
+    # ── Scratchpad store ──────────────────────────────────────────────────
+    global _SCRATCHPAD_STORE
+    if _scratchpad_available:
+        _SCRATCHPAD_STORE = ScratchpadStore()
+        print("[SCRATCHPAD] Session scratchpad store initialised")
+    else:
+        print("[SCRATCHPAD] scratchpad module not available — scratchpad tools disabled")
+
     # ── Constitutional Harness ────────────────────────────────────────────
     global _HARNESS
     if cfg.ENABLE_HARNESS:
@@ -1196,6 +1270,7 @@ def main() -> None:
             _HARNESS = ConstitutionalHarness(
                 metrics_path="reports/harness_metrics.json",
                 ssd_log_path="reports/ssd_candidates.jsonl",
+                scratchpad_store=_SCRATCHPAD_STORE,
             )
             print(f"[HARNESS] Constitutional harness enabled (max_retries=2, window=50)")
             _HARNESS.log_adaptation()
