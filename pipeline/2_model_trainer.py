@@ -30,6 +30,12 @@ from pathlib import Path
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
     from unsloth import FastModel
     from trl import SFTTrainer, SFTConfig, GRPOTrainer, GRPOConfig
     from datasets import load_dataset, Dataset
