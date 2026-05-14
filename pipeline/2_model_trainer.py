@@ -829,7 +829,8 @@ class ModelTrainer:
             sample = eval_raw[:max_eval_examples]
             print(f"  Eval split examples: {len(sample)}/{len(eval_raw)}")
             hypotheses, references = [], []
-            for ex in sample:
+            for i, ex in enumerate(sample):
+                print(f"    Generating eval example {i + 1}/{len(sample)}...", flush=True)
                 msgs = ex.get("messages", [])
                 gold = next(
                     (m["content"] for m in reversed(msgs) if m["role"] == "assistant"),

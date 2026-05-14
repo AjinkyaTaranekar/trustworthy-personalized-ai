@@ -34,6 +34,12 @@ import json
 import re
 import time
 from datetime import datetime
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -64,7 +70,7 @@ def _http(server_url: str, path: str, method: str = "GET",
 
 def _complete(server_url: str, messages: List[Dict], tool_profile: str,
               system_override: Optional[str] = None,
-              max_new_tokens: int = 1024, temperature: float = 0.7,
+              max_new_tokens: int = 2048, temperature: float = 0.7,
               harness_enabled: Optional[bool] = None) -> Dict[str, Any]:
     body = {
         "messages":        messages,
@@ -75,7 +81,19 @@ def _complete(server_url: str, messages: List[Dict], tool_profile: str,
     }
     if harness_enabled is not None:
         body["harness_enabled"] = harness_enabled
-    return _http(server_url, "/v1/chat/completions", "POST", body)
+    # Generation can take >120s on first call (CUDA warm-up) or with long outputs
+    return _http(server_url, "/v1/chat/completions", "POST", body, timeout=600)
+
+
+def _warmup(server_url: str) -> None:
+    """Fire a cheap generation to warm up CUDA kernels before the benchmark loop."""
+    print("  Warming up model (first forward pass)...", flush=True)
+    try:
+        _complete(server_url, [{"role": "user", "content": "Hi"}],
+                  tool_profile="no_tools", max_new_tokens=16, temperature=0.1)
+        print("  Warm-up done.", flush=True)
+    except Exception as e:
+        print(f"  [WARN] Warm-up failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Constitutional drift probe suite
@@ -990,13 +1008,14 @@ Examples:
     print(f"\nBenchmark run: {timestamp}")
     print(f"  Output dir   : {output_dir}")
 
-    # Verify primary server is alive
+    # Verify primary server is alive, then warm up CUDA kernels
     try:
         health = _http(args.server_url, "/health")
         print(f"Primary server : {args.server_url}  model={health.get('model', '?')}")
     except RuntimeError as e:
         print(f"ERROR: {e}")
         return
+    _warmup(args.server_url)
 
     compare_health = None
     if args.compare_url:

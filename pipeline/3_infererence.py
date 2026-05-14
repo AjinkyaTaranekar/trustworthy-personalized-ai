@@ -32,6 +32,12 @@ import re
 import subprocess
 import sys
 import time
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
