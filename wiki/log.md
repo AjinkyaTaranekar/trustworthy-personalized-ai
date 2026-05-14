@@ -11,6 +11,26 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - **Why:** `publish()` calls Unsloth's `save_pretrained_gguf` which internally runs `sudo apt-get` via `check_llama_cpp()` before raising `RuntimeError: llama.cpp folder does not exist` — the sudo prompt blocks the process even though the outer try/except would catch the error. On the A4000 node (no sudo), GGUF export can never succeed.
 - **Fix:** added `--skip_gguf` CLI flag; threaded `skip_gguf: bool` through `ModelTrainer.__init__`; both GGUF steps (save + push_to_hub_gguf) are guarded by `if not self._skip_gguf`; the existing try/except on `save_pretrained_gguf` now also prints a hint to use `--skip_gguf`.
 - **Files changed:** `pipeline/2_model_trainer.py`, `README.md` (publish section updated with `--skip_gguf` example and description).
+## [2026-05-13] ingest | TML-Interaction-Small — Thinking Machines Lab real-time multimodal model
+
+- Created `wiki/entities/tml-interaction-small.md` — entity page for Mira Murati's TML-Interaction-Small (Thinking Machines Lab, May 2026).
+- Source: news article (no technical report available). Key specs: 276B total / 12B active MoE; encoder-free early fusion of audio/video/text; 200ms micro-turn blocks; 0.40s response latency (vs GPT-Realtime at 1.18s); FD-bench V1.5 77.8 (next best: 54.3).
+- Filed as entity (not source/paper) due to news-article provenance and model nature.
+- Relevance framed in two directions: (1) micro-turn design operationalises empathic responsiveness discussed in [[topics/empathy]]; (2) cloud-only deployment at 276B illustrates the scale/privacy tradeoff that motivates the on-device argument — useful dissertation contrast.
+- Explicitly excluded from [[experiments/frontier-model-comparison]] (real-time multimodal, not text-based chat API).
+- Updated `wiki/index.md` under Entities.
+- No new tags added; `multimodal`, `latency`, `empathy`, `evaluation` sufficient.
+
+## [2026-05-13] ingest | Simple Self-Distillation (SSD) — arXiv 2604.01193
+
+- Created `wiki/sources/papers/simple-self-distillation.md` — Literature Note for "Embarrassingly Simple Self-Distillation Improves Code Generation" (Zhang et al., 2026).
+- Core technique: sample from model with temperature/truncation → fine-tune on those samples via standard SFT; no external verifier, teacher, or RL needed. 42.4% → 55.3% pass@1 on LiveCodeBench v6 (Qwen3-30B-Instruct).
+- Theoretical framing: resolves a *precision-exploration conflict* in LLM decoding by reshaping token distributions contextually.
+- Relevance flagged in three directions: (1) Constitutional SSD — substitute constitutional harness as the quality filter instead of code execution; (2) interim SFT baseline before GRPO is implemented; (3) constitution drift paper — SSD as a lightweight drift-reduction mechanism vs full GRPO retraining.
+- Cross-linked `wiki/sources/papers/self-enhanced-reasoning.md` (SERT) — both exploit latent good outputs in the model's sampling distribution.
+- Updated `wiki/index.md` under Papers — Small-model / distillation.
+- No new tags required; existing `distillation`, `sft`, `small-model`, `self-training`, `qwen`, `reasoning` cover the paper.
+- No local PDF; sourced from https://arxiv.org/abs/2604.01193.
 
 ## [2026-05-12] refactor | Documentation sync — last 15 commits reflected in README and wiki
 

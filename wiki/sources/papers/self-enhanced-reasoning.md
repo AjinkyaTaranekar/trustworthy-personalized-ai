@@ -29,6 +29,7 @@ Directly supports the repo's small-model bet on [[entities/qwen3-0.6b|Qwen3-0.6B
 - [[sources/papers/hidden-reasoners]]
 - [[sources/papers/deepseek-r1]]
 - [[entities/qwen3-0.6b]]
+- [[sources/papers/simple-self-distillation]] — SSD: same intuition applied to code generation; converges with SERT when filter is constitutional compliance rather than code execution
 
 ## Sources
 

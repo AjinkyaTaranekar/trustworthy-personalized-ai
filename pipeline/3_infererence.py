@@ -952,8 +952,11 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 conv=conv,
                 question=user_turn,
                 tool_profile_label=req.tool_profile,
-                generate_fn=lambda c: _generate(
-                    c, req.max_new_tokens, req.temperature, req.greedy
+                generate_fn=lambda c, ts=1.0: _generate(
+                    c,
+                    req.max_new_tokens,
+                    max(req.temperature, 0.3) * ts if ts != 1.0 else req.temperature,
+                    req.greedy and ts == 1.0,
                 )[0],
                 max_retries=2,
             )
@@ -1190,7 +1193,10 @@ def main() -> None:
     global _HARNESS
     if cfg.ENABLE_HARNESS:
         if _harness_available:
-            _HARNESS = ConstitutionalHarness(metrics_path="reports/harness_metrics.json")
+            _HARNESS = ConstitutionalHarness(
+                metrics_path="reports/harness_metrics.json",
+                ssd_log_path="reports/ssd_candidates.jsonl",
+            )
             print(f"[HARNESS] Constitutional harness enabled (max_retries=2, window=50)")
             _HARNESS.log_adaptation()
         else:

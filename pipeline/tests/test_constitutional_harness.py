@@ -1,4 +1,5 @@
 """Unit tests for constitutional_harness.py — run with: pytest pipeline/tests/test_constitutional_harness.py -v"""
+import json
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -145,7 +146,7 @@ def test_harness_metrics_save_load(tmp_path):
 def test_harness_passes_clean_response():
     harness = ConstitutionalHarness()
     calls = []
-    def fake_generate(conv):
+    def fake_generate(conv, temp_scale=1.0):
         calls.append(conv)
         return GOOD_RESPONSE
     result, violations, retries = harness.check_and_steer(
@@ -163,7 +164,7 @@ def test_harness_passes_clean_response():
 def test_harness_retries_on_violation():
     harness = ConstitutionalHarness()
     calls = []
-    def fake_generate(conv):
+    def fake_generate(conv, temp_scale=1.0):
         calls.append(conv)
         return GOOD_RESPONSE
     result, violations, retries = harness.check_and_steer(
@@ -180,7 +181,7 @@ def test_harness_retries_on_violation():
 
 def test_harness_exhausts_retries_returns_best():
     harness = ConstitutionalHarness()
-    def always_bad(conv):
+    def always_bad(conv, temp_scale=1.0):
         return BAD_NO_THINK
     result, violations, retries = harness.check_and_steer(
         response=BAD_NO_THINK,
@@ -192,3 +193,134 @@ def test_harness_exhausts_retries_returns_best():
     )
     assert retries == 2
     assert len(violations) > 0
+
+
+# ── SSD data flywheel ────────────────────────────────────────────────────────
+
+def test_harness_logs_ssd_candidate_on_first_pass(tmp_path):
+    ssd_log = tmp_path / "ssd_candidates.jsonl"
+    harness = ConstitutionalHarness(ssd_log_path=str(ssd_log))
+    def fake_generate(conv, temp_scale=1.0):
+        return GOOD_RESPONSE
+    harness.check_and_steer(
+        response=GOOD_RESPONSE,
+        conv=[{"role": "user", "content": MATH_QUESTION}],
+        question=MATH_QUESTION,
+        tool_profile_label=PROFILE_COMPUTE,
+        generate_fn=fake_generate,
+        max_retries=2,
+    )
+    assert ssd_log.exists(), "SSD log should be created on a passing response"
+    entries = [json.loads(line) for line in ssd_log.read_text().splitlines()]
+    assert len(entries) == 1
+    assert entries[0]["question"] == MATH_QUESTION
+    assert entries[0]["response"] == GOOD_RESPONSE
+    assert entries[0]["retried"] is False
+
+def test_harness_logs_ssd_candidate_on_retry_cleared(tmp_path):
+    ssd_log = tmp_path / "ssd_candidates.jsonl"
+    harness = ConstitutionalHarness(ssd_log_path=str(ssd_log))
+    def fake_generate(conv, temp_scale=1.0):
+        return GOOD_RESPONSE
+    harness.check_and_steer(
+        response=BAD_NO_ANSWER,
+        conv=[{"role": "user", "content": PLAIN_QUESTION}],
+        question=PLAIN_QUESTION,
+        tool_profile_label=PROFILE_NO_TOOLS,
+        generate_fn=fake_generate,
+        max_retries=2,
+    )
+    assert ssd_log.exists()
+    entries = [json.loads(line) for line in ssd_log.read_text().splitlines()]
+    assert len(entries) == 1
+    assert entries[0]["retried"] is True
+    assert entries[0]["response"] == GOOD_RESPONSE
+
+def test_harness_does_not_log_ssd_candidate_when_retries_exhausted(tmp_path):
+    ssd_log = tmp_path / "ssd_candidates.jsonl"
+    harness = ConstitutionalHarness(ssd_log_path=str(ssd_log))
+    def always_bad(conv, temp_scale=1.0):
+        return BAD_NO_THINK
+    harness.check_and_steer(
+        response=BAD_NO_THINK,
+        conv=[{"role": "user", "content": PLAIN_QUESTION}],
+        question=PLAIN_QUESTION,
+        tool_profile_label=PROFILE_NO_TOOLS,
+        generate_fn=always_bad,
+        max_retries=2,
+    )
+    assert not ssd_log.exists(), "SSD log must NOT be written when all retries fail"
+
+def test_harness_ssd_log_contains_required_fields(tmp_path):
+    ssd_log = tmp_path / "ssd_candidates.jsonl"
+    harness = ConstitutionalHarness(ssd_log_path=str(ssd_log))
+    def fake_generate(conv, temp_scale=1.0):
+        return GOOD_RESPONSE
+    harness.check_and_steer(
+        response=GOOD_RESPONSE,
+        conv=[{"role": "user", "content": MATH_QUESTION}],
+        question=MATH_QUESTION,
+        tool_profile_label=PROFILE_COMPUTE,
+        generate_fn=fake_generate,
+        max_retries=2,
+    )
+    entry = json.loads(ssd_log.read_text().splitlines()[0])
+    for field in ("question", "response", "retried", "principles_checked", "timestamp"):
+        assert field in entry, f"SSD log entry missing required field: {field}"
+
+def test_harness_ssd_logging_disabled_when_path_is_none():
+    harness = ConstitutionalHarness(ssd_log_path=None)
+    def fake_generate(conv, temp_scale=1.0):
+        return GOOD_RESPONSE
+    result, violations, retries = harness.check_and_steer(
+        response=GOOD_RESPONSE,
+        conv=[{"role": "user", "content": MATH_QUESTION}],
+        question=MATH_QUESTION,
+        tool_profile_label=PROFILE_COMPUTE,
+        generate_fn=fake_generate,
+        max_retries=2,
+    )
+    assert violations == []
+
+
+# ── Temperature escalation on retry ──────────────────────────────────────────
+
+def test_harness_retry1_passes_elevated_temp_scale():
+    harness = ConstitutionalHarness()
+    temp_scales_seen = []
+    def fake_generate(conv, temp_scale=1.0):
+        temp_scales_seen.append(temp_scale)
+        return GOOD_RESPONSE
+    harness.check_and_steer(
+        response=BAD_NO_ANSWER,
+        conv=[{"role": "user", "content": PLAIN_QUESTION}],
+        question=PLAIN_QUESTION,
+        tool_profile_label=PROFILE_NO_TOOLS,
+        generate_fn=fake_generate,
+        max_retries=2,
+    )
+    assert len(temp_scales_seen) == 1, "Should call generate_fn exactly once on first retry"
+    assert temp_scales_seen[0] > 1.0, (
+        f"Retry 1 must use temp_scale > 1.0 to explore the distribution; got {temp_scales_seen[0]}"
+    )
+
+def test_harness_retry2_uses_higher_temp_scale_than_retry1():
+    harness = ConstitutionalHarness()
+    temp_scales_seen = []
+    attempt = [0]
+    def bad_then_good(conv, temp_scale=1.0):
+        temp_scales_seen.append(temp_scale)
+        attempt[0] += 1
+        return BAD_NO_THINK if attempt[0] < 2 else GOOD_RESPONSE
+    harness.check_and_steer(
+        response=BAD_NO_THINK,
+        conv=[{"role": "user", "content": PLAIN_QUESTION}],
+        question=PLAIN_QUESTION,
+        tool_profile_label=PROFILE_NO_TOOLS,
+        generate_fn=bad_then_good,
+        max_retries=2,
+    )
+    assert len(temp_scales_seen) == 2, "Should call generate_fn twice (two retries)"
+    assert temp_scales_seen[1] > temp_scales_seen[0], (
+        f"Retry 2 temp_scale ({temp_scales_seen[1]}) must exceed retry 1 ({temp_scales_seen[0]})"
+    )
