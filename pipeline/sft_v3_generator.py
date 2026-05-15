@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import os
 import re
@@ -129,17 +130,29 @@ CRITICAL FORMAT RULES — violation invalidates the training example:
 5. After each [TOOL_RESULT] block, continue reasoning in flowing prose before the next tool call or <answer>."""
 
 
-def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str, ) -> str:
+def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str) -> str:
     return (
+        # FORMAT RULES come first — models anchor on the beginning of the system prompt.
+        # Placing <think> requirement here ensures it is read before the constitution.
         "You are a frontier AI assistant generating exemplary training data.\n\n"
-        f"{_TEACHER_CONSTITUTION}\n\n"
-        f"{_TEACHER_FORMAT_RULES}\n\n"
+        "MANDATORY OUTPUT FORMAT — follow this exactly for every response:\n"
+        "  Step 1: Open with <think> and write flowing narrative reasoning (≥150 chars).\n"
+        "          No bullet points, no headers, no rule numbers inside <think>.\n"
+        "  Step 2: Close reasoning with </think>.\n"
+        "  Step 3: If a tool is needed, call it with <tool>tool_name(arg='...')</tool>.\n"
+        "          After each [TOOL_RESULT] block, continue reasoning in prose.\n"
+        "  Step 4: Close with <answer>...</answer>.\n"
+        "  EXAMPLE SKELETON:\n"
+        "    <think>The user is asking ... I should consider ...</think>\n"
+        "    <tool>web_search(query='...')</tool>\n"
+        "    <answer>Based on the above, ...</answer>\n\n"
         f"Session tools available: {tool_profile['context']}\n"
-        f"{tool_profile['system_note']}"
+        f"{tool_profile['system_note']}\n\n"
         f"CATEGORY: {category}\n"
-        f"SESSION TOOLS: {tool_profile['context']}\n"
-        f"Requirements for this category ({category}):\n"
-        f"{ideal_behavior}\n"
+        f"Requirements for this category:\n"
+        f"{ideal_behavior}\n\n"
+        f"{_TEACHER_CONSTITUTION}\n\n"
+        f"{_TEACHER_FORMAT_RULES}\n"
     )
 
 
@@ -148,6 +161,18 @@ def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str,
 # ---------------------------------------------------------------------------
 # Pure helpers (also tested directly)
 # ---------------------------------------------------------------------------
+
+def _question_id(item: dict) -> str:
+    """Return a stable ID for a question item.
+
+    Uses the 'id' field if present; otherwise derives a 12-char hex hash from
+    the question text so existing JSONL files work without modification.
+    """
+    if item.get("id"):
+        return str(item["id"])
+    text = item.get("question", "")
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:12]
+
 
 _BANNED_PHRASES = frozenset({
     "see answer below", "inferred from question", "none flagged",
@@ -163,6 +188,32 @@ def _has_banned_placeholder(text: str) -> bool:
 def _think_block_length(content: str) -> int:
     m = re.search(r"<think>(.*?)</think>", content, re.DOTALL | re.IGNORECASE)
     return len(m.group(1).strip()) if m else 0
+
+
+def _wrap_missing_think(content: str) -> str:
+    """If the model wrote reasoning but didn't wrap it in <think>, wrap it.
+
+    Works for both no-tool responses (reasoning before <answer>) and
+    tool-calling responses (reasoning before <tool>). Does nothing when
+    <think> is already present or when there is too little pre-boundary text.
+    """
+    if re.search(r"<think\s*>", content, re.IGNORECASE):
+        return content  # already wrapped — nothing to do
+
+    # Find first structural boundary: <tool> or <answer>
+    first_boundary = len(content)
+    for pat in (r"<tool\s*>", r"<answer\s*>"):
+        m = re.search(pat, content, re.IGNORECASE)
+        if m and m.start() < first_boundary:
+            first_boundary = m.start()
+
+    reasoning = content[:first_boundary].strip()
+    rest = content[first_boundary:]
+
+    if len(reasoning) < 80:
+        return content  # too little reasoning to wrap — quality gate will reject
+
+    return f"<think>\n{reasoning}\n</think>\n{rest}"
 
 
 def _count_violations(violations: str) -> int:
@@ -281,6 +332,7 @@ def _build_v3_example(
     category: str,
     tool_profile: dict,
     violations: str = "NO_VIOLATIONS",
+    question_id: str = "",
 ) -> dict:
     """Build a JSONL training row. Teacher system prompt → student prompt (context swap)."""
     student_system = STUDENT_PROMPTS[tool_profile["label"]]
@@ -293,6 +345,7 @@ def _build_v3_example(
         "messages": messages,
         "metadata": {
             "source": "v3_distillation",
+            "question_id": question_id,
             "category": category,
             "tool_profile": tool_profile["label"],
             "constitution_score": max(0.0, round(1.0 - n_viol * 0.05, 3)),
@@ -396,10 +449,11 @@ def _process_one_v3(
     question = item.get("question", "").strip()
     if not question:
         return "error"
+    q_id = _question_id(item)
 
     tool_profile, failure_config = pick_tool_profile(category, item)
     elapsed = time.monotonic() - run_start
-    tag = f"[{idx}/{total}:{category}]"
+    tag = f"[{idx}/{total}:{category}:{q_id}]"
     print(f"\n{tag} profile={tool_profile['label']} elapsed={elapsed:.0f}s")
     print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
 
@@ -421,21 +475,34 @@ def _process_one_v3(
                 api_base=api_base,
                 failure_config=failure_config,
             )
-            first_asst = next(
-                (m["content"] for m in conversation if m["role"] == "assistant"), ""
+            # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
+            # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write
+            # flowing prose that we wrap here so training data stays format-consistent.
+            first_asst_idx = next(
+                (i for i, m in enumerate(conversation) if m["role"] == "assistant"), None
             )
+            if first_asst_idx is not None:
+                original = conversation[first_asst_idx]["content"]
+                wrapped = _wrap_missing_think(original)
+                if wrapped != original:
+                    conversation[first_asst_idx] = {**conversation[first_asst_idx], "content": wrapped}
+                    print(f"  {tag} auto-wrapped missing <think> block")
+                first_asst = conversation[first_asst_idx]["content"]
+            else:
+                first_asst = ""
+
             if _think_block_length(first_asst) >= 150:
                 break
             if _think_attempt == 0:
-                print(f"  {tag} no <think> block (attempt 1) — retrying")
+                print(f"  {tag} insufficient <think> content (attempt 1) — retrying")
         else:
-            print(f"  {tag} skipped: no valid <think> block after 2 attempts")
+            print(f"  {tag} skipped: reasoning too short after 2 attempts")
             return "error"
 
         n_tool_turns = sum(1 for m in conversation if m["role"] == "user" and m["content"].startswith("[TOOL_RESULT:"))
         print(f"  {tag} {len(conversation)} msgs ({n_tool_turns} tool turns) in {time.monotonic()-t0:.1f}s")
 
-        example = _build_v3_example(conversation, question, category, tool_profile)
+        example = _build_v3_example(conversation, question, category, tool_profile, question_id=q_id)
 
         with file_lock:
             out_file.write(json.dumps(example, ensure_ascii=False) + "\n")
@@ -466,18 +533,26 @@ def process_questions_v3(
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     write_mode = "w" if overwrite else "a"
 
-    done_questions: set[str] = set()
+    done_ids: set[str] = set()
     if not overwrite and Path(output_path).exists():
         with open(output_path, encoding="utf-8") as f:
             for line in f:
                 try:
                     ex = json.loads(line)
-                    user_msgs = [m["content"] for m in ex["messages"] if m["role"] == "user"]
-                    done_questions.add(user_msgs[0] if user_msgs else "")
+                    meta = ex.get("metadata", {})
+                    qid = meta.get("question_id", "")
+                    if qid:
+                        done_ids.add(qid)
+                    else:
+                        # Fallback: hash first user message for pre-ID outputs
+                        user_msgs = [m["content"] for m in ex["messages"] if m["role"] == "user"]
+                        text = user_msgs[0] if user_msgs else ""
+                        if text:
+                            done_ids.add(hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:12])
                 except (json.JSONDecodeError, KeyError, IndexError):
                     pass
-        if done_questions:
-            print(f"Resume: {len(done_questions)} questions already processed")
+        if done_ids:
+            print(f"Resume: {len(done_ids)} questions already processed (by id)")
 
     items: list[dict] = []
     parse_errors = skipped = 0
@@ -493,7 +568,7 @@ def process_questions_v3(
                 skipped += 1
                 continue
             q = item.get("question", "").strip()
-            if not q or q in done_questions:
+            if not q or _question_id(item) in done_ids:
                 skipped += 1
                 continue
             items.append(item)

@@ -180,6 +180,70 @@ def test_think_block_length_absent():
     assert gen._think_block_length("<answer>hello</answer>") == 0
 
 
+def test_question_id_uses_existing_id():
+    from sft_v3_generator import _question_id
+    item = {"id": "q-001", "question": "What is 1+1?", "category": "arithmetic"}
+    assert _question_id(item) == "q-001"
+
+
+def test_question_id_hashes_text_when_no_id():
+    from sft_v3_generator import _question_id
+    item = {"question": "What is 1+1?", "category": "arithmetic"}
+    result = _question_id(item)
+    assert len(result) == 12
+    assert result == _question_id(item)  # deterministic
+
+
+def test_question_id_different_for_different_questions():
+    from sft_v3_generator import _question_id
+    a = _question_id({"question": "Question A"})
+    b = _question_id({"question": "Question B"})
+    assert a != b
+
+
+def test_build_v3_example_includes_question_id():
+    from sft_v3_generator import _build_v3_example, TOOL_PROFILES
+    profile = next(p for p in TOOL_PROFILES if p["label"] == "compute_only")
+    conv = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "<think>reasoning here and more text to reach length</think><answer>ans</answer>"},
+    ]
+    example = _build_v3_example(conv, "q", "arithmetic", profile, question_id="abc123def456")
+    assert example["metadata"]["question_id"] == "abc123def456"
+
+
+def test_wrap_missing_think_no_op_when_present():
+    from sft_v3_generator import _wrap_missing_think
+    content = "<think>Some reasoning here that is long enough.</think><answer>Done.</answer>"
+    assert _wrap_missing_think(content) == content
+
+
+def test_wrap_missing_think_wraps_before_answer():
+    from sft_v3_generator import _wrap_missing_think
+    reasoning = "x" * 100
+    content = f"{reasoning}<answer>Done.</answer>"
+    result = _wrap_missing_think(content)
+    assert result.startswith("<think>")
+    assert reasoning in result
+    assert "<answer>Done.</answer>" in result
+
+
+def test_wrap_missing_think_wraps_before_tool():
+    from sft_v3_generator import _wrap_missing_think
+    reasoning = "I need to look this up. " * 5
+    content = f"{reasoning}<tool>web_search(query='test')</tool>"
+    result = _wrap_missing_think(content)
+    assert result.startswith("<think>")
+    assert "<tool>web_search" in result
+
+
+def test_wrap_missing_think_skips_short_reasoning():
+    from sft_v3_generator import _wrap_missing_think
+    content = "Short.<answer>Answer.</answer>"
+    assert _wrap_missing_think(content) == content
+
+
 def test_think_block_length_min_threshold():
     import sft_v3_generator as gen
     short = "<think>Too short.</think><answer>Answer.</answer>"
