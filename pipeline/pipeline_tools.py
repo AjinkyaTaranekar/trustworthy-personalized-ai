@@ -158,6 +158,36 @@ def get_datetime() -> str:
 
 
 # ---------------------------------------------------------------------------
+# scratchpad_sections / user_memory_sections — static schema introspection
+# ---------------------------------------------------------------------------
+
+def scratchpad_sections() -> str:
+    return (
+        "Scratchpad sections — call scratchpad_update(section=<key>, content=<value>) to write:\n"
+        "  context  — Background about the current task or conversation state (what is being solved, constraints noted).\n"
+        "  tasks    — Ordered list of sub-steps or sub-goals to complete in this response.\n"
+        "  notes    — Intermediate calculations, hypotheses, or scratch work that inform the final answer.\n\n"
+        "Use scratchpad_read() to retrieve all sections at once. "
+        "The scratchpad is session-scoped and not visible to the user."
+    )
+
+
+def user_memory_sections() -> str:
+    return (
+        "User memory sections (5W+H ontology) — call user_memory_update(section=<key>, content=<value>) to write:\n"
+        "  who         — Who the user is: role, identity, background, demographics.\n"
+        "  what        — What the user does or is currently working on.\n"
+        "  where       — Where the user operates: location, platform, regulatory or cultural context.\n"
+        "  why         — Why the user asks: motivation, goals, values, what they are trying to achieve.\n"
+        "  how         — How the user prefers to work: learning style, tools, communication style, level of detail wanted.\n"
+        "  facts       — Specific known facts: skill levels, past experiences, stated preferences, language.\n"
+        "  constraints — Hard limits: budget, time, policy, legal restrictions, access limitations.\n\n"
+        "Use user_memory_read(prompt=<topic>) to retrieve relevant sections. "
+        "Memory persists across conversations and should be updated whenever new durable facts are learned."
+    )
+
+
+# ---------------------------------------------------------------------------
 # ToolRegistry — unified registry for generator (XML) and inference (REST)
 # ---------------------------------------------------------------------------
 
@@ -219,32 +249,49 @@ class ToolRegistry:
     def _register_builtins(self) -> None:
         self._specs["python_execute"] = ToolSpec(
             "python_execute",
-            "Execute Python code and return stdout/stderr.",
+            (
+                "Execute sandboxed Python code and return stdout or stderr. "
+                "Use for: arithmetic, unit conversions, data transformations, algorithm prototyping. "
+                "Allowed imports: math, statistics, decimal, fractions, random, itertools, "
+                "functools, operator, collections, re, string. "
+                "No file I/O, no network, no exec/eval. "
+                "Usage: python_execute(code='print(2 ** 10)')"
+            ),
             {
                 "type": "object",
-                "properties": {"code": {"type": "string", "description": "Python source code to run"}},
+                "properties": {"code": {"type": "string", "description": "Python source code to run. Use print() to produce output."}},
                 "required": ["code"],
             },
             lambda code="", **_: python_execute(code),
         )
         self._specs["web_search"] = ToolSpec(
             "web_search",
-            "Search the web using exa.ai and return a summary.",
+            (
+                "Search the web via exa.ai and return top-3 result summaries with titles and URLs. "
+                "Use for: current events, live prices, named entities, facts with a recency requirement. "
+                "Write a natural-language question or keyword phrase as the query. "
+                "Usage: web_search(query='current USD/EUR exchange rate')"
+            ),
             {
                 "type": "object",
-                "properties": {"query": {"type": "string", "description": "Search query string"}},
+                "properties": {"query": {"type": "string", "description": "Natural-language search query — be specific to get precise results."}},
                 "required": ["query"],
             },
             lambda query="", **_: web_search(query),
         )
         self._specs["read_url"] = ToolSpec(
             "read_url",
-            "Fetch the text content of a URL. Pass prompt= to extract relevant content.",
+            (
+                "Fetch and clean the text content of a URL, returning the most relevant paragraphs. "
+                "Use after web_search to read a specific page in detail. "
+                "Pass prompt= to bias extraction toward what you are looking for. "
+                "Usage: read_url(url='https://example.com', prompt='annual revenue figures')"
+            ),
             {
                 "type": "object",
                 "properties": {
-                    "url":    {"type": "string", "description": "URL to fetch"},
-                    "prompt": {"type": "string", "description": "What you are trying to extract from this page"},
+                    "url":    {"type": "string", "description": "Full URL including https://"},
+                    "prompt": {"type": "string", "description": "What you want to extract — guides paragraph selection."},
                 },
                 "required": ["url"],
             },
@@ -252,31 +299,68 @@ class ToolRegistry:
         )
         self._specs["get_datetime"] = ToolSpec(
             "get_datetime",
-            "Return the current UTC date and time.",
+            (
+                "Return the current UTC date and time as a string. "
+                "Call this at the start of any time-sensitive response to anchor your answer in real time. "
+                "No arguments needed. "
+                "Usage: get_datetime()"
+            ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: get_datetime(),
+        )
+        self._specs["scratchpad_sections"] = ToolSpec(
+            "scratchpad_sections",
+            (
+                "Return the list of available scratchpad section keys and what each section is for. "
+                "Call this BEFORE scratchpad_update so you know which section to write to. "
+                "No arguments needed. "
+                "Usage: scratchpad_sections()"
+            ),
+            {"type": "object", "properties": {}, "required": []},
+            lambda **_: scratchpad_sections(),
+        )
+        self._specs["user_memory_sections"] = ToolSpec(
+            "user_memory_sections",
+            (
+                "Return the user memory section keys and their meaning (5W+H ontology). "
+                "Call this BEFORE user_memory_update so you know which section to write to. "
+                "No arguments needed. "
+                "Usage: user_memory_sections()"
+            ),
+            {"type": "object", "properties": {}, "required": []},
+            lambda **_: user_memory_sections(),
         )
         # Scratchpad tools — closures capture self so session_id is resolved at call time
         self._specs["scratchpad_read"] = ToolSpec(
             "scratchpad_read",
-            "Read the full session scratchpad — constitution TLDR, context, tasks, notes.",
+            (
+                "Read the entire session scratchpad and return all sections (context, tasks, notes). "
+                "Call this to resume multi-step reasoning or check what you have already recorded. "
+                "No arguments needed. "
+                "Usage: scratchpad_read()"
+            ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: self._scratchpad_read(),
         )
         self._specs["scratchpad_update"] = ToolSpec(
             "scratchpad_update",
-            "Update one section of the session scratchpad.",
+            (
+                "Write to one section of the session scratchpad. Overwrites the previous value for that section. "
+                "Call scratchpad_sections() first to see valid section keys and their purpose. "
+                "Sections: context (task background), tasks (ordered steps), notes (intermediate work). "
+                "Usage: scratchpad_update(section='notes', content='Step 1 result: 42')"
+            ),
             {
                 "type": "object",
                 "properties": {
                     "section": {
                         "type": "string",
                         "enum": ["context", "tasks", "notes"],
-                        "description": "Section to update. 'constitution_tldr' is read-only.",
+                        "description": "Which section to write. Call scratchpad_sections() to understand each section's purpose.",
                     },
                     "content": {
                         "type": "string",
-                        "description": "New content for the section — overwrites the previous value.",
+                        "description": "New content — overwrites the previous value for this section.",
                     },
                 },
                 "required": ["section", "content"],
@@ -286,11 +370,16 @@ class ToolRegistry:
         # User memory tools
         self._specs["user_memory_read"] = ToolSpec(
             "user_memory_read",
-            "Read relevant user memory sections based on a prompt about the user.",
+            (
+                "Read the user's persistent memory and return sections relevant to your prompt. "
+                "Call this at the start of every response to personalise your answer. "
+                "Pass a prompt describing what aspect of the user you need (e.g. 'technical background'). "
+                "Usage: user_memory_read(prompt='user goals and constraints')"
+            ),
             {
                 "type": "object",
                 "properties": {
-                    "prompt": {"type": "string", "description": "What aspect of the user you want to look up"},
+                    "prompt": {"type": "string", "description": "What aspect of the user you want — guides which sections are returned."},
                 },
                 "required": [],
             },
@@ -298,18 +387,23 @@ class ToolRegistry:
         )
         self._specs["user_memory_update"] = ToolSpec(
             "user_memory_update",
-            "Update a section of the user's persistent memory when you learn new facts.",
+            (
+                "Write a new fact about the user to their persistent memory. "
+                "Call this when you learn something durable about the user (role, goal, preference, constraint). "
+                "Call user_memory_sections() first to choose the correct section key. "
+                "Usage: user_memory_update(section='facts', content='Prefers metric units.')"
+            ),
             {
                 "type": "object",
                 "properties": {
                     "section": {
                         "type": "string",
                         "enum": ["who", "what", "where", "why", "how", "facts", "constraints"],
-                        "description": "Ontology section to update.",
+                        "description": "5W+H section to write. Call user_memory_sections() to understand each section's meaning.",
                     },
                     "content": {
                         "type": "string",
-                        "description": "New content for the section — overwrites the previous value.",
+                        "description": "New content — overwrites the previous value for this section.",
                     },
                 },
                 "required": ["section", "content"],
@@ -401,6 +495,12 @@ class ToolRegistry:
 
         if s.startswith("get_datetime"):
             return get_datetime()
+
+        if s.startswith("scratchpad_sections"):
+            return scratchpad_sections()
+
+        if s.startswith("user_memory_sections"):
+            return user_memory_sections()
 
         if s.startswith("scratchpad_read"):
             if "scratchpad_read" not in active_tools:

@@ -55,23 +55,23 @@ _BASE_DELAY: float = 3.0
 TOOL_PROFILES = [
     {
         "label": "all_tools",
-        "context": "python_execute ✓ | web_search ✓ | read_url ✓ | get_datetime ✓",
-        "system_note": "All four tools are available in this session.",
+        "context": "python_execute ✓ | web_search ✓ | read_url ✓ | get_datetime ✓ | scratchpad_sections ✓ | scratchpad_read ✓ | scratchpad_update ✓ | user_memory_sections ✓ | user_memory_read ✓ | user_memory_update ✓",
+        "system_note": "All tools available. Scratchpad and user memory are always present regardless of profile.",
     },
     {
         "label": "compute_only",
-        "context": "python_execute ✓ | web_search ✗ | read_url ✗ | get_datetime ✗",
-        "system_note": "Only python_execute is available. No internet or time access.",
+        "context": "python_execute ✓ | web_search ✗ | read_url ✗ | get_datetime ✓ | scratchpad_sections ✓ | scratchpad_read ✓ | scratchpad_update ✓ | user_memory_sections ✓ | user_memory_read ✓ | user_memory_update ✓",
+        "system_note": "python_execute and datetime available. No internet access. Scratchpad and user memory always available.",
     },
     {
         "label": "compute_and_search",
-        "context": "python_execute ✓ | web_search ✓ | read_url ✓ | get_datetime ✗",
-        "system_note": "python_execute and web_search/read_url are available. No datetime tool.",
+        "context": "python_execute ✓ | web_search ✓ | read_url ✓ | get_datetime ✗ | scratchpad_sections ✓ | scratchpad_read ✓ | scratchpad_update ✓ | user_memory_sections ✓ | user_memory_read ✓ | user_memory_update ✓",
+        "system_note": "python_execute and web_search/read_url available. No datetime tool. Scratchpad and user memory always available.",
     },
     {
         "label": "no_tools",
-        "context": "python_execute ✗ | web_search ✗ | read_url ✗ | get_datetime ✗",
-        "system_note": "No tools are available in this session. Training knowledge only.",
+        "context": "python_execute ✗ | web_search ✗ | read_url ✗ | get_datetime ✓ | scratchpad_sections ✓ | scratchpad_read ✓ | scratchpad_update ✓ | user_memory_sections ✓ | user_memory_read ✓ | user_memory_update ✓",
+        "system_note": "No compute or web tools this session. Datetime, scratchpad, and user memory are available.",
     },
 ]
 
@@ -83,19 +83,31 @@ TOOL_PROFILES = [
 STUDENT_PROMPTS: dict[str, str] = {
     "all_tools": (
         "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
-        "Available tools: python_execute, web_search, read_url, get_datetime."
+        "Available tools: python_execute, web_search, read_url, get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
     ),
     "compute_only": (
         "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
-        "Available tools: python_execute."
+        "Available tools: python_execute, get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
     ),
     "compute_and_search": (
         "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
-        "Available tools: python_execute, web_search, read_url."
+        "Available tools: python_execute, web_search, read_url, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
     ),
     "no_tools": (
         "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
-        "No tools available this session."
+        "Available tools: get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
     ),
 }
 
@@ -119,15 +131,21 @@ Your reasoning principles (demonstrate through behavior; NEVER name them, never 
 12. For multi-step ambiguities, ask only the single most critical clarifying question first.
 13. For queries with 3 or more distinct requirements, reason through them systematically before executing.
 14. For partially-capable scenarios: answer achievable parts fully; for blocked parts name what/why/redirect.
-15. Name assumptions explicitly; mark them as unverified if they are not confirmed facts."""
+15. Name assumptions explicitly; mark them as unverified if they are not confirmed facts.
+16. Call user_memory_read at the start of every response to check for stored user context (preferences, constraints, goals, history); use what you find to personalise tone, depth, and focus.
+17. Use scratchpad_update to store intermediate calculations, sub-results, or hypotheses mid-reasoning; read it back with scratchpad_read when picking up a multi-step chain.
+18. Call user_memory_update before closing with <answer> whenever the conversation reveals a new, durable fact about the user (role, preference, constraint, goal) that would improve future responses.
+19. For any time-sensitive query, call get_datetime immediately after user_memory_read to anchor your response in real current time before searching or computing."""
 
 _TEACHER_FORMAT_RULES = """\
 CRITICAL FORMAT RULES — violation invalidates the training example:
 1. Open with <think> containing flowing narrative reasoning (minimum 150 characters). NO headers, NO rule numbers, NO "CAPABILITY_CHECK:", NO "5W+H:", NO bullet lists inside <think>.
 2. Place ALL tool calls after </think> and before <answer> using: <tool>tool_name(arg='...')</tool>
-3. Close EVERY response with <answer>...</answer>.
-4. NEVER output these phrases: "see answer below", "inferred from question", "none flagged", "CAPABILITY_CHECK:", "PRINCIPLE_", "5W+H:", "CONSEQUENCE_CHECK:".
-5. After each [TOOL_RESULT] block, continue reasoning in flowing prose before the next tool call or <answer>."""
+3. FIRST tool calls after </think>: call user_memory_sections() to learn section keys, then user_memory_read() to fetch user context — use the result to personalise your response.
+4. For multi-step problems: call scratchpad_sections() to learn section keys, then use scratchpad_update/scratchpad_read to track intermediate state.
+5. Close EVERY response with <answer>...</answer>. If you learned a new durable user fact, call user_memory_update(section='<key from user_memory_sections>', content='...') immediately before <answer>.
+6. NEVER output these phrases: "see answer below", "inferred from question", "none flagged", "CAPABILITY_CHECK:", "PRINCIPLE_", "5W+H:", "CONSEQUENCE_CHECK:".
+7. After EVERY [TOOL_RESULT] block, open a NEW <think>...</think> block to reason about what you just learned before calling another tool or writing <answer>. This is mandatory — never skip straight from a tool result to the next tool call or to <answer> without re-thinking."""
 
 
 def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str) -> str:
@@ -139,13 +157,26 @@ def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str)
         "  Step 1: Open with <think> and write flowing narrative reasoning (≥150 chars).\n"
         "          No bullet points, no headers, no rule numbers inside <think>.\n"
         "  Step 2: Close reasoning with </think>.\n"
-        "  Step 3: If a tool is needed, call it with <tool>tool_name(arg='...')</tool>.\n"
-        "          After each [TOOL_RESULT] block, continue reasoning in prose.\n"
-        "  Step 4: Close with <answer>...</answer>.\n"
-        "  EXAMPLE SKELETON:\n"
-        "    <think>The user is asking ... I should consider ...</think>\n"
+        "  Step 3: Call <tool>user_memory_sections()</tool> to see section keys, then\n"
+        "          <tool>user_memory_read(prompt='what do I know about this user?')</tool>.\n"
+        "          Use the result to personalise your response.\n"
+        "  Step 4: For multi-step problems, call <tool>scratchpad_sections()</tool> first,\n"
+        "          then use scratchpad_update/scratchpad_read to track intermediate state.\n"
+        "  Step 5: Call other tools as needed. After each [TOOL_RESULT], continue in prose.\n"
+        "  Step 6: If you learned a new durable user fact, call\n"
+        "          <tool>user_memory_update(section='<key from sections>', content='...')</tool>.\n"
+        "  Step 7: Close with <answer>...</answer>.\n"
+        "  EXAMPLE SKELETON (think → tool → THINK AGAIN → tool → answer):\n"
+        "    <think>The user is asking ... I need to check their memory first ...</think>\n"
+        "    <tool>user_memory_sections()</tool>\n"
+        "    <think>Now I know the section keys. I'll read their memory ...</think>\n"
+        "    <tool>user_memory_read(prompt='user background and preferences')</tool>\n"
+        "    <think>Memory shows [X]. Now I can answer, but first I need to search ...</think>\n"
         "    <tool>web_search(query='...')</tool>\n"
-        "    <answer>Based on the above, ...</answer>\n\n"
+        "    <think>The search returned [Y]. I now have enough to answer fully ...</think>\n"
+        "    <tool>user_memory_update(section='facts', content='...')</tool>\n"
+        "    <think>Memory updated. Writing final answer personalised to user ...</think>\n"
+        "    <answer>Based on your context, ...</answer>\n\n"
         f"Session tools available: {tool_profile['context']}\n"
         f"{tool_profile['system_note']}\n\n"
         f"CATEGORY: {category}\n"
@@ -272,12 +303,14 @@ def _generate_with_intercept(
     api_base: str | None = None,
     failure_config: dict | None = None,
     max_rounds: int = 8,
+    registry: "_ToolRegistry | None" = None,
 ) -> list[dict]:
     """Generate text iteratively, intercept <tool> calls, execute them live.
 
     Uses stop=["</tool>"] so generation halts when a tool call body is emitted.
     The script then executes the tool and resumes generation with the real result.
     """
+    _registry = registry or _TOOL_REGISTRY
     conversation = list(messages)
     active_tools = {
         part.split("✓")[0].strip()
@@ -299,19 +332,31 @@ def _generate_with_intercept(
             stop=["</tool>"],
         )
 
-        # Detect tool interception: <tool> present but </tool> absent after it
+        # Detect tool interception: <tool> present but </tool> absent after it.
+        # Some tokenizers emit </tool and > as separate tokens; the stop sequence
+        # strips the > but leaves </tool in the content, so we check for both.
         tool_pos = content.rfind("<tool>")
-        is_tool_call = tool_pos != -1 and "</tool>" not in content[tool_pos:]
+        stripped_end = content.rstrip()
+        partial_close = stripped_end.endswith("</tool")  # tokenizer artifact
+        is_tool_call = tool_pos != -1 and (
+            "</tool>" not in content[tool_pos:] or partial_close
+        )
 
         if not is_tool_call:
             conversation.append({"role": "assistant", "content": content})
             break
 
-        # Reconstruct full tool tag (add back the stripped </tool> stop sequence)
-        tool_inner = content[tool_pos + len("<tool>"):]
-        full_assistant_content = content + "</tool>"
+        # Reconstruct full tool tag, handling partial </tool artefact
+        if partial_close:
+            full_assistant_content = stripped_end + ">"
+        else:
+            full_assistant_content = content + "</tool>"
 
-        tool_name_m = re.match(r"(\w+)", tool_inner.strip())
+        # Extract inner text, strip any partial closing tag leftover
+        tool_inner = content[tool_pos + len("<tool>"):]
+        tool_inner = re.sub(r"\s*</tool\s*$", "", tool_inner).strip()
+
+        tool_name_m = re.match(r"(\w+)", tool_inner)
         tool_name = tool_name_m.group(1) if tool_name_m else "unknown"
 
         # Enforce per-tool call cap to prevent search loops
@@ -320,21 +365,25 @@ def _generate_with_intercept(
         if call_count >= cap:
             result = f"Error: {tool_name} call limit ({cap}) reached. Synthesise what you have and write <answer>."
         else:
-            result = _TOOL_REGISTRY.execute(tool_inner, active_tools, failure_config)
+            result = _registry.execute(tool_inner, active_tools, failure_config)
             tool_call_counts[tool_name] = call_count + 1
 
+        # Inject result and require a new <think> block — trains the model to
+        # re-reason after each tool result before calling the next tool or answering.
+        # The instructional suffix is stripped in _build_v3_example so it does not
+        # pollute student training data.
         wrapped = (
             f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n"
-            "Now synthesise the above result and continue to your final <answer>. "
-            "Only call another tool if strictly necessary — do not repeat the same search."
+            "Open a new <think>...</think> block to reason about this result, "
+            "then call the next tool or write your <answer>."
         )
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
-        # Use "user" role for tool results — NVIDIA NIM and most OpenAI-compatible APIs
-        # reject role="tool" without a matching tool_call_id (native function-calling format).
-        # Our XML-intercept loop doesn't use native tool_calls, so results go as user turns.
+        # Use "user" role here for the teacher's generation (NVIDIA NIM and most
+        # OpenAI-compatible APIs reject role="tool" without a native tool_call_id).
+        # _build_v3_example converts these to role="tool" for the student JSONL.
         conversation.append({"role": "user", "content": wrapped})
-        print(f"    [intercept r{round_num}] {tool_name}() → {len(result)} chars  (call #{call_count + 1})")
+        print(f"    [intercept r{round_num}] {tool_name}() -> {len(result)} chars  (call #{call_count + 1})")
 
     return conversation
 
@@ -351,12 +400,36 @@ def _build_v3_example(
     violations: str = "NO_VIOLATIONS",
     question_id: str = "",
 ) -> dict:
-    """Build a JSONL training row. Teacher system prompt → student prompt (context swap)."""
+    """Build a JSONL training row. Teacher system prompt → student prompt (context swap).
+
+    Three student-facing cleanups applied here so the JSONL is clean regardless of
+    what the teacher needed internally:
+      1. role="user" tool-result messages  → role="tool" with name field.
+      2. Teacher scaffolding suffix stripped from tool results (kept only up to [/TOOL_RESULT]).
+      3. </tool</tool> partial-tag artefact normalised to </tool>.
+    """
     student_system = STUDENT_PROMPTS[tool_profile["label"]]
-    messages = [
-        ({"role": "system", "content": student_system} if m["role"] == "system" else m)
-        for m in conversation
-    ]
+    messages = []
+    for m in conversation:
+        role = m["role"]
+        content = m.get("content", "") or ""
+        if role == "system":
+            messages.append({"role": "system", "content": student_system})
+        elif role == "user" and content.lstrip().startswith("[TOOL_RESULT:"):
+            # Strip teacher-only instruction suffix — keep only up to [/TOOL_RESULT]
+            end = content.find("[/TOOL_RESULT]")
+            clean = (content[:end + len("[/TOOL_RESULT]")].strip()
+                     if end != -1 else content.strip())
+            name_m = re.match(r"\[TOOL_RESULT:\s*(\w+)\]", clean)
+            tool_name = name_m.group(1) if name_m else "tool"
+            messages.append({"role": "tool", "name": tool_name, "content": clean})
+        elif role == "assistant":
+            # Normalise </tool</tool> artefact produced by partial stop-sequence stripping
+            clean = re.sub(r"</tool\s*</tool>", "</tool>", content)
+            messages.append({**m, "content": clean})
+        else:
+            messages.append(m)
+
     n_viol = _count_violations(violations)
     return {
         "messages": messages,
@@ -439,13 +512,112 @@ _IDEAL_BEHAVIORS_V3: dict[str, str] = {
 
 _DEFAULT_IDEAL_V3 = (
     "Reason through the question step-by-step in a <think> block, demonstrating the principles. "
-    "Use the tools available in this session as needed, calling them with <tool> tags after the <think> block. "
+    "After </think>, FIRST call user_memory_read to check for stored user context and use it to personalise your response. "
+    "Use other tools as needed after that, calling them with <tool> tags. "
+    "For multi-step problems, use scratchpad_update to log intermediate results and scratchpad_read to retrieve them. "
     "After each tool call, continue reasoning in flowing prose before the next tool call or final answer. "
-    "Close with a clear <answer> that directly addresses the user's question, synthesising tool results and reasoning. "
+    "If the conversation reveals a new durable fact about the user, call user_memory_update before closing. "
+    "Close with a clear <answer> that directly addresses the user's question, personalised using any memory found. "
     "Avoid any mention of the principles, checklists, or placeholders in your final output."
-    "Use the scratchpad tools if you want to keep track of intermediate calculations or notes, but remember the scratchpad is not visible to the user and does not persist between conversations."
-    
 )
+
+
+# ---------------------------------------------------------------------------
+# Sample user profiles — injected into training so the teacher sees realistic
+# memory data and learns to personalise. Eight diverse personas covering
+# different roles, languages, technical levels, and cultural contexts.
+# ---------------------------------------------------------------------------
+
+_SAMPLE_USER_PROFILES: list[dict] = [
+    {
+        "who": "Software engineer at a fintech startup, 5 years Python/Go experience.",
+        "what": "Builds data pipelines and REST APIs. Transitioning into ML engineering.",
+        "where": "Dublin, Ireland. Remote-first. EU regulatory context applies.",
+        "why": "Wants concise, technically rigorous answers with working code examples.",
+        "how": "Reads docs carefully before asking. Prefers code over prose explanations.",
+        "facts": "Strong Python. New to neural networks. Deadline-driven work style.",
+        "constraints": "Limited time. No budget for expensive cloud GPU services.",
+    },
+    {
+        "who": "MSc Computer Science student at Trinity College Dublin.",
+        "what": "Writing dissertation on trustworthy AI and personalisation in LLMs.",
+        "where": "University campus, Ireland. Has academic library access.",
+        "why": "Needs cited, verifiable sources. Understands transformer architecture.",
+        "how": "Learns by reading papers then implementing prototypes. Uses HuggingFace.",
+        "facts": "Strong mathematics background. Intermediate PyTorch user. British English spelling.",
+        "constraints": "Must cite sources. Thesis deadline June 2026. No local GPU.",
+    },
+    {
+        "who": "Small business owner running an independent bakery in Madrid, Spain.",
+        "what": "Managing inventory, orders, social media, and staff scheduling.",
+        "where": "Madrid, Spain. Operates in Spanish. EU consumer law applies.",
+        "why": "Wants simple digital tools, not complex enterprise software.",
+        "how": "Non-technical but quick learner. Needs step-by-step instructions.",
+        "facts": "Native Spanish speaker, basic English. Smartphone-first user.",
+        "constraints": "Very limited time. Tight budget — free tools preferred. Prefers Spanish.",
+    },
+    {
+        "who": "Registered nurse with 8 years ICU experience, Toronto, Canada.",
+        "what": "Asks clinical questions, drug interactions, and protocol clarifications.",
+        "where": "Ontario, Canada. Canadian healthcare regulations (PIPEDA) apply.",
+        "why": "Needs quick, accurate clinical reference during 12-hour shifts.",
+        "how": "Comfortable with medical terminology. Wants concise clinical summaries.",
+        "facts": "Expert in critical care. Uses metric units. Prefers UpToDate-style sources.",
+        "constraints": "Time-critical during shifts. Canadian dosing differs from US guidelines.",
+    },
+    {
+        "who": "Retired secondary school teacher, 68, living in rural Brittany, France.",
+        "what": "Recently got a smartphone. Learning to use the internet and online services.",
+        "where": "Rural France. French-speaking. Limited broadband (4G only).",
+        "why": "Wants to stay connected with grandchildren and manage paperwork online.",
+        "how": "Needs jargon-free explanations with numbered steps. Patient, encouraging tone.",
+        "facts": "No technical background. Fluent French only. Uses Samsung Galaxy phone.",
+        "constraints": "Limited data plan. Confused by technical jargon. Needs reassurance.",
+    },
+    {
+        "who": "Data scientist at a mid-size e-commerce company, São Paulo, Brazil.",
+        "what": "Builds recommendation models and A/B testing frameworks.",
+        "where": "Brazil. LGPD data privacy law applies. Uses AWS infrastructure.",
+        "why": "Exploring LLM-based features: RAG and fine-tuning for recommender systems.",
+        "how": "Prefers Python with benchmark numbers and tradeoff tables.",
+        "facts": "Fluent English and Portuguese. Strong statistics background. Uses Jupyter daily.",
+        "constraints": "No proprietary data to external APIs. Open-source models strongly preferred.",
+    },
+    {
+        "who": "Parent of two children (ages 8 and 11), part-time librarian, Auckland, NZ.",
+        "what": "Researching homework topics, family activities, household budgeting.",
+        "where": "Auckland, New Zealand. NZ English spelling. NZDT timezone.",
+        "why": "Wants accurate, age-appropriate information quickly.",
+        "how": "Generalist. Comfortable with Google-level information literacy.",
+        "facts": "Prefers NZ-specific sources and local pricing. Uses a MacBook.",
+        "constraints": "Limited time (school hours). Needs child-safe content framing when relevant.",
+    },
+    {
+        "who": "Freelance graphic designer, 29, based in Berlin, Germany.",
+        "what": "Creates brand identities, social media assets, pitch decks for startups.",
+        "where": "Berlin. Fluent German and English. EU GDPR applies to client data.",
+        "why": "Uses AI to speed up research, copywriting, and client proposals.",
+        "how": "Creative thinker. Not comfortable with code. Prefers visual or structured explanations.",
+        "facts": "Uses Adobe CC and Figma. Deep design knowledge, minimal tech background.",
+        "constraints": "Client NDAs — cannot share specifics. Needs output directly usable in pitches.",
+    },
+]
+
+
+class _OneProfileMemoryStore:
+    """Wraps one sampled user profile per training question. Immutable after init — thread-safe."""
+
+    def __init__(self, profile: dict) -> None:
+        self._base = dict(profile)
+        self._updates: dict[str, str] = {}
+
+    def read(self, session_id: str, prompt: str = "") -> str:
+        merged = {**self._base, **self._updates}
+        return "\n".join(f"[{k.upper()}] {v}" for k, v in merged.items())
+
+    def update(self, session_id: str, section: str, content: str) -> str:
+        self._updates[section] = content
+        return f"(user memory updated: section='{section}')"
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +646,13 @@ def _process_one_v3(
     print(f"\n{tag} profile={tool_profile['label']} elapsed={elapsed:.0f}s")
     print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
 
+    # Each question gets its own registry with a sampled user profile so the
+    # teacher sees realistic memory data and learns genuine personalisation.
+    sampled_profile = random.choice(_SAMPLE_USER_PROFILES)
+    memory_store = _OneProfileMemoryStore(sampled_profile)
+    q_registry = _ToolRegistry(user_memory_store=memory_store)
+    print(f"  {tag} user_profile='{sampled_profile['who'][:60]}'")
+
     ideal = _IDEAL_BEHAVIORS_V3.get(category, _DEFAULT_IDEAL_V3)
     teacher_system = _make_teacher_prompt(tool_profile, category, ideal)
     initial_messages = [
@@ -491,6 +670,7 @@ def _process_one_v3(
                 tool_profile=tool_profile,
                 api_base=api_base,
                 failure_config=failure_config,
+                registry=q_registry,
             )
             # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
             # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write

@@ -127,8 +127,9 @@ _TOOL_REGISTRY: ToolRegistry = ToolRegistry()   # stores bound at main() startup
 
 # Tool profiles — which tools are active per session
 _ALWAYS_ON_TOOLS = frozenset({
-    "scratchpad_read", "scratchpad_update",
-    "user_memory_read", "user_memory_update",
+    "get_datetime",
+    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
+    "user_memory_sections", "user_memory_read", "user_memory_update",
 })
 
 TOOL_PROFILES: Dict[str, set] = {
@@ -902,10 +903,14 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
                     if task_status:
                         result = result + f"\n{task_status}"
-                # XML mode: inject as "user" turn to match training data format.
-                # Native mode: use "tool" role with tool_call_id (proper OpenAI format).
-                tool_result_role = "tool" if use_native else "user"
-                conv.append({"role": tool_result_role, "content": result})
+                # Both XML and native modes use role="tool" — consistent with training JSONL.
+                # XML mode omits tool_call_id (not used with XML intercept), native mode
+                # would need it but goes through a different code path above.
+                if use_native:
+                    conv.append({"role": "tool", "tool_call_id": tc.get("id", "call_0"),
+                                 "name": fn_name, "content": result})
+                else:
+                    conv.append({"role": "tool", "name": fn_name, "content": result})
                 if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
                     conv.append({
                         "role": "user",
