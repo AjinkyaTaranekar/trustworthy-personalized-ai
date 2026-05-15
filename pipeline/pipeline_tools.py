@@ -1,0 +1,453 @@
+"""
+Shared tool implementations for the trustworthy-AI pipeline.
+
+Imported by sft_v3_generator.py (training data generation) and
+3_infererence.py (inference server) to eliminate diverged copies.
+"""
+
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, Optional
+
+_ALLOWED_IMPORTS = frozenset({
+    "math", "statistics", "decimal", "fractions", "cmath",
+    "random", "itertools", "functools", "operator", "collections",
+    "numbers", "string", "re",
+})
+_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
+
+
+# ---------------------------------------------------------------------------
+# python_execute
+# ---------------------------------------------------------------------------
+
+def python_execute(code: str) -> str:
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"Error: syntax_error: {e}"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] not in _ALLOWED_IMPORTS:
+                    return f"Error: blocked_import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if top and top not in _ALLOWED_IMPORTS:
+                return f"Error: blocked_import: {node.module}"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
+                return f"Error: blocked_builtin: {node.func.id}"
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, timeout=15,
+        )
+        out = (proc.stdout or proc.stderr).strip()
+        return out if out else "Code executed successfully (no output)"
+    except subprocess.TimeoutExpired:
+        return "Error: execution timed out (15s limit)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# web_search — exa.ai
+# ---------------------------------------------------------------------------
+
+def web_search(query: str, num_results: int = 3) -> str:
+    api_key = os.environ.get("EXA_API_KEY", "")
+    if not api_key:
+        return (
+            f"web_search unavailable: EXA_API_KEY not set. "
+            f"Cannot retrieve live data for: {query}"
+        )
+    try:
+        from exa_py import Exa
+        exa = Exa(api_key=api_key)
+        result = exa.search_and_contents(
+            query,
+            num_results=num_results,
+            text={"max_characters": 400},
+        )
+        snippets = []
+        for r in result.results:
+            title = getattr(r, "title", "") or ""
+            url = getattr(r, "url", "") or ""
+            text = getattr(r, "text", "") or ""
+            snippets.append(f"**{title}** ({url})\n{text[:500]}")
+        return "\n\n".join(snippets) if snippets else f"No results found for: {query}"
+    except ImportError:
+        return "web_search unavailable: exa_py not installed — run: pip install exa-py"
+    except Exception as e:
+        return f"web_search error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# read_url — HTML cleaning + prompt-aware extraction
+# ---------------------------------------------------------------------------
+
+_URL_STOP_WORDS = frozenset({
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or",
+    "is", "are", "was", "be", "it", "i", "my", "me", "we", "you", "with",
+    "that", "this", "from", "by", "as", "do", "not", "no",
+})
+
+
+def _score_paragraphs(paragraphs: list[str], prompt: str) -> list[str]:
+    """Return top-5 paragraphs scored by keyword overlap with prompt."""
+    if not prompt:
+        return paragraphs[:8]
+    prompt_words = set(re.findall(r'\w+', prompt.lower())) - _URL_STOP_WORDS
+    if not prompt_words:
+        return paragraphs[:8]
+    scored = []
+    for p in paragraphs:
+        p_words = set(re.findall(r'\w+', p.lower()))
+        score = len(prompt_words & p_words) / len(prompt_words)
+        if score > 0:
+            scored.append((score, p))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [p for _, p in scored[:5]]
+    return top if top else paragraphs[:3]
+
+
+def read_url(url: str, prompt: str = "") -> str:
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = r.read(50_000).decode("utf-8", errors="replace")
+        # Remove noisy structural blocks entirely (content + tags)
+        for tag in ("script", "style", "nav", "footer", "header", "aside"):
+            body = re.sub(
+                rf"<{tag}[^>]*>.*?</{tag}>", " ", body,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+        body = re.sub(r"<[^>]+>", " ", body)
+        body = re.sub(r"\s+", " ", body).strip()
+        # Split on sentence-terminal double-space (paragraph boundaries in stripped HTML)
+        paragraphs = [
+            p.strip()
+            for p in re.split(r'(?<=[.!?])\s{2,}', body)
+            if len(p.strip()) > 60
+        ]
+        relevant = _score_paragraphs(paragraphs, prompt)
+        content = "\n\n".join(relevant)
+        if len(content) > 2000:
+            content = content[:2000] + " … [truncated]"
+        prefix = f"[Fetched: {url}]"
+        if prompt:
+            prefix += f"\nPrompt: {prompt}"
+        return f"{prefix}\n\n{content}"
+    except Exception as e:
+        return f"read_url failed: {e}"
+
+
+# ---------------------------------------------------------------------------
+# get_datetime
+# ---------------------------------------------------------------------------
+
+def get_datetime() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+# ---------------------------------------------------------------------------
+# ToolRegistry — unified registry for generator (XML) and inference (REST)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ToolSpec:
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    fn: Callable[..., str]
+
+    def schema(self) -> Dict[str, Any]:
+        return {"name": self.name, "description": self.description, "parameters": self.parameters}
+
+
+def _parse_python_code(s: str) -> Optional[str]:
+    """Extract code= argument from a python_execute(code='...') call string."""
+    for pat in (
+        r'python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)',
+        r"python_execute\s*\(\s*code\s*=\s*'(.*?)'\s*\)",
+        r'python_execute\s*\(\s*code\s*=\s*"(.*?)"\s*\)',
+    ):
+        m = re.search(pat, s, re.DOTALL)
+        if m:
+            return m.group(1).replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+    return None
+
+
+class ToolRegistry:
+    """
+    Unified tool registry used by both sft_v3_generator.py and 3_infererence.py.
+
+    Two execution paths:
+      execute(xml_inner, active_tools, failure_config)   — generator intercept loop
+      call(fn_name, kwargs, active_tools, check_profile) — inference server
+
+    Session-scoped tools (scratchpad, user_memory) read self.session_id at call
+    time so the registry can be reused across requests by updating session_id.
+    """
+
+    def __init__(
+        self,
+        scratchpad_store=None,
+        user_memory_store=None,
+    ) -> None:
+        self._scratchpad = scratchpad_store
+        self._user_memory = user_memory_store
+        self._session_id: Optional[str] = None
+        self._specs: Dict[str, ToolSpec] = {}
+        self._register_builtins()
+
+    @property
+    def session_id(self) -> Optional[str]:
+        return self._session_id
+
+    @session_id.setter
+    def session_id(self, value: Optional[str]) -> None:
+        self._session_id = value
+
+    def _register_builtins(self) -> None:
+        self._specs["python_execute"] = ToolSpec(
+            "python_execute",
+            "Execute Python code and return stdout/stderr.",
+            {
+                "type": "object",
+                "properties": {"code": {"type": "string", "description": "Python source code to run"}},
+                "required": ["code"],
+            },
+            lambda code="", **_: python_execute(code),
+        )
+        self._specs["web_search"] = ToolSpec(
+            "web_search",
+            "Search the web using exa.ai and return a summary.",
+            {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Search query string"}},
+                "required": ["query"],
+            },
+            lambda query="", **_: web_search(query),
+        )
+        self._specs["read_url"] = ToolSpec(
+            "read_url",
+            "Fetch the text content of a URL. Pass prompt= to extract relevant content.",
+            {
+                "type": "object",
+                "properties": {
+                    "url":    {"type": "string", "description": "URL to fetch"},
+                    "prompt": {"type": "string", "description": "What you are trying to extract from this page"},
+                },
+                "required": ["url"],
+            },
+            lambda url="", prompt="", **_: read_url(url, prompt),
+        )
+        self._specs["get_datetime"] = ToolSpec(
+            "get_datetime",
+            "Return the current UTC date and time.",
+            {"type": "object", "properties": {}, "required": []},
+            lambda **_: get_datetime(),
+        )
+        # Scratchpad tools — closures capture self so session_id is resolved at call time
+        self._specs["scratchpad_read"] = ToolSpec(
+            "scratchpad_read",
+            "Read the full session scratchpad — constitution TLDR, context, tasks, notes.",
+            {"type": "object", "properties": {}, "required": []},
+            lambda **_: self._scratchpad_read(),
+        )
+        self._specs["scratchpad_update"] = ToolSpec(
+            "scratchpad_update",
+            "Update one section of the session scratchpad.",
+            {
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "enum": ["context", "tasks", "notes"],
+                        "description": "Section to update. 'constitution_tldr' is read-only.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New content for the section — overwrites the previous value.",
+                    },
+                },
+                "required": ["section", "content"],
+            },
+            lambda section="", content="", **_: self._scratchpad_update(section, content),
+        )
+        # User memory tools
+        self._specs["user_memory_read"] = ToolSpec(
+            "user_memory_read",
+            "Read relevant user memory sections based on a prompt about the user.",
+            {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "What aspect of the user you want to look up"},
+                },
+                "required": [],
+            },
+            lambda prompt="", **_: self._user_memory_read(prompt),
+        )
+        self._specs["user_memory_update"] = ToolSpec(
+            "user_memory_update",
+            "Update a section of the user's persistent memory when you learn new facts.",
+            {
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "enum": ["who", "what", "where", "why", "how", "facts", "constraints"],
+                        "description": "Ontology section to update.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New content for the section — overwrites the previous value.",
+                    },
+                },
+                "required": ["section", "content"],
+            },
+            lambda section="", content="", **_: self._user_memory_update(section, content),
+        )
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def register(self, name: str, description: str, parameters: Dict[str, Any], fn: Callable) -> None:
+        self._specs[name] = ToolSpec(
+            name=name, description=description, parameters=parameters, fn=fn
+        )
+
+    def deregister(self, name: str) -> None:
+        self._specs.pop(name, None)
+
+    def schemas_list(self) -> list[Dict[str, Any]]:
+        """All tool schemas — used by /v1/tools endpoint."""
+        return [s.schema() for s in self._specs.values()]
+
+    def to_openai_schemas(self, active_tools: set[str]) -> list[Dict[str, Any]]:
+        """OpenAI-format schemas for active_tools — used by native tool-call mode."""
+        return [
+            {"type": "function", "function": spec.schema()}
+            for name, spec in self._specs.items()
+            if name in active_tools
+        ]
+
+    def call(
+        self,
+        fn_name: str,
+        kwargs: Dict[str, Any],
+        active_tools: set[str],
+        check_profile: bool = True,
+    ) -> str:
+        """Execute a tool by name + kwargs. Used by inference server.
+
+        check_profile=False bypasses the active_tools guard — used in native mode
+        where the model selects tools from its pre-training knowledge, not the profile.
+        """
+        if fn_name not in self._specs:
+            return f"Error: tool '{fn_name}' is not registered on this server."
+        if check_profile and fn_name not in active_tools:
+            return f"Error: tool '{fn_name}' is not available in this session."
+        try:
+            return self._specs[fn_name].fn(**kwargs)
+        except Exception as e:
+            return f"Tool execution error: {e}"
+
+    def execute(
+        self,
+        tool_inner: str,
+        active_tools: set[str],
+        failure_config: Optional[Dict] = None,
+    ) -> str:
+        """Parse XML inner text and execute the tool. Used by generator intercept loop."""
+        s = tool_inner.strip()
+
+        if s.startswith("python_execute"):
+            if "python_execute" not in active_tools:
+                return "Error: python_execute is not available in this session."
+            code = _parse_python_code(s)
+            if code is None:
+                return "Error: could not parse python_execute arguments."
+            return python_execute(code)
+
+        if s.startswith("web_search"):
+            if "web_search" not in active_tools:
+                return "Error: web_search is not available in this session."
+            m = re.search(r"query\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)
+            query = m.group(1) if m else s
+            if failure_config and failure_config.get("inject_503"):
+                failure_config.setdefault("web_search_count", 0)
+                failure_config["web_search_count"] += 1
+                if failure_config["web_search_count"] == 1:
+                    return "HTTP 503 Service Unavailable. The search service is temporarily down. Please retry with a different query."
+            return web_search(query)
+
+        if s.startswith("read_url"):
+            if "read_url" not in active_tools:
+                return "Error: read_url is not available in this session."
+            url_m = re.search(r"url\s*=\s*['\"](.+?)['\"]", s)
+            prompt_m = re.search(r"prompt\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)
+            return read_url(
+                url_m.group(1) if url_m else "",
+                prompt_m.group(1) if prompt_m else "",
+            )
+
+        if s.startswith("get_datetime"):
+            return get_datetime()
+
+        if s.startswith("scratchpad_read"):
+            if "scratchpad_read" not in active_tools:
+                return "Error: scratchpad_read is not available in this session."
+            return self._scratchpad_read()
+
+        if s.startswith("scratchpad_update"):
+            section_m = re.search(r"section\s*=\s*['\"](\w+)['\"]", s)
+            content_m = re.search(r'content\s*=\s*["\'](.+?)["\']', s, re.DOTALL)
+            return self._scratchpad_update(
+                section_m.group(1) if section_m else "",
+                content_m.group(1) if content_m else "",
+            )
+
+        if s.startswith("user_memory_read"):
+            prompt_m = re.search(r"prompt\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)
+            return self._user_memory_read(prompt_m.group(1) if prompt_m else "")
+
+        if s.startswith("user_memory_update"):
+            section_m = re.search(r"section\s*=\s*['\"](\w+)['\"]", s)
+            content_m = re.search(r'content\s*=\s*["\'](.+?)["\']', s, re.DOTALL)
+            return self._user_memory_update(
+                section_m.group(1) if section_m else "",
+                content_m.group(1) if content_m else "",
+            )
+
+        tool_name = s.split("(")[0].strip() if "(" in s else s[:40]
+        return f"Error: unknown tool '{tool_name}' — only registered tools are callable."
+
+    # ── Session-scoped backends ───────────────────────────────────────────────
+
+    def _scratchpad_read(self) -> str:
+        if self._scratchpad is None or self._session_id is None:
+            return "(scratchpad is empty — training example initialisation)"
+        return self._scratchpad.read(self._session_id)
+
+    def _scratchpad_update(self, section: str, content: str) -> str:
+        if self._scratchpad is None or self._session_id is None:
+            return "(scratchpad updated)"
+        return self._scratchpad.update(self._session_id, section, content)
+
+    def _user_memory_read(self, prompt: str = "") -> str:
+        if self._user_memory is None or self._session_id is None:
+            return "(user memory not available in this session)"
+        return self._user_memory.read(self._session_id, prompt)
+
+    def _user_memory_update(self, section: str, content: str) -> str:
+        if self._user_memory is None or self._session_id is None:
+            return "(user memory update skipped — training context)"
+        return self._user_memory.update(self._session_id, section, content)
