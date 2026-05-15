@@ -13,3 +13,4 @@ pyyaml
 rouge-score
 requests
 huggingface_hub
+exa-py 
