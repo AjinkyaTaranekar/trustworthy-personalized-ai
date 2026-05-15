@@ -108,41 +108,35 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
-# Code safety validation + tool-output sanitisation (Security Blocker 1 — OWASP LLM01)
+# Shared tool registry — implementations live in pipeline_tools.py
 # ---------------------------------------------------------------------------
 
-_ALLOWED_IMPORTS = frozenset({
-    "math", "statistics", "decimal", "fractions", "cmath",
-    "random", "itertools", "functools", "operator", "collections",
-    "numbers", "string", "re",
+sys.path.insert(0, str(Path(__file__).parent))
+from pipeline_tools import ToolRegistry   # noqa: E402
+
+try:
+    from user_memory import UserMemoryStore as _UserMemoryStoreClass
+    _user_memory_importable = True
+except ImportError as _ue:
+    _user_memory_importable = False
+    _UserMemoryStoreClass = None
+    print(f"[INFO] user_memory not importable ({_ue}) — user_memory tools will be no-ops")
+
+# Single global registry — session_id is updated per-request in chat_completions
+_TOOL_REGISTRY: ToolRegistry = ToolRegistry()   # stores bound at main() startup
+
+# Tool profiles — which tools are active per session
+_ALWAYS_ON_TOOLS = frozenset({
+    "scratchpad_read", "scratchpad_update",
+    "user_memory_read", "user_memory_update",
 })
 
-_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
-
-
-def _validate_code(code: str) -> tuple[bool, str]:
-    """AST-based validator: only math/statistics stdlib imports allowed.
-    Blocks os, sys, subprocess, socket, requests and dangerous builtins."""
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        return False, f"syntax_error: {e}"
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                top = alias.name.split(".")[0]
-                if top not in _ALLOWED_IMPORTS:
-                    return False, f"blocked_import: {alias.name}"
-        elif isinstance(node, ast.ImportFrom):
-            top = (node.module or "").split(".")[0]
-            if top and top not in _ALLOWED_IMPORTS:
-                return False, f"blocked_import: {node.module}"
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
-                return False, f"blocked_builtin: {node.func.id}"
-
-    return True, "ok"
+TOOL_PROFILES: Dict[str, set] = {
+    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"} | _ALWAYS_ON_TOOLS,
+    "compute_only":       {"python_execute"} | _ALWAYS_ON_TOOLS,
+    "compute_and_search": {"python_execute", "web_search", "read_url"} | _ALWAYS_ON_TOOLS,
+    "no_tools":           set(_ALWAYS_ON_TOOLS),
+}
 
 
 # Patterns that could hijack the model's instruction context if returned by a tool.
@@ -214,165 +208,6 @@ def _tool_failure_prompt(tool_name: str, raw: str, non_retryable: bool, availabl
         + suffix
     )
 
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ToolSpec:
-    name: str
-    description: str
-    parameters: Dict[str, Any]   # JSON Schema
-    fn: Callable[..., str]
-
-    def schema(self) -> Dict[str, Any]:
-        return {"name": self.name, "description": self.description, "parameters": self.parameters}
-
-
-_REGISTRY: Dict[str, ToolSpec] = {}
-
-
-def register_tool(name: str, description: str, parameters: Dict[str, Any], fn: Callable) -> None:
-    _REGISTRY[name] = ToolSpec(name=name, description=description, parameters=parameters, fn=fn)
-
-
-# ── Built-in tools ──────────────────────────────────────────────────────────
-
-def _python_execute(code: str = "") -> str:
-    safe, reason = _validate_code(code)
-    if not safe:
-        return f"Error: code rejected by safety validator ({reason}). Only math/statistics imports are permitted."
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True, timeout=10,
-        )
-        out = (result.stdout or result.stderr).strip()
-        return out if out else "Code executed successfully (no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: execution timed out (10s limit)"
-    except Exception as e:
-        return f"Error: {e}"
-
-
-def _get_datetime(**_) -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _web_search(query: str = "", **_) -> str:
-    try:
-        import urllib.parse, urllib.request
-        url = (
-            "https://api.duckduckgo.com/?q="
-            + urllib.parse.quote(query)
-            + "&format=json&no_html=1&skip_disambig=1"
-        )
-        with urllib.request.urlopen(url, timeout=8) as r:
-            data = json.loads(r.read())
-        print(data)
-        abstract = data.get("Abstract", "").strip()
-        related = [
-            t.get("Text", "")
-            for t in data.get("RelatedTopics", [])[:4]
-            if isinstance(t, dict) and t.get("Text")
-        ]
-        if abstract:
-            return abstract
-        if related:
-            return " | ".join(related)
-        return f"No instant summary found for: {query}. Consider a more specific query."
-    except Exception as e:
-        return f"web_search unavailable: {e}"
-
-
-def _read_url(url: str = "", prompt: str = "", **_) -> str:
-    try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            raw = r.read().decode("utf-8", errors="replace")
-        # Remove script and style blocks entirely (content + tags)
-        text = re.sub(r"<script[^>]*>.*?</script>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
-        # Strip remaining HTML tags
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        if len(text) > 4000:
-            text = text[:4000] + " … [truncated]"
-        if prompt:
-            return f"Extraction goal: {prompt}\n\n{text}"
-        return text
-    except Exception as e:
-        return f"read_url failed: {e}"
-
-
-def _scratchpad_read() -> str:
-    if _SCRATCHPAD_STORE is None or _CURRENT_SESSION_ID is None:
-        return "Error: scratchpad not available in this session."
-    return _SCRATCHPAD_STORE.read(_CURRENT_SESSION_ID)
-
-
-def _scratchpad_update(section: str, content: str) -> str:
-    if _SCRATCHPAD_STORE is None or _CURRENT_SESSION_ID is None:
-        return "Error: scratchpad not available in this session."
-    return _SCRATCHPAD_STORE.update(_CURRENT_SESSION_ID, section, content)
-
-
-register_tool("python_execute", "Execute Python code and return stdout/stderr.", {
-    "type": "object",
-    "properties": {"code": {"type": "string", "description": "Python source code to run"}},
-    "required": ["code"],
-}, _python_execute)
-
-register_tool("get_datetime", "Return the current UTC date and time.", {
-    "type": "object", "properties": {}, "required": [],
-}, _get_datetime)
-
-register_tool("web_search", "Search the web for a query and return a summary.", {
-    "type": "object",
-    "properties": {"query": {"type": "string", "description": "Search query string"}},
-    "required": ["query"],
-}, _web_search)
-
-register_tool("read_url", "Fetch the text content of a URL. Pass prompt= to state what you are looking for.", {
-    "type": "object",
-    "properties": {
-        "url":    {"type": "string", "description": "URL to fetch"},
-        "prompt": {"type": "string", "description": "What you are trying to extract from this page"},
-    },
-    "required": ["url"],
-}, _read_url)
-
-register_tool("scratchpad_read", "Read the full session scratchpad — constitution TLDR, context, tasks, notes.", {
-    "type": "object", "properties": {}, "required": [],
-}, _scratchpad_read)
-
-register_tool("scratchpad_update", "Update one section of the session scratchpad.", {
-    "type": "object",
-    "properties": {
-        "section": {
-            "type": "string",
-            "enum": ["context", "tasks", "notes"],
-            "description": "Section to update. 'constitution_tldr' is read-only.",
-        },
-        "content": {
-            "type": "string",
-            "description": "New content for the section — overwrites the previous value.",
-        },
-    },
-    "required": ["section", "content"],
-}, _scratchpad_update)
-
-
-# Tool profiles (which tools are active per session)
-_SCRATCHPAD_TOOLS = {"scratchpad_read", "scratchpad_update"}
-
-TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"} | _SCRATCHPAD_TOOLS,
-    "compute_only":       {"python_execute"} | _SCRATCHPAD_TOOLS,
-    "compute_and_search": {"python_execute", "web_search", "read_url"} | _SCRATCHPAD_TOOLS,
-    "no_tools":           set(_SCRATCHPAD_TOOLS),
-}
 
 # ---------------------------------------------------------------------------
 # Metrics
@@ -523,7 +358,6 @@ _GRAPH_CLIENT: Optional[Any] = None   # GraphClient — User Modelling
 _ONTO_GRAPH:   Optional[Any] = None   # OntologyGraph — Ontology Verifier
 _HARNESS: Optional[Any] = None   # ConstitutionalHarness — set at startup when ENABLE_HARNESS=True
 _SCRATCHPAD_STORE: Optional[Any] = None   # ScratchpadStore — set at startup
-_CURRENT_SESSION_ID: Optional[str] = None  # Set per-request, read by scratchpad tool handlers
 
 # ---------------------------------------------------------------------------
 # Model state — populated on startup, never mutated at request time
@@ -672,11 +506,7 @@ def _to_openai_schemas(active_tools: set) -> List[Dict[str, Any]]:
     receives tool definitions in the format it was pre-trained on, allowing
     zero-shot use of any tool described by a JSON schema — no retraining needed.
     """
-    return [
-        {"type": "function", "function": spec.schema()}
-        for name, spec in _REGISTRY.items()
-        if name in active_tools
-    ]
+    return _TOOL_REGISTRY.to_openai_schemas(active_tools)
 
 
 def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -860,10 +690,14 @@ def _build_system_prompt(
         if suffix:
             parts.append(suffix)
     _SCRATCHPAD_NOTE = (
-        "\n\nScratchpad (always available — not listed in tool inventory above):\n"
-        "  scratchpad_read()                           → read your full scratchpad\n"
-        "  scratchpad_update(section=..., content=...) → update context / tasks / notes\n"
-        "Use the scratchpad on any query with 3+ requirements or 2+ tool calls (P24)."
+        "\n\nAlways-on tools (available in every session — not listed in tool inventory above):\n"
+        "  scratchpad_read()                              → read your full scratchpad\n"
+        "  scratchpad_update(section=..., content=...)    → update context / tasks / notes\n"
+        "  user_memory_read(prompt='...')                 → read relevant user memory\n"
+        "  user_memory_update(section=..., content=...)   → update user memory when you learn facts\n"
+        "Use scratchpad for any query with 3+ requirements or 2+ tool calls (P24).\n"
+        "Call user_memory_read at the start of conversations to retrieve user context; "
+        "call user_memory_update whenever you learn a new fact about the user."
     )
     return "".join(parts) + _SCRATCHPAD_NOTE
 
@@ -936,7 +770,7 @@ def list_models() -> Dict[str, Any]:
 @app.get("/v1/tools")
 def list_tools() -> Dict[str, Any]:
     return {
-        "tools": [t.schema() for t in _REGISTRY.values()],
+        "tools": _TOOL_REGISTRY.schemas_list(),
         "profiles": {k: sorted(v) for k, v in TOOL_PROFILES.items()},
     }
 
@@ -951,15 +785,15 @@ def register_tool_endpoint(req: ToolRegistration) -> Dict[str, Any]:
     fn = ns.get("tool_fn")
     if not callable(fn):
         raise HTTPException(status_code=400, detail="python_code must define a callable named 'tool_fn'")
-    register_tool(req.name, req.description, req.parameters, fn)
-    return {"registered": req.name, "total_tools": len(_REGISTRY)}
+    _TOOL_REGISTRY.register(req.name, req.description, req.parameters, fn)
+    return {"registered": req.name, "total_tools": len(_TOOL_REGISTRY._specs)}
 
 
 @app.delete("/v1/tools/{name}")
 def delete_tool(name: str) -> Dict[str, Any]:
-    if name not in _REGISTRY:
+    if name not in _TOOL_REGISTRY._specs:
         raise HTTPException(status_code=404, detail=f"Tool '{name}' not found")
-    del _REGISTRY[name]
+    _TOOL_REGISTRY.deregister(name)
     for profile_set in TOOL_PROFILES.values():
         profile_set.discard(name)
     return {"removed": name}
@@ -1015,12 +849,11 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         _to_openai_schemas(active_tools) if use_native else None
     )
 
-    # ── Scratchpad session binding ────────────────────────────────────────
-    global _CURRENT_SESSION_ID
-    if _SCRATCHPAD_STORE is not None:
-        _CURRENT_SESSION_ID = req.session_id or _SCRATCHPAD_STORE.new_session_id()
-    else:
-        _CURRENT_SESSION_ID = req.session_id
+    # ── Session binding (scratchpad + user memory) ────────────────────────
+    session_id = req.session_id
+    if _SCRATCHPAD_STORE is not None and not session_id:
+        session_id = _SCRATCHPAD_STORE.new_session_id()
+    _TOOL_REGISTRY.session_id = session_id
 
     tools_used: Dict[str, int] = {}
     tool_failures: Dict[str, int] = {}
@@ -1049,20 +882,12 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 fn_name = tc["function"]
                 kwargs_preview = str(tc["kwargs"])[:120]
                 print(f"[TOOL] Calling: {fn_name}({kwargs_preview})")
-                if fn_name not in _REGISTRY:
-                    raw_result = f"Error: tool '{fn_name}' is not registered on this server."
-                    print(f"[TOOL] Error: tool '{fn_name}' is not registered on this server")
-                elif not use_native and fn_name not in active_tools:
-                    raw_result = f"Error: tool '{fn_name}' is not available in profile '{req.tool_profile}'."
-                    print(f"[TOOL] Error: tool '{fn_name}' not available in profile '{req.tool_profile}'")
-                else:
-                    try:
-                        raw_result = _REGISTRY[fn_name].fn(**tc["kwargs"])
-                        result_preview = str(raw_result)[:80].replace("\n", "\\n")
-                        print(f"[TOOL] Result ({len(str(raw_result))} chars): {result_preview}")
-                    except Exception as e:
-                        raw_result = f"Tool execution error: {e}"
-                        print(f"[TOOL] Execution error in {fn_name}: {e}")
+                raw_result = _TOOL_REGISTRY.call(
+                    fn_name, tc["kwargs"], active_tools,
+                    check_profile=not use_native,
+                )
+                result_preview = str(raw_result)[:80].replace("\n", "\\n")
+                print(f"[TOOL] Result ({len(str(raw_result))} chars): {result_preview}")
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
                 is_error = _is_tool_error(str(raw_result))
                 non_retryable_error = _is_non_retryable_tool_error(str(raw_result)) if is_error else False
@@ -1071,10 +896,10 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 result = _sanitise_tool_output(fn_name, str(raw_result))
                 if (
                     _SCRATCHPAD_STORE is not None
-                    and _CURRENT_SESSION_ID
+                    and _TOOL_REGISTRY.session_id
                     and fn_name not in ("scratchpad_read", "scratchpad_update")
                 ):
-                    task_status = _SCRATCHPAD_STORE.get_task_status(_CURRENT_SESSION_ID)
+                    task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
                     if task_status:
                         result = result + f"\n{task_status}"
                 conv.append({"role": "tool", "content": result})
@@ -1124,7 +949,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     max(req.temperature, 0.3) * ts if ts != 1.0 else req.temperature,
                     req.greedy and ts == 1.0,
                 )[0],
-                session_id=_CURRENT_SESSION_ID,
+                session_id=_TOOL_REGISTRY.session_id,
                 max_retries=2,
             )
             if adaptation_needed != bool(_HARNESS.metrics.get_adaptation_suffix()):
@@ -1365,9 +1190,17 @@ def main() -> None:
     global _SCRATCHPAD_STORE
     if _scratchpad_available:
         _SCRATCHPAD_STORE = ScratchpadStore()
+        _TOOL_REGISTRY._scratchpad = _SCRATCHPAD_STORE
         print("[SCRATCHPAD] Session scratchpad store initialised")
     else:
         print("[SCRATCHPAD] scratchpad module not available — scratchpad tools disabled")
+
+    # ── User memory store ─────────────────────────────────────────────────
+    if _user_memory_importable and _UserMemoryStoreClass is not None:
+        _TOOL_REGISTRY._user_memory = _UserMemoryStoreClass()
+        print("[USER MEMORY] User memory store initialised (pipeline/data/user_memory/)")
+    else:
+        print("[USER MEMORY] user_memory module not available — user_memory tools disabled")
 
     # ── Constitutional Harness ────────────────────────────────────────────
     global _HARNESS
