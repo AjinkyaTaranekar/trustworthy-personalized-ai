@@ -902,7 +902,10 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
                     if task_status:
                         result = result + f"\n{task_status}"
-                conv.append({"role": "tool", "content": result})
+                # XML mode: inject as "user" turn to match training data format.
+                # Native mode: use "tool" role with tool_call_id (proper OpenAI format).
+                tool_result_role = "tool" if use_native else "user"
+                conv.append({"role": tool_result_role, "content": result})
                 if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
                     conv.append({
                         "role": "user",

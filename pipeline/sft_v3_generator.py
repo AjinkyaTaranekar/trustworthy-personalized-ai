@@ -262,7 +262,10 @@ def _generate_with_intercept(
         wrapped = f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]"
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
-        conversation.append({"role": "tool", "content": wrapped})
+        # Use "user" role for tool results — NVIDIA NIM and most OpenAI-compatible APIs
+        # reject role="tool" without a matching tool_call_id (native function-calling format).
+        # Our XML-intercept loop doesn't use native tool_calls, so results go as user turns.
+        conversation.append({"role": "user", "content": wrapped})
         print(f"    [intercept r{round_num}] {tool_name}() → {len(result)} chars")
 
     return conversation
@@ -429,7 +432,7 @@ def _process_one_v3(
             print(f"  {tag} skipped: no valid <think> block after 2 attempts")
             return "error"
 
-        n_tool_turns = sum(1 for m in conversation if m["role"] == "tool")
+        n_tool_turns = sum(1 for m in conversation if m["role"] == "user" and m["content"].startswith("[TOOL_RESULT:"))
         print(f"  {tag} {len(conversation)} msgs ({n_tool_turns} tool turns) in {time.monotonic()-t0:.1f}s")
 
         example = _build_v3_example(conversation, question, category, tool_profile)
