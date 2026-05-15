@@ -284,6 +284,11 @@ def _generate_with_intercept(
         for part in tool_profile["context"].split("|")
         if "✓" in part
     }
+    # Per-tool call counter — prevents the model looping on the same tool.
+    # web_search and read_url are capped at 3 calls each; others at 5.
+    _MAX_CALLS: dict[str, int] = {"web_search": 3, "read_url": 3}
+    _DEFAULT_MAX = 5
+    tool_call_counts: dict[str, int] = {}
 
     for round_num in range(max_rounds):
         content = _call_with_stop(
@@ -309,15 +314,27 @@ def _generate_with_intercept(
         tool_name_m = re.match(r"(\w+)", tool_inner.strip())
         tool_name = tool_name_m.group(1) if tool_name_m else "unknown"
 
-        result = _TOOL_REGISTRY.execute(tool_inner, active_tools, failure_config)
-        wrapped = f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]"
+        # Enforce per-tool call cap to prevent search loops
+        call_count = tool_call_counts.get(tool_name, 0)
+        cap = _MAX_CALLS.get(tool_name, _DEFAULT_MAX)
+        if call_count >= cap:
+            result = f"Error: {tool_name} call limit ({cap}) reached. Synthesise what you have and write <answer>."
+        else:
+            result = _TOOL_REGISTRY.execute(tool_inner, active_tools, failure_config)
+            tool_call_counts[tool_name] = call_count + 1
+
+        wrapped = (
+            f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n"
+            "Now synthesise the above result and continue to your final <answer>. "
+            "Only call another tool if strictly necessary — do not repeat the same search."
+        )
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
         # Use "user" role for tool results — NVIDIA NIM and most OpenAI-compatible APIs
         # reject role="tool" without a matching tool_call_id (native function-calling format).
         # Our XML-intercept loop doesn't use native tool_calls, so results go as user turns.
         conversation.append({"role": "user", "content": wrapped})
-        print(f"    [intercept r{round_num}] {tool_name}() → {len(result)} chars")
+        print(f"    [intercept r{round_num}] {tool_name}() → {len(result)} chars  (call #{call_count + 1})")
 
     return conversation
 
