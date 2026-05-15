@@ -28,32 +28,30 @@ def test_student_prompts_cover_all_profiles():
         )
 
 
-# ── Tool executor ─────────────────────────────────────────────────────────────
+# ── Tool registry (via _TOOL_REGISTRY) ────────────────────────────────────────
 
-def test_execute_tool_v3_python_execute():
+def test_tool_registry_python_execute():
     import sft_v3_generator as gen
-    result = gen._execute_tool_v3(
+    result = gen._TOOL_REGISTRY.execute(
         tool_inner="python_execute(code='print(2 + 2)')",
         active_tools={"python_execute"},
-        failure_config=None,
     )
     assert "4" in result
 
 
-def test_execute_tool_v3_python_unavailable():
+def test_tool_registry_python_unavailable():
     import sft_v3_generator as gen
-    result = gen._execute_tool_v3(
+    result = gen._TOOL_REGISTRY.execute(
         tool_inner="python_execute(code='print(1)')",
         active_tools=set(),
-        failure_config=None,
     )
     assert "not available" in result.lower()
 
 
-def test_execute_tool_v3_web_search_503_first_call():
+def test_tool_registry_web_search_503_first_call():
     import sft_v3_generator as gen
     fc = {"inject_503": True}
-    result = gen._execute_tool_v3(
+    result = gen._TOOL_REGISTRY.execute(
         tool_inner="web_search(query='current gold price')",
         active_tools={"web_search"},
         failure_config=fc,
@@ -62,17 +60,18 @@ def test_execute_tool_v3_web_search_503_first_call():
     assert fc["web_search_count"] == 1
 
 
-def test_execute_tool_v3_web_search_503_only_first_call():
+def test_tool_registry_web_search_503_only_first_call():
     """Second call should NOT return 503."""
     import sft_v3_generator as gen
+    from pipeline_tools import web_search as _ws
     fc = {"inject_503": True}
-    with patch("sft_v3_generator._exa_search", return_value="Gold: $2300/oz"):
-        gen._execute_tool_v3(
+    with patch("pipeline_tools.web_search", return_value="Gold: $2300/oz"):
+        gen._TOOL_REGISTRY.execute(
             tool_inner="web_search(query='gold price')",
             active_tools={"web_search"},
             failure_config=fc,
         )
-        result = gen._execute_tool_v3(
+        result = gen._TOOL_REGISTRY.execute(
             tool_inner="web_search(query='current gold price site:ft.com')",
             active_tools={"web_search"},
             failure_config=fc,
@@ -80,22 +79,20 @@ def test_execute_tool_v3_web_search_503_only_first_call():
     assert "Gold" in result or "2300" in result
 
 
-def test_execute_tool_v3_get_datetime():
+def test_tool_registry_get_datetime():
     import sft_v3_generator as gen
-    result = gen._execute_tool_v3(
+    result = gen._TOOL_REGISTRY.execute(
         tool_inner="get_datetime()",
         active_tools={"get_datetime"},
-        failure_config=None,
     )
     assert "UTC" in result or "202" in result
 
 
-def test_execute_tool_v3_unknown_tool():
+def test_tool_registry_unknown_tool():
     import sft_v3_generator as gen
-    result = gen._execute_tool_v3(
+    result = gen._TOOL_REGISTRY.execute(
         tool_inner="fly_to_moon(destination='Mars')",
         active_tools={"python_execute"},
-        failure_config=None,
     )
     assert "unknown" in result.lower() or "error" in result.lower()
 
@@ -104,8 +101,11 @@ def test_execute_tool_v3_unknown_tool():
 
 def _make_conversation(profile_label: str = "compute_only"):
     import sft_v3_generator as gen
+    profile = next(p for p in gen.TOOL_PROFILES if p["label"] == profile_label)
     teacher_system = gen._make_teacher_prompt(
-        next(p for p in gen.TOOL_PROFILES if p["label"] == profile_label)
+        profile,
+        category="arithmetic",
+        ideal_behavior=gen._DEFAULT_IDEAL_V3,
     )
     return [
         {"role": "system", "content": teacher_system},
@@ -178,3 +178,34 @@ def test_think_block_length_long():
 def test_think_block_length_absent():
     import sft_v3_generator as gen
     assert gen._think_block_length("<answer>hello</answer>") == 0
+
+
+def test_think_block_length_min_threshold():
+    import sft_v3_generator as gen
+    short = "<think>Too short.</think><answer>Answer.</answer>"
+    long_think = "<think>" + "x" * 200 + "</think><answer>Answer.</answer>"
+    assert gen._think_block_length(short) < 150
+    assert gen._think_block_length(long_think) >= 150
+
+
+def test_process_one_v3_rejects_missing_think(monkeypatch):
+    """_process_one_v3 must return 'error' when all generation attempts lack <think>."""
+    import io
+    import threading
+    import sft_v3_generator as gen
+
+    no_think_conv = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "Direct answer without thinking tags.<answer>Answer.</answer>"},
+    ]
+    monkeypatch.setattr(
+        "sft_v3_generator._generate_with_intercept",
+        lambda **kwargs: no_think_conv,
+    )
+
+    buf = io.StringIO()
+    lock = threading.Lock()
+    item = {"category": "impossible_tasks", "question": "What is 1 + 1?"}
+    result = gen._process_one_v3(item, "test_model", None, buf, lock, 1, 1, 0.0)
+    assert result == "error"

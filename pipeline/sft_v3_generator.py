@@ -11,16 +11,15 @@ student system prompt. Instead:
 Web search uses exa.ai (set EXA_API_KEY in .env).
 
 Usage:
-    python pipeline/sft_v3_generator.py \\
-        --questions pipeline/data/questions_partA.jsonl \\
-        --output pipeline/data/train_v3.jsonl \\
-        --model nvidia_nim/moonshotai/kimi-k2.6 \\
-        --critic_model nvidia_nim/minimaxai/minimax-m2.7
+    python sft_v3_generator.py \\
+        --questions data/questions_partA.jsonl \\
+        --output data/train_v3.jsonl \\
+        --model nvidia_nim/minimaxai/minimax-m2.7
 
-    python pipeline/sft_v3_generator.py \\
-        --questions pipeline/data/questions_v3.jsonl \\
+    python sft_v3_generator.py \\
+        --questions data/questions_v3.jsonl \\
         --type inventory_constraint \\
-        --output pipeline/data/train_v3_negative.jsonl
+        --output data/train_v3_negative.jsonl
 """
 
 import argparse
@@ -29,15 +28,16 @@ import json
 import os
 import re
 import random
-import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import litellm
 from dotenv import load_dotenv
+from pipeline_tools import ToolRegistry as _ToolRegistry
+
+_TOOL_REGISTRY = _ToolRegistry()   # no scratchpad/user_memory — training context
 
 load_dotenv()
 
@@ -129,176 +129,20 @@ CRITICAL FORMAT RULES — violation invalidates the training example:
 5. After each [TOOL_RESULT] block, continue reasoning in flowing prose before the next tool call or <answer>."""
 
 
-def _make_teacher_prompt(tool_profile: dict) -> str:
+def _make_teacher_prompt(tool_profile: dict, category: str, ideal_behavior: str, ) -> str:
     return (
         "You are a frontier AI assistant generating exemplary training data.\n\n"
         f"{_TEACHER_CONSTITUTION}\n\n"
         f"{_TEACHER_FORMAT_RULES}\n\n"
         f"Session tools available: {tool_profile['context']}\n"
         f"{tool_profile['system_note']}"
+        f"CATEGORY: {category}\n"
+        f"SESSION TOOLS: {tool_profile['context']}\n"
+        f"Requirements for this category ({category}):\n"
+        f"{ideal_behavior}\n"
     )
 
 
-# ---------------------------------------------------------------------------
-# Web search via exa.ai
-# ---------------------------------------------------------------------------
-
-def _exa_search(query: str, num_results: int = 3) -> str:
-    api_key = os.environ.get("EXA_API_KEY", "")
-    if not api_key:
-        return (
-            f"web_search unavailable: EXA_API_KEY not set. "
-            f"Cannot retrieve live data for: {query}"
-        )
-    try:
-        from exa_py import Exa
-        exa = Exa(api_key=api_key)
-        result = exa.search_and_contents(
-            query,
-            num_results=num_results,
-            text={"max_characters": 400},
-        )
-        snippets = []
-        for r in result.results:
-            title = getattr(r, "title", "") or ""
-            url = getattr(r, "url", "") or ""
-            text = getattr(r, "text", "") or ""
-            snippets.append(f"**{title}** ({url})\n{text[:350]}")
-        return "\n\n".join(snippets) if snippets else f"No results found for: {query}"
-    except ImportError:
-        return "web_search unavailable: exa_py not installed — run: pip install exa-py"
-    except Exception as e:
-        return f"web_search error: {e}"
-
-
-# ---------------------------------------------------------------------------
-# Python executor (sandboxed)
-# ---------------------------------------------------------------------------
-
-_ALLOWED_IMPORTS = frozenset({
-    "math", "statistics", "decimal", "fractions", "cmath",
-    "random", "itertools", "functools", "operator", "collections",
-    "numbers", "string", "re",
-})
-_BLOCKED_BUILTINS = frozenset({"exec", "eval", "compile", "__import__", "open", "breakpoint"})
-
-
-def _parse_python_code(s: str) -> str | None:
-    for pat in (
-        r'python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)',
-        r"python_execute\s*\(\s*code\s*=\s*'(.*?)'\s*\)",
-        r'python_execute\s*\(\s*code\s*=\s*"(.*?)"\s*\)',
-    ):
-        m = re.search(pat, s, re.DOTALL)
-        if m:
-            return m.group(1).replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
-    return None
-
-
-def _run_safe_python(code: str) -> str:
-    import ast as _ast
-    try:
-        tree = _ast.parse(code)
-    except SyntaxError as e:
-        return f"Error: syntax_error: {e}"
-    for node in _ast.walk(tree):
-        if isinstance(node, _ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] not in _ALLOWED_IMPORTS:
-                    return f"Error: blocked_import: {alias.name}"
-        elif isinstance(node, _ast.ImportFrom):
-            top = (node.module or "").split(".")[0]
-            if top and top not in _ALLOWED_IMPORTS:
-                return f"Error: blocked_import: {node.module}"
-        elif isinstance(node, _ast.Call):
-            if isinstance(node.func, _ast.Name) and node.func.id in _BLOCKED_BUILTINS:
-                return f"Error: blocked_builtin: {node.func.id}"
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=15,
-        )
-        out = (proc.stdout or proc.stderr).strip()
-        return out if out else "Code executed successfully (no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: execution timed out (15s limit)"
-    except Exception as e:
-        return f"Error: {e}"
-
-
-def _fetch_url(url: str, prompt: str = "") -> str:
-    try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            body = r.read(8000).decode("utf-8", errors="replace")
-        body = re.sub(r"<[^>]+>", " ", body)
-        body = re.sub(r"\s+", " ", body).strip()
-        if prompt:
-            return f"[Fetched: {url}]\nPrompt: {prompt}\nContent: {body[:600]}"
-        return f"[Fetched: {url}]\n{body[:600]}"
-    except Exception as e:
-        return f"read_url failed: {e}"
-
-
-# ---------------------------------------------------------------------------
-# Tool executor with failure injection
-# ---------------------------------------------------------------------------
-
-def _execute_tool_v3(
-    tool_inner: str,
-    active_tools: set[str],
-    failure_config: dict | None,
-) -> str:
-    """Execute a tool call string and return the result.
-
-    failure_config keys:
-      inject_503 (bool): inject HTTP 503 on the FIRST web_search call only.
-      web_search_count (int): auto-incremented counter.
-    """
-    s = tool_inner.strip()
-
-    if s.startswith("python_execute"):
-        if "python_execute" not in active_tools:
-            return "Error: python_execute is not available in this session."
-        code = _parse_python_code(s)
-        if code is None:
-            return "Error: could not parse python_execute arguments."
-        return _run_safe_python(code)
-
-    if s.startswith("web_search"):
-        if "web_search" not in active_tools:
-            return "Error: web_search is not available in this session."
-        m = re.search(r"query\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)
-        query = m.group(1) if m else s
-        if failure_config and failure_config.get("inject_503"):
-            failure_config.setdefault("web_search_count", 0)
-            failure_config["web_search_count"] += 1
-            if failure_config["web_search_count"] == 1:
-                return "HTTP 503 Service Unavailable. The search service is temporarily down. Please retry with a different query."
-        return _exa_search(query)
-
-    if s.startswith("read_url"):
-        if "read_url" not in active_tools:
-            return "Error: read_url is not available in this session."
-        url_m = re.search(r"url\s*=\s*['\"](.+?)['\"]", s)
-        prompt_m = re.search(r"prompt\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)
-        return _fetch_url(
-            url_m.group(1) if url_m else "",
-            prompt_m.group(1) if prompt_m else "",
-        )
-
-    if s.startswith("get_datetime"):
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    if s.startswith("scratchpad_read"):
-        return "(scratchpad is empty — training example initialisation)"
-
-    if s.startswith("scratchpad_update"):
-        return "(scratchpad updated)"
-
-    tool_name = s.split("(")[0].strip() if "(" in s else s[:40]
-    return f"Error: unknown tool '{tool_name}' — only registered tools are callable."
 
 
 # ---------------------------------------------------------------------------
@@ -414,8 +258,8 @@ def _generate_with_intercept(
         tool_name_m = re.match(r"(\w+)", tool_inner.strip())
         tool_name = tool_name_m.group(1) if tool_name_m else "unknown"
 
-        result = _execute_tool_v3(tool_inner, active_tools, failure_config)
-        wrapped = f"[TOOL_RESULT: {tool_name}]\n{result[:3000]}\n[/TOOL_RESULT]"
+        result = _TOOL_REGISTRY.execute(tool_inner, active_tools, failure_config)
+        wrapped = f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]"
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
         conversation.append({"role": "tool", "content": wrapped})
@@ -517,35 +361,18 @@ _IDEAL_BEHAVIORS_V3: dict[str, str] = {
         "Your <think> block must reason about the failure and decide to retry with a refined query. "
         "If the retry succeeds, synthesise the result in <answer>. "
         "If both calls fail, state the gap honestly and answer from static knowledge with a cutoff caveat."
-    ),
-    "interleaved_tool_reasoning": (
-        "This question requires both live external data AND computation. "
-        "Chain the tools: web_search to get the raw data, then python_execute to compute. "
-        "Never approximate mentally when the chain is available."
-    ),
-    "scratchpad_decomposition": (
-        "This question has 3 or more distinct requirements. "
-        "Use scratchpad_read() first, then write context and tasks, then execute each task in order."
-    ),
+    )
 }
 
 _DEFAULT_IDEAL_V3 = (
-    "Reason through the question carefully in <think>, state which tools you have, "
-    "use the right tool if needed, and close with a clear <answer>."
+    "Reason through the question step-by-step in a <think> block, demonstrating the principles. "
+    "Use the tools available in this session as needed, calling them with <tool> tags after the <think> block. "
+    "After each tool call, continue reasoning in flowing prose before the next tool call or final answer. "
+    "Close with a clear <answer> that directly addresses the user's question, synthesising tool results and reasoning. "
+    "Avoid any mention of the principles, checklists, or placeholders in your final output."
+    "Use the scratchpad tools if you want to keep track of intermediate calculations or notes, but remember the scratchpad is not visible to the user and does not persist between conversations."
+    
 )
-
-_USER_DRAFT_PROMPT = """\
-Generate an exemplary training response for this question.
-
-QUESTION: {question}
-CATEGORY: {category}
-SESSION TOOLS: {tool_context}
-
-Requirements for this category ({category}):
-{ideal_behavior}
-
-Begin your response immediately with <think>. Do NOT output any preamble or headers.\
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -574,27 +401,34 @@ def _process_one_v3(
     print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
 
     ideal = _IDEAL_BEHAVIORS_V3.get(category, _DEFAULT_IDEAL_V3)
-    user_prompt = _USER_DRAFT_PROMPT.format(
-        question=question,
-        category=category,
-        tool_context=tool_profile["context"],
-        ideal_behavior=ideal,
-    )
-    teacher_system = _make_teacher_prompt(tool_profile)
+    teacher_system = _make_teacher_prompt(tool_profile, category, ideal)
     initial_messages = [
         {"role": "system", "content": teacher_system},
-        {"role": "user", "content": user_prompt},
+        {"role": "user", "content": question},
     ]
 
     try:
         t0 = time.monotonic()
-        conversation = _generate_with_intercept(
-            messages=initial_messages,
-            model=model,
-            tool_profile=tool_profile,
-            api_base=api_base,
-            failure_config=failure_config,
-        )
+        conversation = None
+        for _think_attempt in range(2):
+            conversation = _generate_with_intercept(
+                messages=initial_messages,
+                model=model,
+                tool_profile=tool_profile,
+                api_base=api_base,
+                failure_config=failure_config,
+            )
+            first_asst = next(
+                (m["content"] for m in conversation if m["role"] == "assistant"), ""
+            )
+            if _think_block_length(first_asst) >= 150:
+                break
+            if _think_attempt == 0:
+                print(f"  {tag} no <think> block (attempt 1) — retrying")
+        else:
+            print(f"  {tag} skipped: no valid <think> block after 2 attempts")
+            return "error"
+
         n_tool_turns = sum(1 for m in conversation if m["role"] == "tool")
         print(f"  {tag} {len(conversation)} msgs ({n_tool_turns} tool turns) in {time.monotonic()-t0:.1f}s")
 
@@ -703,13 +537,13 @@ def process_questions_v3(
     print(f"\n{'='*55}")
     print(f"Done in {elapsed:.1f}s | processed={processed} errors={errors}")
     print(f"Output: {output_path}")
-    print(f"\nNext: python pipeline/validate_sft_data.py --input {output_path}")
+    print(f"\nNext: python validate_sft_data.py --input {output_path}")
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="SFT v3 asymmetric distillation generator")
     p.add_argument("--questions", required=True, help="JSONL from sft_question_generator.py")
-    p.add_argument("--output", default="pipeline/data/train_v3.jsonl")
+    p.add_argument("--output", default="data/train_v3.jsonl")
     p.add_argument("--model", default="nvidia_nim/moonshotai/kimi-k2.6")
     p.add_argument("--api_base", default=None)
     p.add_argument("--max", type=int, default=None)
