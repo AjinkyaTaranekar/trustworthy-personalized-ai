@@ -937,6 +937,44 @@ def _process_one_v3(
 
 
 # ---------------------------------------------------------------------------
+# Background watcher — commit+push output file every N new lines
+# ---------------------------------------------------------------------------
+
+def _watcher_thread(out_path: Path, threshold: int, interval: int = 30) -> None:
+    """Daemon thread: commit+push output file every `threshold` new non-blank lines."""
+    try:
+        repo_root = Path(
+            subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode().strip()
+        )
+        rel_path = out_path.relative_to(repo_root)
+    except Exception as exc:
+        print(f"[watcher] git repo not found — watch_commit disabled ({exc})", flush=True)
+        return
+    def _count() -> int:
+        try:
+            return sum(1 for l in out_path.open("r", encoding="utf-8") if l.strip())
+        except OSError:
+            return 0
+    baseline = _count()
+    last_committed = (baseline // threshold) * threshold
+    print(f"[watcher] started — file: {out_path.name}, threshold: {threshold} lines/commit", flush=True)
+    while True:
+        time.sleep(interval)
+        current = _count()
+        checkpoint = (current // threshold) * threshold
+        if checkpoint > last_committed:
+            msg = f"data: auto-checkpoint — {current} lines in {out_path.name}"
+            try:
+                subprocess.run(["git", "add", str(rel_path)], cwd=repo_root, check=True)
+                subprocess.run(["git", "commit", "-m", msg], cwd=repo_root, check=True)
+                subprocess.run(["git", "push"], cwd=repo_root, check=True)
+                print(f"[watcher] committed + pushed at {current} lines", flush=True)
+                last_committed = checkpoint
+            except subprocess.CalledProcessError as exc:
+                print(f"[watcher] git error: {exc}", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # Main processing loop
 # ---------------------------------------------------------------------------
 
@@ -1091,11 +1129,20 @@ def main() -> None:
     p.add_argument("--rpm", type=float, default=38.0, help="Requests per minute per key (default 38, slightly under NIM free-tier 40)")
     p.add_argument("--max_retries", type=int, default=5)
     p.add_argument("--base_delay", type=float, default=3.0)
+    p.add_argument("--watch_commit", action="store_true",
+                   help="Commit+push output file every --watch_threshold new lines in a background daemon thread")
+    p.add_argument("--watch_threshold", type=int, default=50,
+                   help="Lines between auto-commits when --watch_commit is active (default 50)")
     args = p.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
     _MAX_RETRIES = args.max_retries
     _BASE_DELAY = args.base_delay
+
+    if args.watch_commit:
+        out_abs = Path(args.output).resolve()
+        wt = threading.Thread(target=_watcher_thread, args=(out_abs, args.watch_threshold), daemon=True)
+        wt.start()
 
     cli_keys = [k.strip() for k in args.api_keys.split(",") if k.strip()] if args.api_keys else None
     print(f"Generator : {args.model}")

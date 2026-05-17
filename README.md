@@ -256,10 +256,14 @@ The v3 pipeline eliminates context-window starvation in 0.6B models by keeping t
     python pipeline/sft_question_generator.py --count 200 --output pipeline/data/questions_v3.jsonl
 
     # 2. Generate gold responses with live tool execution and exa.ai web search
-    python pipeline/sft_v3_generator.py \
-        --questions pipeline/data/questions_v3.jsonl \
+    # (nohup form for long runs — auto-commits every 50 lines via --watch_commit)
+    nohup python -u pipeline/sft_v3_generator.py \
+        --questions pipeline/data/questions_partA.jsonl \
         --output pipeline/data/train_v3.jsonl \
-        --model nvidia_nim/moonshotai/kimi-k2.6
+        --model nvidia_nim/minimaxai/minimax-m2.7 \
+        --workers 5 \
+        --watch_commit \
+        > pipeline/nohup_generator.out 2>&1 &
 
     # 2b. Negative trajectories (inventory constraints + environment timeouts)
     python pipeline/sft_v3_generator.py \

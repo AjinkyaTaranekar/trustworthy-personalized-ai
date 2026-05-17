@@ -42,6 +42,18 @@ Two new question categories train the model on failure recovery:
 
 GRPO `_format_reward` previously required `CAPABILITY_CHECK` in every response. V3-trained models use narrative think blocks without this header. Pass `--v3_format` to the GRPO trainer to switch to the v3 reward, which checks `<think>` + `<answer>` only.
 
+## Background Watch-Commit
+
+Passing `--watch_commit` to `sft_v3_generator.py` starts a daemon thread that runs alongside the main worker pool. Every `--watch_threshold` new non-blank lines written to the output file (default 50), the thread stages the file, commits, and pushes — identical behaviour to the standalone `watch_and_commit.py`. This removes the need to run two separate nohup processes. Typical invocation for long unattended runs:
+
+```bash
+nohup python -u pipeline/sft_v3_generator.py \
+    --questions pipeline/data/questions_partA.jsonl \
+    --model nvidia_nim/minimaxai/minimax-m2.7 \
+    --workers 5 --watch_commit \
+    > pipeline/nohup_generator.out 2>&1 &
+```
+
 ## Related
 
 - [[sources/code/sft-v2-pipeline]] — prior pipeline (preserved, v3 is additive)
