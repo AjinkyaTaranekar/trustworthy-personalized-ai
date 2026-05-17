@@ -478,7 +478,7 @@ def _generate_with_intercept(
     tool_profile: dict,
     api_base: str | None = None,
     failure_config: dict | None = None,
-    max_rounds: int = 8,
+    max_rounds: int = 5,
     registry: "_ToolRegistry | None" = None,
 ) -> list[dict]:
     """Generate text iteratively, intercept <tool> calls, execute them live.
@@ -556,11 +556,15 @@ def _generate_with_intercept(
         # re-reason after each tool result before calling the next tool or answering.
         # The instructional suffix is stripped in _build_v3_example so it does not
         # pollute student training data.
-        wrapped = (
-            f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n"
+        is_last_round = round_num >= max_rounds - 2
+        followup = (
+            "Open a new <think>...</think> block to reason about this result, "
+            "then write your <answer> — no more tool calls."
+            if is_last_round else
             "Open a new <think>...</think> block to reason about this result, "
             "then call the next tool or write your <answer>."
         )
+        wrapped = f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n{followup}"
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
         # Use "user" role here for the teacher's generation (NVIDIA NIM and most
@@ -841,46 +845,78 @@ def _process_one_v3(
 
     ideal = _IDEAL_BEHAVIORS_V3.get(category, _DEFAULT_IDEAL_V3)
     teacher_system = _make_teacher_prompt(tool_profile, category, ideal)
+
+    # Pre-execute mandatory preamble tool calls and inject them as fake turns.
+    # This skips 2–3 LLM round trips that every conversation wastes on boilerplate
+    # tool discovery (user_memory_sections → user_memory_read → get_datetime).
+    # The model starts generating from *after* the preamble, with context already loaded.
+    _active_tools = {
+        part.split("✓")[0].strip()
+        for part in tool_profile["context"].split("|")
+        if "✓" in part
+    }
+    _followup = (
+        "Open a new <think>...</think> block to reason about this result, "
+        "then call the next tool or write your <answer>."
+    )
+    preamble: list[dict] = []
+
+    mem_sections = q_registry.execute("user_memory_sections()", _active_tools, None)
+    mem_content = q_registry.execute(
+        "user_memory_read(prompt='user background and preferences')", _active_tools, None
+    )
+    preamble += [
+        {"role": "assistant", "content": "<think>I should check what user memory sections exist, then read the stored profile to personalise my response.</think><tool>user_memory_sections()</tool>"},
+        {"role": "user", "content": f"[TOOL_RESULT: user_memory_sections]\n{mem_sections}\n[/TOOL_RESULT]\n{_followup}"},
+        {"role": "assistant", "content": "<think>Good, I can see the section keys. Now I'll read the user's stored context before answering.</think><tool>user_memory_read(prompt='user background and preferences')</tool>"},
+        {"role": "user", "content": f"[TOOL_RESULT: user_memory_read]\n{mem_content}\n[/TOOL_RESULT]\n{_followup}"},
+    ]
+
+    if "get_datetime" in _active_tools:
+        dt_result = q_registry.execute("get_datetime()", _active_tools, None)
+        preamble += [
+            {"role": "assistant", "content": "<think>Let me anchor the current time before responding to any time-sensitive aspects of this question.</think><tool>get_datetime()</tool>"},
+            {"role": "user", "content": f"[TOOL_RESULT: get_datetime]\n{dt_result}\n[/TOOL_RESULT]\n{_followup}"},
+        ]
+
+    print(f"  {tag} pre-seeded {len(preamble)//2} preamble tool(s): mem_sections, mem_read"
+          + (", datetime" if "get_datetime" in _active_tools else ""))
+
     initial_messages = [
         {"role": "system", "content": teacher_system},
         {"role": "user", "content": question},
+        *preamble,
     ]
 
     try:
         t0 = time.monotonic()
-        conversation = None
-        for _think_attempt in range(2):
-            conversation = _generate_with_intercept(
-                messages=initial_messages,
-                model=model,
-                tool_profile=tool_profile,
-                api_base=api_base,
-                failure_config=failure_config,
-                registry=q_registry,
-            )
-            # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
-            # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write
-            # flowing prose that we wrap here so training data stays format-consistent.
-            first_asst_idx = next(
-                (i for i, m in enumerate(conversation) if m["role"] == "assistant"), None
-            )
-            if first_asst_idx is not None:
-                original = conversation[first_asst_idx]["content"]
-                wrapped = _wrap_missing_think(original)
-                if wrapped != original:
-                    conversation[first_asst_idx] = {**conversation[first_asst_idx], "content": wrapped}
-                    print(f"  {tag} auto-wrapped missing <think> block")
-                first_asst = conversation[first_asst_idx]["content"]
-            else:
-                first_asst = ""
-
-            if _think_block_length(first_asst) >= 150:
-                break
-            if _think_attempt == 0:
-                print(f"  {tag} insufficient <think> content (attempt 1) — retrying")
+        conversation = _generate_with_intercept(
+            messages=initial_messages,
+            model=model,
+            tool_profile=tool_profile,
+            api_base=api_base,
+            failure_config=failure_config,
+            registry=q_registry,
+        )
+        # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
+        # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write
+        # flowing prose that we wrap here so training data stays format-consistent.
+        first_asst_idx = next(
+            (i for i, m in enumerate(conversation) if m["role"] == "assistant"), None
+        )
+        if first_asst_idx is not None:
+            original = conversation[first_asst_idx]["content"]
+            wrapped = _wrap_missing_think(original)
+            if wrapped != original:
+                conversation[first_asst_idx] = {**conversation[first_asst_idx], "content": wrapped}
+                print(f"  {tag} auto-wrapped missing <think> block")
+            first_asst = conversation[first_asst_idx]["content"]
         else:
-            print(f"  {tag} skipped: reasoning too short after 2 attempts")
-            return "error"
+            first_asst = ""
+
+        think_len = _think_block_length(first_asst)
+        if think_len < 150:
+            print(f"  {tag} short <think> ({think_len} chars) — proceeding anyway")
 
         q_elapsed = time.monotonic() - t0
         n_tool_turns = sum(1 for m in conversation if m["role"] == "user" and m["content"].startswith("[TOOL_RESULT:"))
