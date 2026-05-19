@@ -827,7 +827,7 @@ class ModelTrainer:
     def train(self):
         self.load_base_model()
         self.apply_lora()
-        dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
+        dataset_path = self.data_dir / "train_sft_v3.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
     def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
@@ -989,7 +989,7 @@ class ModelTrainer:
         # When called via --mode publish, train_sft() was never run so _eval_raw is empty.
         # Load the eval split from disk so ROUGE has real references.
         if not self._eval_raw:
-            dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
+            dataset_path = self.data_dir / "train_sft_v3.jsonl"
             if dataset_path.exists():
                 try:
                     raw = load_dataset("json", data_files=str(dataset_path))
@@ -1208,7 +1208,7 @@ def main():
         else:
             trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
         _effective_dataset_path = str(dataset_path)
         if args.curriculum_stage:
             all_examples = []
@@ -1246,7 +1246,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),

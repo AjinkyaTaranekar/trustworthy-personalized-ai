@@ -12,7 +12,7 @@ Replaces four separate scripts:
   sft_add_robustness_variants.py
 
 Outputs:
-  data/train_sft_v3_robust.jsonl  — training set (final)
+  data/train_sft_v3.jsonl  — training set (final)
   data/eval_sft_v3.jsonl          — eval set (v3 format, no variants)
   data/sft_stats.json             — dataset statistics
 
@@ -700,7 +700,7 @@ def run(
     rng.shuffle(train)
     rng.shuffle(eval_set)
 
-    train_path = out / "train_sft_v3_robust.jsonl"
+    train_path = out / "train_sft_v3.jsonl"
     eval_path  = out / "eval_sft_v3.jsonl"
     stats_path = out / "sft_stats.json"
 

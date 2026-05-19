@@ -66,7 +66,7 @@
       --output_dir data/
   What happens: Loads both parts, quality-filters, deduplicates, balances categories,
   splits train/eval (90/10), adds robustness variants (minimal/brief/no_principles).
-  Outputs data/train_sft_v3_robust.jsonl.
+  Outputs data/train_sft_v3.jsonl.
 
   Defaults: --part_a already defaults to train_v3.jsonl; --part_b to train_partB.jsonl.
   So the above command is equivalent to: python sft_dataset_assembler.py
@@ -144,4 +144,4 @@
   | data/questions_v3.jsonl     | sft_question_generator| sft_v3_generator     |
   | data/train_v3.jsonl         | sft_v3_generator      | sft_dataset_assembler|
   | data/train_partB.jsonl      | sft_math_pipeline     | sft_dataset_assembler|
-  | data/train_sft_v3_robust.jsonl | sft_dataset_assembler | 2_model_trainer  |
+  | data/train_sft_v3.jsonl | sft_dataset_assembler | 2_model_trainer  |
