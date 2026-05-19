@@ -44,7 +44,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 MIN_RESPONSE_CHARS  = 80
-CAPABILITY_REQUIRED = True
+CAPABILITY_REQUIRED = False  # v3 data uses narrative think blocks — no CAPABILITY_CHECK header
 MAX_PER_CATEGORY    = 400
 MAX_TOOL_TURNS      = 5       # examples with more tool calls are likely malformed
 MAX_RESULT_CHARS    = 3000    # mirror 3_infererence.py _MAX_TOOL_OUTPUT
@@ -737,13 +737,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="SFT dataset assembler v3 — load, filter, transform, augment, split"
     )
-    parser.add_argument("--part_a",      default="pipeline/data/train_partA.jsonl")
+    parser.add_argument("--part_a",      default="pipeline/data/train_v3.jsonl")
     parser.add_argument("--part_b",      default="pipeline/data/train_partB.jsonl")
     parser.add_argument("--output_dir",  default="pipeline/data")
     parser.add_argument("--eval_frac",   type=float, default=0.10)
     parser.add_argument("--max_per_category", type=int, default=MAX_PER_CATEGORY)
     parser.add_argument("--seed",        type=int,   default=42)
     # Transform flags
+    parser.add_argument("--capability_check", action="store_true",
+                        help="Enable CAPABILITY_CHECK filter (for legacy v2 data that uses structured think blocks)")
     parser.add_argument("--no_transform",    action="store_true", help="Skip v2→v3 tool format transform")
     # Native tool flags
     parser.add_argument("--no_native",       action="store_true", help="Skip native JSON tool examples")
@@ -754,6 +756,10 @@ def main() -> None:
     parser.add_argument("--brief",           type=float, default=0.10)
     parser.add_argument("--no_principles",   type=float, default=0.05)
     args = parser.parse_args()
+
+    if args.capability_check:
+        global CAPABILITY_REQUIRED
+        CAPABILITY_REQUIRED = True
 
     print(f"SFT Dataset Assembler v3")
     print(f"  Part A : {args.part_a}")

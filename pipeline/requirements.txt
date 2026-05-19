@@ -3,6 +3,8 @@ trl
 transformers
 datasets
 torch
+accelerate
+bitsandbytes
 litellm
 python-dotenv
 fastapi
@@ -13,4 +15,5 @@ pyyaml
 rouge-score
 requests
 huggingface_hub
-exa-py 
+exa-py
+pytest

@@ -339,10 +339,11 @@ def _constitution_reward(response: str, question: str,
         n = len(violations)
         return max(0.0, (5 - n) / 5)  # 5 = max checkable principles
     except ImportError:
-        # Minimal fallback: just check P1 + P18
         has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
-        has_cap   = "CAPABILITY_CHECK" in response
         has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+        if _V3_FORMAT_MODE:
+            return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
+        has_cap = "CAPABILITY_CHECK" in response
         n_ok = sum([has_think, has_cap, has_ans])
         return n_ok / 3.0
 

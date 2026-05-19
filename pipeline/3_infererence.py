@@ -1180,8 +1180,8 @@ def main() -> None:
         print(f"Model ready: {_MODEL_LABEL}")
 
     # ── Initialise optional modules ─────────────────────────────────────────
-    _GRAPH_CLIENT = GraphClient(cfg)
-    _ONTO_GRAPH   = OntologyGraph(cfg)
+    _GRAPH_CLIENT = GraphClient(cfg) if _user_modelling_available else None
+    _ONTO_GRAPH   = OntologyGraph(cfg) if _ontology_available else None
 
     if cfg.ENABLE_USER_MODELLING:
         status = "connected" if _GRAPH_CLIENT.available else "UNAVAILABLE (check docker compose up -d)"
