@@ -610,8 +610,8 @@ def main():
                         help="Questions to sample from MATH dataset (default: 500)")
     parser.add_argument("--math_max_level", type=int, default=3,
                         help="Max difficulty level for MATH dataset 1–5 (default: 3 = medium)")
-    parser.add_argument("--output", type=str, default="data/train_partB.jsonl",
-                        help="Output JSONL (default: data/train_partB.jsonl)")
+    parser.add_argument("--output", type=str, default="data/train_partB_v3.jsonl",
+                        help="Output JSONL (default: data/train_partB_v3.jsonl)")
     parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7",
                         help="litellm model string for generating training responses")
     parser.add_argument("--api_base", type=str, default=None,

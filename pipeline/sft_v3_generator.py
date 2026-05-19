@@ -1117,7 +1117,7 @@ def process_questions_v3(
 def main() -> None:
     p = argparse.ArgumentParser(description="SFT v3 asymmetric distillation generator")
     p.add_argument("--questions", required=True, help="JSONL from sft_question_generator.py")
-    p.add_argument("--output", default="data/train_v3.jsonl")
+    p.add_argument("--output", default="data/train_partA_v3.jsonl")
     p.add_argument("--model", default="nvidia_nim/moonshotai/kimi-k2.6")
     p.add_argument("--api_base", default=None)
     p.add_argument("--max", type=int, default=None)

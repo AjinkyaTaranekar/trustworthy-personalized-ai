@@ -737,8 +737,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="SFT dataset assembler v3 — load, filter, transform, augment, split"
     )
-    parser.add_argument("--part_a",      default="pipeline/data/train_v3.jsonl")
-    parser.add_argument("--part_b",      default="pipeline/data/train_partB.jsonl")
+    parser.add_argument("--part_a",      default="pipeline/data/train_partA_v3.jsonl")
+    parser.add_argument("--part_b",      default="pipeline/data/train_partB_v3.jsonl")
     parser.add_argument("--output_dir",  default="pipeline/data")
     parser.add_argument("--eval_frac",   type=float, default=0.10)
     parser.add_argument("--max_per_category", type=int, default=MAX_PER_CATEGORY)
