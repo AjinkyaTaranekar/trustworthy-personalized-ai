@@ -21,6 +21,28 @@ _SECTIONS: Dict[str, str] = {
     "constraints": "Hard limits: budget, time, access restrictions",
 }
 
+_SECTION_ALIASES: Dict[str, str] = {
+    "background":  "who",
+    "identity":    "who",
+    "role":        "who",
+    "expertise":   "who",
+    "goals":       "what",
+    "projects":    "what",
+    "topics":      "what",
+    "location":    "where",
+    "domain":      "where",
+    "motivation":  "why",
+    "reason":      "why",
+    "style":       "how",
+    "preferences": "how",
+    "format":      "how",
+    "fact":        "facts",
+    "assertion":   "facts",
+    "constraint":  "constraints",
+    "limit":       "constraints",
+    "limits":      "constraints",
+}
+
 _STOP_WORDS = frozenset({
     "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or",
     "is", "are", "was", "be", "it", "i", "my", "me", "we", "you", "with",
@@ -96,6 +118,7 @@ class UserMemoryStore:
         return f"=== USER MEMORY (id: {user_id}) ===\n\n" + "\n\n".join(lines)
 
     def update(self, user_id: str, section: str, content: str) -> str:
+        section = _SECTION_ALIASES.get(section, section)
         if section not in _SECTIONS:
             return (
                 f"Error: '{section}' is not a valid section. "
