@@ -1,7 +1,7 @@
 """
 Per-user persistent memory with 5W+H ontology sections.
 
-Stores one JSON file per user at pipeline/data/user_memory/<user_id>.json.
+Stores one JSON file per user at data/user_memory/<user_id>.json.
 The UserMemoryStore interface is designed to be wire-compatible with the
 GraphRAG integration planned for a later milestone — read/update stay the same.
 """

@@ -1,6 +1,6 @@
 """
 Watch a file and commit+push every N new lines.
-Usage: python pipeline/watch_and_commit.py <file> [--threshold 100] [--interval 30]
+Usage: python watch_and_commit.py <file> [--threshold 100] [--interval 30]
 """
 import argparse
 import subprocess

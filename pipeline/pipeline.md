@@ -8,19 +8,19 @@
   ---
   Step 1a — Generate Behavioural Questions
 
-  python pipeline/sft_question_generator.py \
+  python sft_question_generator.py \
       --count 200 --type all \
-      --output pipeline/data/questions_v3.jsonl
+      --output data/questions_v3.jsonl
   What happens: Produces a JSONL of diverse questions across all categories including the two
   negative trajectory types (inventory_constraint, environment_timeout).
 
   ---
   Step 1b — Generate Math Training Data (Part B)
 
-  python pipeline/sft_math_pipeline.py
+  python sft_math_pipeline.py
   What happens: Loads verified Q+A from GSM8K and MATH datasets, has the teacher LLM write
   Python code to solve each question, executes it and checks against the trusted answer.
-  Outputs pipeline/data/train_partB.jsonl (794 examples, no hallucinated answers).
+  Outputs data/train_partB.jsonl (794 examples, no hallucinated answers).
 
   Optional flags:
     --gsm8k_count 300 --math_count 700   custom split
@@ -31,9 +31,9 @@
   ---
   Step 2 — Generate Behavioural Gold Responses (Teacher → Student Distillation)
 
-  python pipeline/sft_v3_generator.py \
-      --questions pipeline/data/questions_v3.jsonl \
-      --output pipeline/data/train_v3.jsonl \
+  python sft_v3_generator.py \
+      --questions data/questions_v3.jsonl \
+      --output data/train_v3.jsonl \
       --model nvidia_nim/moonshotai/kimi-k2.6
   What happens per question:
   1. Teacher (Kimi/Minimax) generates with full 25-principle constitution — flowing narrative
@@ -44,15 +44,15 @@
   5. Before saving to JSONL, teacher system prompt swapped → ≤50-word student prompt
 
   Run again for negative trajectories:
-  python pipeline/sft_v3_generator.py \
-      --questions pipeline/data/questions_v3.jsonl \
+  python sft_v3_generator.py \
+      --questions data/questions_v3.jsonl \
       --type inventory_constraint \
-      --output pipeline/data/train_v3_negative.jsonl
+      --output data/train_v3_negative.jsonl
 
   ---
   Step 3 — Validate Before Assembly
 
-  python pipeline/validate_sft_data.py --input pipeline/data/train_v3.jsonl
+  python validate_sft_data.py --input data/train_v3.jsonl
   What happens: Checks every row against 5 invariants (system prompt length, think block
   length, banned placeholders, tool sequence integrity, final answer tag). Exits with
   error if >5% fail. Run with --fix to drop bad rows and continue.
@@ -60,16 +60,16 @@
   ---
   Step 4 — Assemble Dataset
 
-  python pipeline/sft_dataset_assembler.py \
-      --part_a pipeline/data/train_v3.jsonl \
-      --part_b pipeline/data/train_partB.jsonl \
-      --output_dir pipeline/data/
+  python sft_dataset_assembler.py \
+      --part_a data/train_v3.jsonl \
+      --part_b data/train_partB.jsonl \
+      --output_dir data/
   What happens: Loads both parts, quality-filters, deduplicates, balances categories,
   splits train/eval (90/10), adds robustness variants (minimal/brief/no_principles).
-  Outputs pipeline/data/train_sft_v3_robust.jsonl.
+  Outputs data/train_sft_v3_robust.jsonl.
 
   Defaults: --part_a already defaults to train_v3.jsonl; --part_b to train_partB.jsonl.
-  So the above command is equivalent to: python pipeline/sft_dataset_assembler.py
+  So the above command is equivalent to: python sft_dataset_assembler.py
 
   Note: CAPABILITY_CHECK filtering is OFF by default (v3 data uses narrative think blocks).
   For legacy v2 data add --capability_check to re-enable the structured-think filter.
@@ -78,17 +78,17 @@
   Step 5 — Curriculum SFT Training (3 separate runs)
 
   # Stage 1: short no-tool examples → teaches <think>...<answer> syntax
-  python pipeline/2_model_trainer.py --mode sft \
+  python 2_model_trainer.py --mode sft \
       --curriculum_stage 1 --output_name checkpoint_sft_s1
 
   # Stage 2: all examples → complex multi-tool reasoning
-  python pipeline/2_model_trainer.py --mode sft \
+  python 2_model_trainer.py --mode sft \
       --curriculum_stage 2 \
       --from_checkpoint models/checkpoint_sft_s1 \
       --output_name checkpoint_sft_s2
 
   # Stage 3: all + 20% stage-1 replay → prevents anti-drift
-  python pipeline/2_model_trainer.py --mode sft \
+  python 2_model_trainer.py --mode sft \
       --curriculum_stage 3 \
       --from_checkpoint models/checkpoint_sft_s2 \
       --output_name checkpoint_sft
@@ -98,7 +98,7 @@
   ---
   Step 6 — GRPO Reinforcement
 
-  python pipeline/2_model_trainer.py --mode grpo \
+  python 2_model_trainer.py --mode grpo \
       --sft_checkpoint models/checkpoint_sft \
       --v3_format
   What --v3_format does: Disables the CAPABILITY_CHECK requirement in the format reward —
@@ -107,8 +107,8 @@
   ---
   Step 7 — Serve and Benchmark
 
-  python pipeline/3_infererence.py --model_dir models/checkpoint_grpo
-  python pipeline/4_benchmark.py --server_url http://localhost:8000
+  python 3_infererence.py --model_dir models/checkpoint_grpo
+  python 4_benchmark.py --server_url http://localhost:8000
 
   ---
   Script Reference

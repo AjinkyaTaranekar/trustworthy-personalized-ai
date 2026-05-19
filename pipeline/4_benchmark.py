@@ -14,19 +14,19 @@ Hits the inference server (3_infererence.py) via HTTP and runs two test suites:
 
 Usage:
     # Start the server first:
-    python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
+    python 3_infererence.py --model_dir models/checkpoint_sft --port 8000
 
     # Save a constitution baseline right after SFT:
-    python pipeline/4_benchmark.py --probe_only --save_as_baseline
+    python 4_benchmark.py --probe_only --save_as_baseline
 
     # After each GRPO checkpoint, check for drift:
-    python pipeline/4_benchmark.py --probe_only --baseline reports/constitution_baseline.json
+    python 4_benchmark.py --probe_only --baseline reports/constitution_baseline.json
 
     # Full benchmark run:
-    python pipeline/4_benchmark.py
+    python 4_benchmark.py
 
     # Probe + benchmark together:
-    python pipeline/4_benchmark.py --probe
+    python 4_benchmark.py --probe
 """
 
 import argparse
@@ -1043,7 +1043,7 @@ Examples:
         save_report(adv_result, output_dir, f"adversarial_{timestamp}.json")
         if args.adversarial_only:
             print(f"\nNext step → run full probe + conversation benchmark:")
-            print(f"  python pipeline/4_benchmark.py --server_url {args.server_url} --probe")
+            print(f"  python 4_benchmark.py --server_url {args.server_url} --probe")
             return
 
     # ── Constitutional probes ─────────────────────────────────────────────
@@ -1076,12 +1076,12 @@ Examples:
         if args.probe_only:
             if args.save_as_baseline:
                 print(f"\nNext step → train GRPO, serve the checkpoint, then check for constitutional drift:")
-                print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint ./models/checkpoint_sft")
-                print(f"  python pipeline/3_infererence.py --model_dir ./models/checkpoint_grpo_d")
-                print(f"  python pipeline/4_benchmark.py --server_url {args.server_url} --probe_only --baseline {output_dir}/constitution_baseline.json")
+                print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint ./models/checkpoint_sft")
+                print(f"  python 3_infererence.py --model_dir ./models/checkpoint_grpo_d")
+                print(f"  python 4_benchmark.py --server_url {args.server_url} --probe_only --baseline {output_dir}/constitution_baseline.json")
             else:
                 print(f"\nNext step → run full conversation benchmark:")
-                print(f"  python pipeline/4_benchmark.py --server_url {args.server_url}")
+                print(f"  python 4_benchmark.py --server_url {args.server_url}")
             return
 
     # ── Conversation benchmark ────────────────────────────────────────────
@@ -1145,7 +1145,7 @@ Examples:
     _print_comparison_table(runs)
 
     print(f"\nNext step → context degradation benchmark:")
-    print(f"  python pipeline/5_context_degradation.py --server_url {args.server_url}")
+    print(f"  python 5_context_degradation.py --server_url {args.server_url}")
 
 
 if __name__ == "__main__":

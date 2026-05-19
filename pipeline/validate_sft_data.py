@@ -13,8 +13,8 @@ Invariants:
   5. Last message is assistant with <answer>  (end-to-end resolution)
 
 Usage:
-    python pipeline/validate_sft_data.py --input pipeline/data/train_v3.jsonl
-    python pipeline/validate_sft_data.py --input pipeline/data/train_v3.jsonl --fix --output pipeline/data/train_v3_clean.jsonl
+    python validate_sft_data.py --input data/train_v3.jsonl
+    python validate_sft_data.py --input data/train_v3.jsonl --fix --output data/train_v3_clean.jsonl
 """
 
 import argparse

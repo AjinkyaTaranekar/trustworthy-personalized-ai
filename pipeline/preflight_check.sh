@@ -5,8 +5,8 @@
 # Checks every hard requirement and soft dependency needed before running the
 # reasoning paradigm comparison (Experiment 0 — researchplan.tex Phase 3).
 #
-# Run from the repo root or from pipeline/:
-#   bash pipeline/preflight_check.sh
+# Run from the repo root or from :
+#   bash preflight_check.sh
 #
 # Exit codes:
 #   0  all hard requirements met (warnings may exist)
@@ -30,7 +30,7 @@ warn()    { echo "  ${YLW}[WARN]${RST} $1"; ((WARN++));               }
 info()    { echo "  ${CYN}[INFO]${RST} $1";                           }
 section() { echo ""; echo "${CYN}=== $1 ===${RST}";                   }
 
-# Resolve repo root — works whether called from repo root or pipeline/
+# Resolve repo root — works whether called from repo root or 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PIPELINE="$SCRIPT_DIR"
@@ -182,7 +182,7 @@ print('ok' if os.environ.get('HF_TOKEN','').startswith('hf_') else 'missing')
     info "Add to .env:  HF_TOKEN=hf_..."
   fi
 else
-  warn ".env not found — create at repo root from pipeline/.env.example"
+  warn ".env not found — create at repo root from .env.example"
   warn "LLM provider key and HF_TOKEN cannot be checked (no .env)"
 fi
 
@@ -235,7 +235,7 @@ if [ -f "$SFT_DATA" ]; then
   NLINES=$(wc -l < "$SFT_DATA" | tr -d ' ')
   pass "SFT data present: train_sft_v2.jsonl ($NLINES examples)"
 else
-  warn "SFT data not found — run: bash pipeline/run_all.sh --stages 1"
+  warn "SFT data not found — run: bash run_all.sh --stages 1"
 fi
 
 # =============================================================================
@@ -414,10 +414,10 @@ STAGES_DONE=0
 echo ""
 info "Training pipeline: $STAGES_DONE / 7 stages complete"
 if [ "$STAGES_DONE" -eq 0 ]; then
-  info "To run the full pipeline:  bash pipeline/run_all.sh"
+  info "To run the full pipeline:  bash run_all.sh"
 elif [ "$STAGES_DONE" -lt 7 ]; then
   NEXT_STAGE=$((STAGES_DONE + 1))
-  info "To resume from next stage:  bash pipeline/run_all.sh --from $((STAGES_DONE + 1))"
+  info "To resume from next stage:  bash run_all.sh --from $((STAGES_DONE + 1))"
 else
   info "Full training pipeline complete."
 fi
@@ -431,7 +431,7 @@ section "13. Feature Flag State"
 if python -c "from config import cfg; print(cfg.summary())" 2>/dev/null; then
   :
 else
-  warn "Could not import config.py — run from repo root or pipeline/"
+  warn "Could not import config.py — run from repo root or "
 fi
 
 # Per-flag readiness checks (only fire when the flag is on)
@@ -464,7 +464,7 @@ try:
             n = sum(1 for _ in open(cfg.APPRAISAL_LABELS_PATH))
             checks.append('PASS|ENABLE_EMPATHY: appraisal_labels.jsonl found (' + str(n) + ' examples)')
         else:
-            checks.append('FAIL|ENABLE_EMPATHY: ' + cfg.APPRAISAL_LABELS_PATH + ' not found — run: python pipeline/appraisal_labeller.py')
+            checks.append('FAIL|ENABLE_EMPATHY: ' + cfg.APPRAISAL_LABELS_PATH + ' not found — run: python appraisal_labeller.py')
 
     if cfg.ENABLE_PERSONALISATION and not cfg.ENABLE_USER_MODELLING:
         checks.append('FAIL|ENABLE_PERSONALISATION: requires ENABLE_USER_MODELLING=True')

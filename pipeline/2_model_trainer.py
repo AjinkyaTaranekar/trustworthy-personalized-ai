@@ -2,10 +2,10 @@
 Model Trainer
 =============
 Phase 1 — SFT (Supervised Fine-Tuning):
-    python pipeline/2_model_trainer.py --mode sft
+    python 2_model_trainer.py --mode sft
 
 Phase 2 — GRPO (Group Relative Policy Optimisation, DAPO improvements):
-    python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft \
+    python 2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft \
         --reward_type d --output_name checkpoint_grpo_d
 
 Reward types:
@@ -1234,11 +1234,11 @@ def main():
         trainer.train_sft(_effective_dataset_path, args.output_name,
                           resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
-        print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
+        print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")
-        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  python 3_infererence.py --model_dir {checkpoint_path}")
         print(f"  # To re-upload this checkpoint later (if publish failed):")
-        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
+        print(f"  python 2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
 
     elif args.mode == "grpo":
         print(f"\n=== Phase 2: GRPO (reward_type={args.reward_type}) ===")
@@ -1255,9 +1255,9 @@ def main():
             resume_from_checkpoint=args.resume,
         )
         print(f"\nNext step → serve the GRPO checkpoint:")
-        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  python 3_infererence.py --model_dir {checkpoint_path}")
         print(f"  # To re-upload this checkpoint later (if publish failed):")
-        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
+        print(f"  python 2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
 
     elif args.mode == "publish":
         print(f"\n=== Publish: uploading existing checkpoint to HuggingFace ===")
@@ -1266,9 +1266,9 @@ def main():
             print(f"  Expected file: {checkpoint_path / 'adapter_config.json'}")
             print(f"  Check --output_name and --output_dir point to a trained checkpoint.")
             print(f"  Available checkpoints:")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_c")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_sft")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_grpo_c")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_grpo_d")
             return
         print(f"  Checkpoint    : {checkpoint_path}")
         print(f"  HF username   : {args.hf_username}")

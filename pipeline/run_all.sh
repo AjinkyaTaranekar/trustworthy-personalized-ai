@@ -6,10 +6,10 @@
 # Each stage checks its output checkpoint before running — fully resumable.
 #
 # Usage (from repo root on a GPU machine):
-#   bash pipeline/run_all.sh                   # run all stages
-#   bash pipeline/run_all.sh --from stage3     # resume from a specific stage
-#   bash pipeline/run_all.sh --dry_run         # print plan without executing
-#   bash pipeline/run_all.sh --stages 2,3,4    # run specific stages only
+#   bash run_all.sh                   # run all stages
+#   bash run_all.sh --from stage3     # resume from a specific stage
+#   bash run_all.sh --dry_run         # print plan without executing
+#   bash run_all.sh --stages 2,3,4    # run specific stages only
 #
 # Stage map:
 #   Stage 1  — SFT data quality check (skip if data exists)
@@ -50,8 +50,8 @@ SERVER_PORT=8000
 SERVER_PORT_BASE=8001  # for base-model comparison runs
 
 # ── Feature flags — read from environment (PIPELINE_* prefix) ─────────────────
-# These mirror pipeline/config.py defaults. Override with env vars, e.g.:
-#   PIPELINE_ENABLE_USER_MODELLING=true bash pipeline/run_all.sh
+# These mirror config.py defaults. Override with env vars, e.g.:
+#   PIPELINE_ENABLE_USER_MODELLING=true bash run_all.sh
 ENABLE_USER_MODELLING="${PIPELINE_ENABLE_USER_MODELLING:-false}"
 ENABLE_EMPATHY="${PIPELINE_ENABLE_EMPATHY:-false}"
 ENABLE_GRPO="${PIPELINE_ENABLE_GRPO:-true}"
@@ -212,7 +212,7 @@ if [ "$ENABLE_EMPATHY" = "true" ]; then
     section "Stage 0.5 — Appraisal Labelling (AppraisePLM on EmpatheticDialogues)"
     run_or_dry "python '$PIPELINE/appraisal_labeller.py' --output '$APPRAISAL_LABELS'" \
       && ok "Appraisal labels written to $APPRAISAL_LABELS" \
-      || fail "appraisal_labeller.py failed — check AppraisePLM setup (see pipeline/appraisal_labeller.py)"
+      || fail "appraisal_labeller.py failed — check AppraisePLM setup (see appraisal_labeller.py)"
   fi
 else
   info "ENABLE_EMPATHY=false — skipping appraisal labelling"

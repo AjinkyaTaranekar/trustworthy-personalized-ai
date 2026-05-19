@@ -17,14 +17,14 @@ Outputs:
   data/sft_stats.json             — dataset statistics
 
 Usage:
-    python pipeline/sft_dataset_assembler.py
-    python pipeline/sft_dataset_assembler.py \\
+    python sft_dataset_assembler.py
+    python sft_dataset_assembler.py \\
         --part_a data/train_partA.jsonl \\
         --part_b data/train_partB.jsonl \\
         --output_dir data/
 
     # Skip individual stages:
-    python pipeline/sft_dataset_assembler.py --no_native --no_robustness
+    python sft_dataset_assembler.py --no_native --no_robustness
 """
 
 import argparse
@@ -726,7 +726,7 @@ def run(
     print(f"\nTool-turn examples : {stats['train']['tool_turn_examples']}")
     print(f"Native examples    : {stats['train']['native_tool_examples']}")
     print(f"\nNext step → train:")
-    print(f"  python pipeline/2_model_trainer.py --mode sft --data_dir {output_dir}")
+    print(f"  python 2_model_trainer.py --mode sft --data_dir {output_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -737,9 +737,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="SFT dataset assembler v3 — load, filter, transform, augment, split"
     )
-    parser.add_argument("--part_a",      default="pipeline/data/train_partA_v3.jsonl")
-    parser.add_argument("--part_b",      default="pipeline/data/train_partB_v3.jsonl")
-    parser.add_argument("--output_dir",  default="pipeline/data")
+    parser.add_argument("--part_a",      default="data/train_partA_v3.jsonl")
+    parser.add_argument("--part_b",      default="data/train_partB_v3.jsonl")
+    parser.add_argument("--output_dir",  default="data")
     parser.add_argument("--eval_frac",   type=float, default=0.10)
     parser.add_argument("--max_per_category", type=int, default=MAX_PER_CATEGORY)
     parser.add_argument("--seed",        type=int,   default=42)

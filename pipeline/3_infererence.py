@@ -9,8 +9,8 @@ Install dependencies:
     pip install fastapi uvicorn pydantic
 
 Usage:
-    python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
-    python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
+    python 3_infererence.py --model_dir models/checkpoint_sft --port 8000
+    python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 
 Endpoints:
     GET  /health                   liveness + model name
@@ -1206,7 +1206,7 @@ def main() -> None:
     # ── User memory store ─────────────────────────────────────────────────
     if _user_memory_importable and _UserMemoryStoreClass is not None:
         _TOOL_REGISTRY._user_memory = _UserMemoryStoreClass()
-        print("[USER MEMORY] User memory store initialised (pipeline/data/user_memory/)")
+        print("[USER MEMORY] User memory store initialised (data/user_memory/)")
     else:
         print("[USER MEMORY] user_memory module not available — user_memory tools disabled")
 
@@ -1227,9 +1227,9 @@ def main() -> None:
         print("[HARNESS] Disabled (set PIPELINE_ENABLE_HARNESS=true to enable)")
 
     print(f"\nNext step (in a separate terminal once server is up) → benchmark:")
-    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port}")
+    print(f"  python 4_benchmark.py --server_url http://localhost:{args.port}")
     print(f"  # Save SFT constitution baseline (run once before any GRPO):")
-    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port} --probe_only --save_as_baseline")
+    print(f"  python 4_benchmark.py --server_url http://localhost:{args.port} --probe_only --save_as_baseline")
     print(f"Ready. Listening on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
