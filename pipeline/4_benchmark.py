@@ -317,11 +317,16 @@ def run_probe(
 
     for q in questions:
         history.append({"role": "user", "content": q})
-        result = _complete(
-            server_url, history, tool_profile, system, max_new_tokens, temperature,
-            harness_enabled=harness_enabled,
-        )
-        final_response = result["response"]
+        try:
+            result = _complete(
+                server_url, history, tool_profile, system, max_new_tokens, temperature,
+                harness_enabled=harness_enabled,
+            )
+            final_response = result["response"]
+        except Exception as e:
+            print(f"  [ERROR] Server error on probe {probe['id']}: {e}")
+            final_response = f"[SERVER ERROR: {e}]"
+            result = {}
         history.append({"role": "assistant", "content": final_response})
 
     try:
@@ -633,13 +638,18 @@ def run_adversarial_probes(
 
         for q in questions:
             history.append({"role": "user", "content": q})
-            res = _complete(
-                server_url, history,
-                probe["tool_profile"],
-                probe.get("system"),
-                max_new_tokens, temperature,
-            )
-            final_response = res["response"]
+            try:
+                res = _complete(
+                    server_url, history,
+                    probe["tool_profile"],
+                    probe.get("system"),
+                    max_new_tokens, temperature,
+                )
+                final_response = res["response"]
+            except Exception as e:
+                print(f"  [ERROR] Server error on probe {probe['id']}: {e}")
+                final_response = f"[SERVER ERROR: {e}]"
+                res = {}
             history.append({"role": "assistant", "content": final_response})
 
         try:
@@ -758,8 +768,12 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     for idx, q in enumerate(qs, 1):
         print(f"\n  Turn {idx}/{len(qs)}: {q[:70]}...")
         history.append({"role": "user", "content": q})
-        result = _complete(server_url, history, "all_tools",
-                           max_new_tokens=max_new_tokens, temperature=temperature)
+        try:
+            result = _complete(server_url, history, "all_tools",
+                               max_new_tokens=max_new_tokens, temperature=temperature)
+        except Exception as e:
+            print(f"  [ERROR] Turn {idx} failed: {e}")
+            result = {"response": f"[SERVER ERROR: {e}]", "metrics": {}}
         history.append({"role": "assistant", "content": result["response"]})
         tm = _turn_metrics(result, q, idx)
         turns.append(tm)
@@ -773,8 +787,12 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
     edge_results = []
     for ec in EDGE_CASE_QUESTIONS:
         print(f"  [{ec['label']}] ({ec['profile']}) {ec['q'][:60]}...")
-        result = _complete(server_url, [{"role": "user", "content": ec["q"]}],
-                           ec["profile"], max_new_tokens=512, temperature=temperature)
+        try:
+            result = _complete(server_url, [{"role": "user", "content": ec["q"]}],
+                               ec["profile"], max_new_tokens=512, temperature=temperature)
+        except Exception as e:
+            print(f"  [ERROR] Edge case {ec['label']} failed: {e}")
+            result = {"response": f"[SERVER ERROR: {e}]", "metrics": {}}
         edge_results.append({
             "label": ec["label"],
             "tool_profile": ec["profile"],

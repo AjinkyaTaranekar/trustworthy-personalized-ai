@@ -914,7 +914,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
                     conv.append({
                         "role": "user",
-                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error),
+                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error, active_tools),
                     })
                     fallback, _, n_tok, _ = _generate(
                         conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
