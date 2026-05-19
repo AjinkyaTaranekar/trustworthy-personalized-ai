@@ -525,6 +525,7 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
         return _generate_gguf(conversation, max_new_tokens, temperature, greedy, tools)
     prompt = _TOKENIZER.apply_chat_template(
         conversation, tokenize=False, add_generation_prompt=True, tools=tools,
+        enable_thinking=True,
     )
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     n_in = inputs["input_ids"].shape[1]

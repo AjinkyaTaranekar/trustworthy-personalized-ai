@@ -544,6 +544,7 @@ def messages_to_text(example, tokenizer):
             tokenize=False,
             add_generation_prompt=False,
             tools=native_tools,
+            enable_thinking=True,
         )
     }
 
@@ -839,6 +840,7 @@ class ModelTrainer:
         import torch
         prompt_text = self.tokenizer.apply_chat_template(
             prompt_msgs, tokenize=False, add_generation_prompt=True,
+            enable_thinking=True,
         )
         inputs = self.tokenizer(prompt_text, return_tensors="pt").to("cuda")
         n_in = inputs["input_ids"].shape[1]
@@ -939,6 +941,7 @@ class ModelTrainer:
                     continue
                 prompt_text = self.tokenizer.apply_chat_template(
                     prompt, tokenize=False, add_generation_prompt=True,
+                    enable_thinking=True,
                 )
                 rewards = reward_fn(
                     prompts=[prompt_text],
