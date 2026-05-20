@@ -50,7 +50,7 @@ except ImportError:
 
 MODEL_CONFIG = {
     "base_model":     "unsloth/Qwen3-0.6B",
-    "max_seq_length": 2048,  # 4096 is marginal on 16 GB VRAM (A4000); raise if you have 24 GB+
+    "max_seq_length": 3072,  # 2048 truncates long tool+answer examples; 3072 fits A100 40GB, marginal on A4000 16GB
     "load_in_4bit":   True,
     "lora_r":         16,
     "lora_alpha":     32,
@@ -800,12 +800,26 @@ class ModelTrainer:
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        # Save loss history for thesis charts
-        loss_path = self.output_dir / output_name / "loss_history.json"
-        loss_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(loss_path, "w") as f:
-            json.dump(trainer.state.log_history, f, indent=2)
+        # Save loss history in checkpoint dir (for recovery) AND under reports/training/<name>/
+        import datetime as _dt
+        _ts = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        _reports_dir = self.output_dir.parent / "reports" / "training" / output_name
+        _reports_dir.mkdir(parents=True, exist_ok=True)
+        loss_path     = self.output_dir / output_name / "loss_history.json"
+        reports_path  = _reports_dir / f"loss_history_{_ts}.json"
+        loss_payload  = {
+            "model":     output_name,
+            "phase":     "sft",
+            "timestamp": _ts,
+            "config":    {**SFT_CONFIG, **MODEL_CONFIG},
+            "log":       trainer.state.log_history,
+        }
+        for p in (loss_path, reports_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                json.dump(loss_payload, f, indent=2)
         print(f"  Loss history  : {loss_path}")
+        print(f"  Loss report   : {reports_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
@@ -930,12 +944,28 @@ class ModelTrainer:
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        # Save GRPO loss history
-        loss_path = self.output_dir / output_name / "grpo_loss_history.json"
-        loss_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(loss_path, "w") as f:
-            json.dump(trainer.state.log_history, f, indent=2)
+        # Save GRPO loss history in checkpoint dir AND under reports/training/<name>/
+        import datetime as _dt
+        _ts = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        _reports_dir = self.output_dir.parent / "reports" / "training" / output_name
+        _reports_dir.mkdir(parents=True, exist_ok=True)
+        loss_path     = self.output_dir / output_name / "grpo_loss_history.json"
+        reports_path  = _reports_dir / f"grpo_loss_history_{_ts}.json"
+        loss_payload  = {
+            "model":        output_name,
+            "phase":        "grpo",
+            "timestamp":    _ts,
+            "reward_type":  reward_type,
+            "config":       {**GRPO_CONFIG},
+            "reward_weights": REWARD_WEIGHTS,
+            "log":          trainer.state.log_history,
+        }
+        for p in (loss_path, reports_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                json.dump(loss_payload, f, indent=2)
         print(f"  GRPO loss history: {loss_path}")
+        print(f"  GRPO loss report : {reports_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")

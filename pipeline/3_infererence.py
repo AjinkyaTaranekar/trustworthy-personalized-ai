@@ -667,7 +667,7 @@ class CompletionRequest(BaseModel):
     messages: List[Message]
     tool_profile: str = "all_tools"
     system_override: Optional[str] = None   # probes use this to inject custom context
-    max_new_tokens: int = 1024
+    max_new_tokens: int = 2048
     temperature: float = 0.7
     max_tool_iterations: int = 8
     greedy: bool = False   # deterministic decoding — set True for reproducible degradation evals
