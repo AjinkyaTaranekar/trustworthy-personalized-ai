@@ -427,7 +427,7 @@ def _call_with_stop(
         if _adaptive_sem:
             _adaptive_sem.acquire()
         try:
-            kwargs: dict = dict(model=model, messages=messages, max_tokens=max_tokens)
+            kwargs: dict = dict(model=model, messages=messages, max_tokens=max_tokens, timeout=120)
             if api_base:
                 kwargs["api_base"] = api_base
             if stop:
