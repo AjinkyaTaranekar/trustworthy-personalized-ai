@@ -941,8 +941,13 @@ def _process_one_v3(
 # Background watcher — commit+push output file every N new lines
 # ---------------------------------------------------------------------------
 
-def _watcher_thread(out_path: Path, threshold: int, interval: int = 30) -> None:
-    """Daemon thread: commit+push output file every `threshold` new non-blank lines."""
+def _watcher_thread(out_path: Path, threshold: int, interval: int = 30, cooldown: int = 600) -> None:
+    """Daemon thread: commit+push output file every `threshold` new non-blank lines.
+
+    `cooldown` (seconds) is the minimum time between commits — guards against
+    line-by-line spam when threshold is small or the process is restarted frequently.
+    """
+    threshold = max(threshold, 50)  # never commit more granularly than 50-line chunks
     try:
         repo_root = Path(
             subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode().strip()
@@ -958,12 +963,14 @@ def _watcher_thread(out_path: Path, threshold: int, interval: int = 30) -> None:
             return 0
     baseline = _count()
     last_committed = (baseline // threshold) * threshold
-    print(f"[watcher] started — file: {out_path.name}, threshold: {threshold} lines/commit", flush=True)
+    last_commit_time = 0.0
+    print(f"[watcher] started — file: {out_path.name}, threshold: {threshold} lines/commit, cooldown: {cooldown}s", flush=True)
     while True:
         time.sleep(interval)
         current = _count()
         checkpoint = (current // threshold) * threshold
-        if checkpoint > last_committed:
+        now = time.monotonic()
+        if checkpoint > last_committed and (now - last_commit_time) >= cooldown:
             msg = f"data: auto-checkpoint — {current} lines in {out_path.name}"
             try:
                 subprocess.run(["git", "add", str(rel_path)], cwd=repo_root, check=True)
@@ -971,8 +978,12 @@ def _watcher_thread(out_path: Path, threshold: int, interval: int = 30) -> None:
                 subprocess.run(["git", "push"], cwd=repo_root, check=True)
                 print(f"[watcher] committed + pushed at {current} lines", flush=True)
                 last_committed = checkpoint
+                last_commit_time = now
             except subprocess.CalledProcessError as exc:
                 print(f"[watcher] git error: {exc}", flush=True)
+        elif checkpoint > last_committed:
+            remaining = int(cooldown - (now - last_commit_time))
+            print(f"[watcher] {current} lines — cooldown active, {remaining}s remaining", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1132,8 +1143,10 @@ def main() -> None:
     p.add_argument("--base_delay", type=float, default=3.0)
     p.add_argument("--watch_commit", action="store_true",
                    help="Commit+push output file every --watch_threshold new lines in a background daemon thread")
-    p.add_argument("--watch_threshold", type=int, default=50,
-                   help="Lines between auto-commits when --watch_commit is active (default 50)")
+    p.add_argument("--watch_threshold", type=int, default=200,
+                   help="Lines between auto-commits when --watch_commit is active (default 200, min enforced 50)")
+    p.add_argument("--watch_cooldown", type=int, default=600,
+                   help="Minimum seconds between auto-commits (default 600 = 10 min)")
     args = p.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
@@ -1142,7 +1155,7 @@ def main() -> None:
 
     if args.watch_commit:
         out_abs = Path(args.output).resolve()
-        wt = threading.Thread(target=_watcher_thread, args=(out_abs, args.watch_threshold), daemon=True)
+        wt = threading.Thread(target=_watcher_thread, args=(out_abs, args.watch_threshold, 30, args.watch_cooldown), daemon=True)
         wt.start()
 
     cli_keys = [k.strip() for k in args.api_keys.split(",") if k.strip()] if args.api_keys else None
