@@ -755,11 +755,16 @@ class ModelTrainer:
         # GRPOConfig — DAPO settings where supported by TRL
         # If your TRL version does not have clip_range_ratio_high, it falls back
         # to symmetric clipping (vanilla GRPO).  Pin trl>=0.13.0 for best support.
+        # kl_coef was renamed to beta in TRL >=0.14; try beta first, fall back to kl_coef
+        import inspect as _inspect
+        _grpo_params = set(_inspect.signature(GRPOConfig.__init__).parameters)
+        _kl_key = "beta" if "beta" in _grpo_params else "kl_coef"
+
         grpo_kwargs = dict(
             output_dir=str(self.output_dir / output_name),
             num_generations=GRPO_CONFIG["num_generations"],
             learning_rate=GRPO_CONFIG["learning_rate"],
-            kl_coef=GRPO_CONFIG["kl_coef"],
+            **{_kl_key: GRPO_CONFIG["kl_coef"]},
             clip_range_ratio=GRPO_CONFIG["clip_range_ratio"],
             temperature=GRPO_CONFIG["temperature"],
             max_new_tokens=GRPO_CONFIG["max_new_tokens"],
@@ -772,6 +777,7 @@ class ModelTrainer:
             optim=GRPO_CONFIG["optim"],
             report_to="none",
         )
+        print(f"  KL penalty key: {_kl_key}={GRPO_CONFIG['kl_coef']}")
 
         # Attempt DAPO Clip-Higher if TRL supports it
         try:
