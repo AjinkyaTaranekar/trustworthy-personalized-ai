@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: meta
-updated: 2026-04-30
+updated: 2026-05-12
 ---
 
 # Index
@@ -17,6 +17,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Topics
 
+- [[topics/constitution-psychological-grounding]] — all 19 constitution principles mapped to peer-reviewed psychology/HCI theory (Mayer 1995, Kahneman 2011, Clark & Brennan 1991, etc.)
 - [[topics/llm-foundations]] — tokenisation, attention, embeddings; why monolithic LLMs fail
 - [[topics/reasoning]] — trustworthy reasoning across SFT, RL, architecture, evaluation
 - [[topics/personalisation]] — 5W+H, GraphRAG, cold start; over-personalisation failure modes; scrutability
@@ -28,7 +29,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Entities
 
-- [[entities/constitution]] — 19-principle SFT v2 constitution
+- [[entities/constitution]] — 23-principle SFT v2 constitution
 - [[entities/grpo]] — group relative policy optimisation (the repo's RL algorithm)
 - [[entities/mcp]] — Model Context Protocol — "USB for AI"
 - [[entities/rag]] — retrieval-augmented generation pattern
@@ -36,6 +37,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[entities/graph-rag]] — KG-backed RAG for user-state memory
 - [[entities/5w-h]] — who/what/when/where/why/how user-modelling schema
 - [[entities/appraisal-theory]] — structured empathy substrate
+- [[entities/tml-interaction-small]] — Thinking Machines Lab 276B/12B MoE; 0.40s real-time multimodal; frontier scale/privacy contrast
 
 ## Sources
 
@@ -70,6 +72,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ### Papers — Small-model / distillation
 - [[sources/papers/self-enhanced-reasoning]] — SERT small-model self-training
+- [[sources/papers/simple-self-distillation]] — SSD: sample → SFT on own outputs; no verifier/teacher/RL; foundation for Constitutional SSD adaptation
 - [[sources/papers/dual-head-reasoning-distillation]] — train-time-only reasoning
 - [[sources/papers/token-hungry-deepseek-r1]] — accuracy-vs-efficiency trade-off
 
@@ -125,6 +128,15 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/papers/phi4-tr]] (Literature Note only) — Phi-4 14B; data quality > scale; surpasses GPT-4o on STEM-QA
 - [[sources/papers/gpt5-system-card]] (Literature Note only) — GPT-5 system card; sycophancy + prompt injection as safety challenges
 
+### Advisor meetings (supervisor–student)
+- [[sources/meetings/september2025]] — First meeting: scrutability framing, Inside Out multi-agent concept, AI as "sociopath"
+- [[sources/meetings/october2025]] — RL for thought processes, values-interpreter architecture, ethical AI companion risks
+- [[sources/meetings/november2025]] — Ontology-LLM pivot (Nov 11); interleaved thinking + scrutability (late Nov)
+- [[sources/meetings/december2025]] — Research plan refinement; prototype scope defined; ethical/GDPR flags
+- [[sources/meetings/january2026]] — Boolean/math GPT failure → hybrid delegation architecture confirmed
+- [[sources/meetings/february2026]] — Behaviourism lens; post-hoc constraint vs in-model change; focus contraction
+- [[sources/meetings/april2026]] — Constitution drift + probes vs tests; Apple internship June–Sept 2026; dissertation timeline
+
 ### Dissertation drafts (user-authored raw)
 - [[sources/dissertation/research-plan]] — formal CS7CS6 plan: title, 5 objectives, 7 phases, 2 pivots
 - [[sources/dissertation/road-towards-trustworthy-empathetic-ai]] — main thesis argument + literature review
@@ -134,17 +146,23 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/dissertation/security-privacy-social-ethics]] — security analysis: local-first privacy argument, Log-To-Leak, alignment regression, critique-loop SPOF, dependency/deskilling ethics
 
 ### Code (pipeline summaries)
-- [[sources/code/sft-v2-pipeline]] — constitution-driven data generation
-- [[sources/code/constitution-document]] — full 19-principle source
-- [[sources/code/training-and-benchmark]] — v1 scripts + LoRA + GRPO + benchmark + context degradation
+- [[sources/code/sft-v2-pipeline]] — SFT v2/v3 data generation pipeline: Part A + Part B → transform → robustness variants → native tool examples → train_sft_v3_robust.jsonl
+- [[sources/code/sft-v3-pipeline]] — v3 asymmetric distillation: intercept loop, negative trajectories, curriculum training
+- [[sources/code/constitution-document]] — full 23-principle source
+- [[sources/code/training-and-benchmark]] — SFT + GRPO (DAPO) + dual tool-call modes (xml/native) + Experiment 0 + adversarial suite + run_all.sh + preflight
 
 ## Experiments
 
 - [[experiments/experiment-catalog]] — all six experiments + ablation A/B/C/D
+- [[experiments/frontier-model-comparison]] — study design comparing Qwen3-0.6B (base + fine-tuned) vs Claude Sonnet 4.6, Minimax M2.7, Kimi K2.6 across 50 prompts; two evaluation tracks (automated + human)
+- [[experiments/human-evaluation-rubric]] — 12-item Likert rubric from Mayer et al. trust model + Davis empathy index; the external human-judgment ground truth
 
 ## Decisions
 
+- [[decisions/2025-10-01-four-module-architecture]] — **binding** Pivot 1: Reasoning / User Modelling / Tool Integration / Generator modules; Professor Conlan feedback; anchors entire thesis design
 - [[decisions/2025-11-10-ontology-focus-shift]] — primary focus moves to ontology-LLM integration
+- [[decisions/2026-05-14-scratchpad-tool]] — scratchpad working memory + P24/P25 principles + partial-capability honesty training (spec + plan in docs/superpowers/)
+- [[decisions/2026-05-03-research-question-reframe]] — operational hypothesis added: on-device 0.6B model vs frontier models; psychological grounding for constitution; human evaluation rubric introduced
 
 ## Questions
 
@@ -153,7 +171,8 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 ## Queries
 
-_None yet. Ask me a durable question and I will offer to file the answer here._
+- [[queries/grpo-and-personalisation-master-plan]] — two-track implementation roadmap: GRPO trainer (Track 1) + 5W+H graph-memory empathy stack (Track 2); industry benchmarks; 8-paper acquisition list; 6-week sequencing plan
+- [[queries/full-pipeline-implementation-plan]] — phase-by-phase build plan for all six modules (SFT, GRPO, User Modelling, Empathy, Ontology Verifier, Retrieval Gating) with feature flags; parallel/sequential dependency map; GPU-day checklist
 
 ---
 

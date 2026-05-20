@@ -1,0 +1,31 @@
+version: "3.9"
+
+# Trustworthy Personalised AI — local service dependencies
+#
+# Usage:
+#   docker compose up -d          # start in background
+#   docker compose down           # stop (data volume persists)
+#   docker compose down -v        # stop + wipe graph data (full reset)
+#
+# Required when ENABLE_USER_MODELLING=True in pipeline/config.py.
+# FalkorDB exposes a Redis-compatible interface on port 6379.
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: pipeline_falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  falkordb_data:
+    driver: local

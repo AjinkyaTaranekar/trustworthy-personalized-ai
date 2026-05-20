@@ -3,5 +3,17 @@ trl
 transformers
 datasets
 torch
+accelerate
+bitsandbytes
 litellm
 python-dotenv
+fastapi
+uvicorn
+pydantic
+falkordb
+pyyaml
+rouge-score
+requests
+huggingface_hub
+exa-py
+pytest

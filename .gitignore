@@ -137,3 +137,4 @@ Thumbs.db
 pipeline/models/
 pipeline/unsloth_compiled_cache/
 pipeline/.env
+unsloth_compiled_cache/

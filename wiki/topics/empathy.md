@@ -1,12 +1,12 @@
 ---
 title: Empathy
 type: topic
-tags: [empathy, appraisal-theory]
+tags: [empathy, appraisal-theory, small-model, graph-memory]
 sources:
   - docs/Dissertation/Road Towards Trustworthy and Empathetic AI.md
   - docs/Dissertation/Experimental Planning Document.md
-updated: 2026-04-30
-status: stub
+updated: 2026-05-01
+status: draft
 ---
 
 # Empathy
@@ -49,12 +49,22 @@ A highly personalised and empathetic model creates two risks identified in the [
 - [[entities/appraisal-theory]] · [[entities/5w-h]]
 - [[experiments/experiment-catalog]] — Experiments 2 + 3
 
+## Industry reference: Hume AI EVI
+
+Hume AI's Empathic Voice Interface (EVI) uses 48 emotion dimensions fused from voice prosody, intonation, pacing, and linguistic context — validated across 50+ languages and grounded in 53+ peer-reviewed publications. Hume partnered with Anthropic in 2024 to add emotionally intelligent voice interactions to Claude. The architectural pattern is identical to this thesis's text-only approach: a separate emotion-detection module (their prosody tagger, this thesis's AppraisePLM) gates generation style before the language model produces output. The key validation: emotion detection as a modular component that conditions generation is the production-validated approach, not an experimental hypothesis.
+
 ## Sources (ingested)
 
 - [[sources/papers/xai-sentiment-deepseek-r1]] — transparent reasoning for affective classification
 - [[sources/papers/dual-head-reasoning-distillation]] — cheap-inference template for the appraisal tagger
 - [[sources/papers/interleaved-reasoning]] — TTFT win matters for perceived empathy
 - [[sources/dissertation/security-privacy-social-ethics]] — §5 social-ethical concerns (dependency + deskilling)
+- [[sources/papers/appraise-plm]] — AppraisePLM: 21-dim appraisal regression; supervisor Conlan co-author; Experiment 2 unblocked; code at https://github.com/alokdebnath/appraise-PLM
+
+## Sources (to acquire — see [[questions/2026-04-30-asset-acquisition-todo]])
+
+- Simulating Emotions with Appraisal + RL (CHI 2024) — integrates OCC appraisal dimensions with RL; validates appraisal-conditioned generation approach; directly citable for Layer 4
+- Graph-based Agent Memory survey (arXiv:2602.05665) — taxonomy covering empathic agent memory architectures
 
 ## Raw
 

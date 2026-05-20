@@ -61,17 +61,21 @@ Concrete artefacts with their own pages in `entities/`.
 | Tag | Count | Meaning |
 | --- | ----- | ------- |
 | `grpo` | 5 | Group Relative Policy Optimization |
+| `dapo` | 1 | Decoupled Clip and Dynamic Sampling Policy Optimization — ByteDance improvement to GRPO; fixes entropy collapse and length bias |
 | `ppo` | 1 | Proximal Policy Optimization (value-based RL baseline) |
 | `mcp` | 2 | Model Context Protocol |
-| `constitution` | 3 | The 19-principle constitution |
+| `constitution` | 3 | The 23-principle constitution |
+| `constitutional-ai` | 1 | Asymmetric context distillation approach (CAI-style teacher→student behaviour transfer, distinct from the project's constitution entity) |
 | `principles` | 2 | The individual constitution principles |
 | `graph-rag` | 1 | KG-backed RAG for user memory |
+| `graph-memory` | 1 | Graph-based agent memory systems (Mem0g, Cognee, FalkorDB patterns) — distinct from graph-rag in that it covers the write/update pipeline, not just retrieval |
 | `5w-h` | 1 | Who/What/When/Where/Why/How user-modelling schema |
 | `appraisal-theory` | 3 | Appraisal-theoretic emotion framework |
 | `transformers` | 2 | Transformer architecture (as a named family) |
 | `bpe` | 1 | Byte-Pair Encoding |
 | `deepseek` | 2 | DeepSeek model family |
 | `qwen` | 1 | Qwen model family |
+| `gemma` | 1 | Gemma model family (Google) — used as secondary comparison model alongside Qwen in small-model experiments |
 
 ## Modalities
 | Tag | Count | Meaning |
@@ -80,6 +84,8 @@ Concrete artefacts with their own pages in `entities/`.
 | `vision-language` | 1 | VLMs specifically |
 | `gui` | 1 | GUI-agent tasks |
 | `small-model` | 3 | Sub-7B model work |
+| `on-device` | 1 | Local / edge deployment — model runs on user's device with no persistent internet access; key to the privacy guarantee |
+| `psychology` | 3 | Theoretical grounding in psychology / HCI literature (Mayer trust model, metacognition, conversational theory) — distinct from `empathy` which covers appraisal theory |
 
 ## Evaluation & caveats
 | Tag | Count | Meaning |
@@ -103,6 +109,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `exploration` | 1 | Open exploration items (pre-decision) |
 | `questions` | 1 | Open-question files |
 | `bootstrap` | 1 | Generated at wiki bootstrap — may need later revision |
+| `advisor-meeting` | 7 | Summary pages for Owen Conlan / Ajinkya advisor meetings — source layer for research decision history |
 
 ## Workflow & infrastructure
 | Tag | Count | Meaning |
@@ -110,6 +117,7 @@ Concrete artefacts with their own pages in `entities/`.
 | `code` | 3 | Code-scoped source pages |
 | `pipeline` | 1 | The SFT/RL pipeline as a whole |
 | `training` | 2 | Training-time concerns |
+| `curriculum-learning` | 1 | Staged training: easy→hard sequencing or replay-based anti-drift across multiple SFT stages |
 | `benchmark` | 1 | Benchmark harness / script |
 | `context-degradation` | 1 | Multi-turn context-length eval |
 | `experiments` | 2 | Experiment catalog / design |
@@ -141,7 +149,7 @@ These appeared once or twice in early files and have been normalised away.
 | `framework` | _drop_ | Too broad; use the specific framework tag (`5w-h`, `appraisal-theory`) |
 | `affect` | `empathy` | Redundant |
 | `emotion` | `empathy` | Redundant |
-| `psychology` | `empathy` | Redundant |
+| `psychology` | — | **Re-registered** — now used specifically for pages grounding the constitution or training pipeline in peer-reviewed psychology/HCI theory (trust models, metacognition, conversational theory). Distinct from `empathy` which covers appraisal theory specifically. |
 | `experiment-6` | `ontology` | Don't tag by experiment number — experiments get renumbered |
 | `benchmarks` | `evaluation` | Keep evaluation as the umbrella |
 

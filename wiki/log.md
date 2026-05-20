@@ -6,6 +6,349 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-14] refactor | SFT v3 Asymmetric Distillation Pipeline
+- Added `pipeline/sft_v3_generator.py`: teacher prompt with full 25-principle constitution, stop-sequence intercept loop for live tool execution via exa.ai, failure injection for `inventory_constraint` (missing tool) and `environment_timeout` (503 injection) categories, context swap replacing teacher system prompt with ≤50-word student prompt before saving to JSONL
+- Added `pipeline/validate_sft_data.py`: pre-flight quality gate enforcing 5 invariants (system prompt length, think block length, banned placeholders, tool sequence integrity, end-to-end resolution)
+- Updated `pipeline/sft_question_generator.py`: added `inventory_constraint` (60 questions) and `environment_timeout` (60 questions) negative trajectory categories
+- Updated `pipeline/2_model_trainer.py`: `--curriculum_stage {1,2,3}` for staged SFT, `--from_checkpoint` for loading prior stage checkpoint, `--v3_format` to disable CAPABILITY_CHECK requirement in GRPO format reward
+- Rationale: capacity paradox (0.6B model wastes attention on rule-recitation), synthetic laziness (single-pass generation with placeholder think blocks), hallucinated execution (no real tool results during teacher generation)
+
+## [2026-05-14] decision | Scratchpad tool + P24/P25 — implementation complete
+
+- Created `pipeline/scratchpad.py` — `ScratchpadStore`: session-scoped in-memory working memory. `read(session_id)` returns full pad with constitution TLDR + context + tasks + notes. `update(session_id, section, content)` overwrites a writable section. `get_task_status(session_id)` returns compact task line for injection. `destroy(session_id)` clears the session. 14 unit tests.
+- Added P24a and P24b to `pipeline/constitutional_harness.py` — P24a fires when 3+ non-scratchpad tool calls with no `scratchpad_read()`. P24b fires when any `[YES]` or `[YES-NEXT]` task remains in pad when `<answer>` appears. Both skipped if `scratchpad_store=None`. 8 new tests; 34 total passing.
+- Updated `pipeline/3_infererence.py` — scratchpad import and global store, `_scratchpad_read` + `_scratchpad_update` handlers, both tools registered, all four `TOOL_PROFILES` now include `scratchpad_read/update`, session binding per request (`_CURRENT_SESSION_ID`), task-status injection after each non-scratchpad tool result, scratchpad note added to `_system_prompt_for_profile`, store passed to harness at startup, `session_id` threaded to `check_and_steer`.
+- Added P24 (SCRATCHPAD-FIRST) and P25 (PARTIAL CAPABILITY DECLARATION) to `pipeline/constitution.md` with full worked examples and summary table rows.
+- Updated `pipeline/sft_gold_response_generator.py` — P24/P25 added to `TRAINING_SYSTEM_PROMPT_TEMPLATE` and `CRITIQUE_PROMPT`; scratchpad tool syntax added to `DRAFT_PROMPT`; two new `IDEAL_BEHAVIORS` entries; `pick_tool_profile` handles new categories; `PREFER_SEARCH_CATEGORIES` includes `scratchpad_decomposition`.
+- Updated `pipeline/sft_question_generator.py` — two new categories: `scratchpad_decomposition` (150 examples, teaches full P24 workflow) and `partial_capability_honest` (100 examples, teaches P25 YES/BLOCKED pattern).
+- Spec: `docs/superpowers/specs/2026-05-13-scratchpad-tool-design.md`.
+- Plan: `docs/superpowers/plans/2026-05-13-scratchpad-tool-implementation.md`.
+
+## [2026-05-14] refactor | Tool error fallback in inference loop
+
+- **Why:** repeated tool calls on safety-validator failures (e.g., blocked imports) caused retry loops and no final answer.
+- **Fix:** classify tool errors, mark safety-validator failures as non-retryable, and fall back to a no-tool answer after repeated tool errors.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/training-and-benchmark.md`, `wiki/log.md`.
+
+## [2026-05-14] refactor | Enforce v3-style tool turns at inference
+
+- **Why:** even with v3 training, the model can emit `<tool>…</tool><answer>…</answer>` in a single turn; keeping the answer wrapper in the conversation can bias the follow-up response.
+- **Fix:** when a tool call is detected, the server strips any `<answer>…</answer>` wrapper in that assistant turn (preserving the tool call), ensuring the tool result always appears before the final answer.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/log.md`.
+
+## [2026-05-14] refactor | Execute tool calls inside <answer>
+
+- **Why:** the model often emits `<tool>…</tool><answer>…</answer>` in a single assistant turn; the server broke on `<answer>` before parsing tools, so calls were skipped.
+- **Fix:** `chat_completions()` now parses tool calls before the `<answer>` check; if a tool is found it executes and continues the loop, otherwise it exits on `<answer>`.
+- **Files changed:** `pipeline/3_infererence.py`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/log.md`.
+
+## [2026-05-14] refactor | Add --skip_gguf flag to bypass llama.cpp on no-sudo machines
+
+- **Why:** `publish()` calls Unsloth's `save_pretrained_gguf` which internally runs `sudo apt-get` via `check_llama_cpp()` before raising `RuntimeError: llama.cpp folder does not exist` — the sudo prompt blocks the process even though the outer try/except would catch the error. On the A4000 node (no sudo), GGUF export can never succeed.
+- **Fix:** added `--skip_gguf` CLI flag; threaded `skip_gguf: bool` through `ModelTrainer.__init__`; both GGUF steps (save + push_to_hub_gguf) are guarded by `if not self._skip_gguf`; the existing try/except on `save_pretrained_gguf` now also prints a hint to use `--skip_gguf`.
+- **Files changed:** `pipeline/2_model_trainer.py`, `README.md` (publish section updated with `--skip_gguf` example and description).
+
+## [2026-05-13] ingest | TML-Interaction-Small — Thinking Machines Lab real-time multimodal model
+
+- Created `wiki/entities/tml-interaction-small.md` — entity page for Mira Murati's TML-Interaction-Small (Thinking Machines Lab, May 2026).
+- Source: news article (no technical report available). Key specs: 276B total / 12B active MoE; encoder-free early fusion of audio/video/text; 200ms micro-turn blocks; 0.40s response latency (vs GPT-Realtime at 1.18s); FD-bench V1.5 77.8 (next best: 54.3).
+- Filed as entity (not source/paper) due to news-article provenance and model nature.
+- Relevance framed in two directions: (1) micro-turn design operationalises empathic responsiveness discussed in [[topics/empathy]]; (2) cloud-only deployment at 276B illustrates the scale/privacy tradeoff that motivates the on-device argument — useful dissertation contrast.
+- Explicitly excluded from [[experiments/frontier-model-comparison]] (real-time multimodal, not text-based chat API).
+- Updated `wiki/index.md` under Entities.
+- No new tags added; `multimodal`, `latency`, `empathy`, `evaluation` sufficient.
+
+## [2026-05-13] ingest | Simple Self-Distillation (SSD) — arXiv 2604.01193
+
+- Created `wiki/sources/papers/simple-self-distillation.md` — Literature Note for "Embarrassingly Simple Self-Distillation Improves Code Generation" (Zhang et al., 2026).
+- Core technique: sample from model with temperature/truncation → fine-tune on those samples via standard SFT; no external verifier, teacher, or RL needed. 42.4% → 55.3% pass@1 on LiveCodeBench v6 (Qwen3-30B-Instruct).
+- Theoretical framing: resolves a *precision-exploration conflict* in LLM decoding by reshaping token distributions contextually.
+- Relevance flagged in three directions: (1) Constitutional SSD — substitute constitutional harness as the quality filter instead of code execution; (2) interim SFT baseline before GRPO is implemented; (3) constitution drift paper — SSD as a lightweight drift-reduction mechanism vs full GRPO retraining.
+- Cross-linked `wiki/sources/papers/self-enhanced-reasoning.md` (SERT) — both exploit latent good outputs in the model's sampling distribution.
+- Updated `wiki/index.md` under Papers — Small-model / distillation.
+- No new tags required; existing `distillation`, `sft`, `small-model`, `self-training`, `qwen`, `reasoning` cover the paper.
+- No local PDF; sourced from https://arxiv.org/abs/2604.01193.
+
+## [2026-05-12] refactor | Documentation sync — last 15 commits reflected in README and wiki
+
+- **README.md**: updated `sft_dataset_assembler.py` CLI args (`--part_a`/`--part_b`/`--output_dir`); replaced `sft_math_question_generator.py` + `sft_rejection_sampler.py` with `sft_math_pipeline.py` in repo layout; added `--resume` to all training commands; added publish mode section; updated constitution count (19→23); updated requirements (`rouge-score`, `huggingface_hub`); updated Stage 1 data filename (`train_sft_v2.jsonl`); updated blocker 1c/1d reference; added GRPO per-component reward logging note.
+- **wiki/sources/code/training-and-benchmark.md**: added loss masking section; documented `make_reward_fns` per-component logging; added `--mode publish` section; updated GRPO hyperparameters (G=4, A4000 note); updated SFT hyperparameters (batch=1, save_steps=25); replaced stale script references; updated sources frontmatter.
+- **Commits covered:** `40f152d` (publish mode) → `013fec0` (A4000 config) — 15 commits total including loss masking, dataset v3, assembler v3, GRPO reward refactor, inference optional imports, preflight multi-provider, run_all.sh auto-resume.
+
+## [2026-05-12] refactor | SFT dataset v3 — tool call format fix, system prompt sync, native JSON tool calling, robustness variants
+
+### Bug 1: training/inference tool call format mismatch (critical)
+- **Root cause:** every training example taught the model to produce `<tool>name(args)</tool><answer>…</answer>` in a **single assistant turn**. The inference server loop in `3_infererence.py` checks for `<answer>` first (line 769) and breaks before `_parse_tool_call()` is ever reached — so no tool ever actually executed at inference time. `metrics.tool_calls: {}` and `tool_iterations: 0` confirmed this in benchmark output.
+- **Fix — `pipeline/transform_sft_tool_format.py`** (new script): reads `train_sft_v2.jsonl`, splits every single-turn tool example into the multi-turn format `[assistant: <think>…<tool>…] → [tool: [TOOL_RESULT:…]] → [assistant: <answer>…]`. Re-executes `python_execute` code locally so `[TOOL_RESULT:]` contains real stdout. Synthetic placeholders used for `web_search`/`read_url` (live results not replayable). Drops 34 malformed examples (no final answer, or >5 tool calls — LLM was echoing the prompt template).
+- **Output:** `train_sft_v3.jsonl` — 1,416 examples (679 multi-turn tool, 737 no-tool, 34 dropped).
+- **Files changed:** `pipeline/transform_sft_tool_format.py` (new), `pipeline/sft_dataset_assembler.py` (quality filter updated — `passes_quality_filter()` now checks first assistant message for length/CAPABILITY_CHECK, last for `<answer>`), `pipeline/2_model_trainer.py` (3 path references updated: `train_sft_v2.jsonl` → `train_sft_v3_robust.jsonl`).
+
+### Bug 2: three different system prompts across pipeline (critical)
+- **Root cause:** `sft_gold_response_generator.py` training prompt listed all 23 constitution principles; `sft_math_pipeline.py` used a 438-char minimal prompt with no principles; `3_infererence.py` `_system_prompt_for_profile()` used a medium-length prompt with no principles and a different format. Model learned: "produce constitution behaviour only when I see the 23-principle prompt." At inference with the different prompt, generic output resulted.
+- **Fix — `_system_prompt_for_profile()` rewritten** in `3_infererence.py`: now produces output byte-identical to `make_system_prompt()` in the training generator. Canonical constants added: `_TOOL_ORDER`, `_PROFILE_NOTES`, `_CONSTITUTION` (23 principles verbatim with a comment requiring both files to stay in sync). `Session tools:` format changed from newline-separated to pipe-separated (`python_execute ✓ | web_search ✓ | …`) to match training. `<answer>` block example and tool note included in correct order.
+
+### Robustness variants — intrinsic vs in-context behaviour
+- **Problem:** 100% of training examples used the full 23-principle system prompt; model learned in-context behaviour (follows constitution because the prompt says to) not intrinsic behaviour (follows constitution regardless of prompt wording).
+- **Fix — `pipeline/sft_add_robustness_variants.py`** (new script): adds variants with three reduced system prompt levels — `minimal` (role only + tool list), `brief` (one-sentence behavioural instruction), `no_principles` (full CAPABILITY_CHECK template without the enumerated principle list). Applied at ~15%/10%/5% independent Bernoulli rates. Trains the model to produce CAPABILITY_CHECK + constitution-compliant output even when not explicitly instructed to.
+
+### Native JSON tool calling — new tools without retraining
+- **Finding (web search):** Qwen3-0.6B scored 0.880 in a tool-calling benchmark (tied #1 across all sizes) using its **native** pre-training tool format (`<tool_call>{"name":…,"arguments":{…}}</tool_call>` via `apply_chat_template(tools=[…])`). The custom XML format used in this project required the model to pattern-match specific tool names seen in SFT; native format uses pre-training generalisation and works on any schema-described tool without retraining.
+- **Fix — `pipeline/sft_add_native_tool_examples.py`** (new script): converts 20% of XML tool training examples to native format — `tool_calls`/`tool_call_id` fields in messages, schemas stored in `metadata.native_tools`. `messages_to_text()` in `2_model_trainer.py` updated to pass `tools=` to `apply_chat_template` for these examples — training text is then byte-identical to what the inference server produces in native mode.
+- **Fix — `3_infererence.py`**: added `_to_openai_schemas()`, `_parse_native_tool_call()`, `tools=` parameter to `_generate()` and `_generate_gguf()`, `tool_mode` field to `CompletionRequest` (`"xml"` default | `"native"` for new tools). In native mode `_generate_gguf` normalises GGUF's structured `tool_calls` dict to inline `<tool_call>` text so both backends share one parser.
+- **New tool procedure (no retraining):** `register_tool()` in server → add schema to `sft_add_native_tool_examples.py:TOOL_SCHEMAS` → call with `tool_mode="native"`.
+
+### Final dataset: train_sft_v3_robust.jsonl — 1,983 examples
+| Slice | Count | % |
+|---|---|---|
+| XML tool (trained behaviour) | 679 | 34.2 |
+| Native JSON tool (new-tool generalisation) | 133 | 6.7 |
+| No-tool (constitution reasoning) | 737 | 37.2 |
+| Robustness variants (minimal/brief/no-principles prompts) | 434 | 21.9 |
+
+- **SFT training started** 2026-05-12 on NVIDIA RTX A4000 (16.8 GB VRAM). Qwen3-0.6B base, LoRA r=16 α=32, 3 epochs, lr=2e-4, effective batch=8. Expected duration ~50 min.
+- **Files created:** `pipeline/transform_sft_tool_format.py`, `pipeline/sft_add_robustness_variants.py`, `pipeline/sft_add_native_tool_examples.py`.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/2_model_trainer.py`, `pipeline/sft_dataset_assembler.py`.
+- **Wiki updated:** `wiki/sources/code/training-and-benchmark.md`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/index.md`.
+
+## [2026-05-07] query | Training data analysis — train_partA.jsonl quality report
+- **Source:** `pipeline/pipeline/data/train_partA.jsonl` — 296 records, 1.76 MB.
+- **Category distribution:** 5 categories present (exact split not logged here; see CMEM S189 for full breakdown).
+- **Tool profile distribution:** 4 profiles represented (all_tools, compute_only, search_only, no_tools).
+- **Mean constitution score:** 0.885 across all records.
+- **Structural issues identified (63 records affected; 81% structurally sound):**
+  - 53 records missing `<answer>` tags — concentrated in `real_time_dependent` category where tool-call responses lack final answer wrappers.
+  - 2 records with empty `<answer>` blocks.
+  - 9 records missing `<think>` tags — primarily in `adversarial_multi_turn` examples.
+  - 1 truncated record.
+- **Root cause:** `real_time_dependent` gold response generator produces tool-call sequences without consistently wrapping the final answer; `adversarial_multi_turn` examples use a different turn format that omits `<think>` at the outer level.
+- **Decision pending:** user to decide between (A) filter to `train_partA_clean.jsonl` (~241 clean records) or (B) rerun generator to fix the problematic categories while preserving full dataset size. No action taken yet.
+- **Files touched:** none — analysis only. Temporary scripts `_analyse.py`, `_analyse2.py`, `_analyse3.py`, `_out.txt` removed after analysis.
+
+## [2026-05-07] refactor | Math pipeline — EleutherAI dataset + Kimi K2.6 default model
+- **Dataset source** switched from original MATH dataset to `EleutherAI/hendrycks_math` — more stable HuggingFace source with consistent splits.
+- **Default model** changed to `nvidia_nim/moonshotai/kimi-k2.6` — aligns math pipeline with Part A generator; single NVIDIA NIM API key covers both pipelines.
+- **Files changed:** `pipeline/sft_math_question_generator.py`.
+- **Wiki updated:** `wiki/sources/code/sft-v2-pipeline.md` (math pipeline configuration section added).
+
+## [2026-05-06] refactor | UTF-8 encoding fix — Windows console compatibility
+- Added `sys.stdout.reconfigure(encoding='utf-8')` to all three pipeline generation scripts (`sft_question_generator.py`, `sft_gold_response_generator.py`, `sft_math_question_generator.py`).
+- Fix is necessary on Windows where the default console codepage (cp1252) raises `UnicodeEncodeError` when printing non-ASCII characters from generated training examples.
+- **Files changed:** `pipeline/sft_question_generator.py`, `pipeline/sft_gold_response_generator.py`, `pipeline/sft_math_question_generator.py`.
+
+## [2026-05-06] refactor | SFT pipeline — question generator and gold response generator for 23-principle constitution
+- **Trigger:** Constitution expanded to 23 principles; question generator and gold response generator needed full refresh to cover new principles.
+- **`sft_question_generator.py`** — rewritten for 23-principle constitution. Now generates 13 categories (was 11, then 12 after appraisal_empathy was added in Phase 2). New category `interleaved_tool_reasoning` added: questions that require chaining `web_search` for data retrieval followed by `python_execute` for computation — directly trains P23 (INTERLEAVED TOOL CHAINING). Prompts now include 5W+H framing, first-principles decomposition signals, and consequence-check scaffolding in the ideal-behaviour specifications. Parallel category execution via `ThreadPoolExecutor` retained with `--workers` flag.
+- **`sft_gold_response_generator.py`** — rewritten for 23-principle constitution. `rule_check_response()` now deterministically checks P20 (first-principles section present), P21 (5W+H dimensions all addressed), P22 (CONSEQUENCE_CHECK block present), P23 (tool chain present when category is `interleaved_tool_reasoning`). `IDEAL_BEHAVIORS` entry added for `interleaved_tool_reasoning`. `TRAINING_SYSTEM_PROMPT_TEMPLATE` updated to list all 23 principles explicitly. Full 4-tool registry (`python_execute`, `web_search`, `read_url`, `get_datetime`) in system prompt.
+- **Files changed:** `pipeline/sft_question_generator.py`, `pipeline/sft_gold_response_generator.py`.
+- **Wiki updated:** `wiki/sources/code/sft-v2-pipeline.md` (categories 11→13, principles 19→23, new category table entries).
+
+## [2026-05-06] refactor | Constitution expanded to 23 principles — P20–P23 added
+- **Trigger:** Pipeline review identified four recurring epistemic failure modes not covered by P1–P19: (1) answers stated without naming underlying assumptions; (2) CAPABILITY_CHECK too narrow — skipping contextual dimensions; (3) no explicit stakes/consequence assessment before high-risk answers; (4) tool chains stopped at one tool when a second was needed for precision.
+- **New principles appended to `pipeline/constitution.md` (Part IV):**
+  - **P20 FIRST PRINCIPLES** — identify irreducible truths; flag unverified assumptions in `<think>` and hedge in `<answer>`.
+  - **P21 5W+H QUESTIONING** — every CAPABILITY_CHECK must address Who/What/When/Where/Why/How; depth scales to question complexity.
+  - **P22 CONSEQUENCE_CHECK** — assess stakes (low/medium/high), concrete harm if wrong, action user will take, what must be hedged; high-stakes caveats must appear in `<answer>`, not only `<think>`.
+  - **P23 INTERLEAVED TOOL CHAINING** — when data retrieval AND computation are both needed, chain the calls; stopping at one tool when a second would verify is a capability failure.
+- **Summary reference table** in `constitution.md` updated to include P20–P23.
+- **Files changed:** `pipeline/constitution.md`.
+- **Wiki updated:** `wiki/entities/constitution.md` (19→23, new P20–P23 section added, critique-loop note updated to reflect deterministic rule coverage), `wiki/sources/code/constitution-document.md` (principles list updated), `wiki/topics/constitution-psychological-grounding.md` (Framework D added, P20–P23 table rows added with ⚠ tentative mappings), multiple references 19→23.
+
+## [2026-05-06] refactor | get_exchange_rate removed; read_url updated with context parameter
+- **`get_exchange_rate` removed** from `3_infererence.py` tool registry, `TOOL_PROFILES`, and `2_model_trainer.py` reward function. Rationale: the tool was a mock with a hard-coded rate; its presence in TOOL_PROFILES caused training data to show rate lookups returning a static value — misleading for a principle that teaches real-time honesty. `web_search` covers exchange rate queries adequately.
+- **`read_url` updated** with an optional `context` prompt parameter — allows the caller to specify what to extract from the page rather than returning raw text. HTML cleaning bug fixed (malformed tag handling improved). `read_url` signature in `constitution.md` available tools table updated accordingly.
+- **TOOL_PROFILES trimmed** to 4 canonical tools: `python_execute`, `web_search`, `read_url`, `get_datetime`. This is now the authoritative set for all training data generation.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/2_model_trainer.py`, `pipeline/5_context_degradation.py`, `pipeline/constitution.md` (available tools table).
+
+## [2026-05-05] refactor | FalkorDB password support + GPU setup script
+- Added `FALKORDB_PASSWORD: str = ""` field to `PipelineConfig` in `config.py`. Empty string means no auth (local Docker); set for cloud/auth-enabled instances via `PIPELINE_FALKORDB_PASSWORD` env var.
+- Updated `user_modelling.py:GraphClient.__init__` to pass `password=` kwarg to `_fdb.FalkorDB()` only when the field is non-empty, preserving backward compatibility with passwordless local instances.
+- Updated `config.py:validate()` hint message to differentiate between local Docker (`docker compose up -d`) and cloud (`check host/port/password`) when FalkorDB is unreachable.
+- Added `.env` loading to `run_all.sh` via `set -o allexport / source .env / set +o allexport` so PIPELINE_* vars and API keys are available to all subprocesses without per-script dotenv calls.
+- Created `pipeline/setup_gpu.sh`: one-shot GPU machine setup script. Detects CUDA version, installs torch with correct index URL (cu118/cu121/cu124), installs unsloth (pip then git fallback), installs all pipeline deps, creates `.env` template, seeds `train_interleaved.jsonl` from `smoke_gold.jsonl`, validates all imports + CUDA.
+- **Files changed:** `pipeline/config.py`, `pipeline/user_modelling.py`, `pipeline/run_all.sh`, `pipeline/setup_gpu.sh` (new).
+
+## [2026-05-04] refactor | Math question generator — dedup, temperature, and word problem context rotation
+- Same root causes as Part A question generator: no temperature set (provider default, often near-greedy) → repetitive problem structures; no inter-batch memory → same problem templates regenerated each batch.
+- **Fix — temperature:** Added `temperature=0.9` to all `generate_math_questions` calls.
+- **Fix — dedup:** Per-type question strings tracked in memory; last 20 injected into each subsequent batch prompt.
+- **Fix — word problem context rotation:** Added `WORD_PROBLEM_CONTEXTS` list (10 geographic/currency settings: South Asia, West Africa, SE Asia, Latin America, Middle East, East Asia, Eastern Europe, Scandinavia, UK, East Africa). Cycled per batch for `word_problems` and `no_tool_control` types — at least 60% of each batch set to the assigned cultural context with locally realistic currencies, items, and names. Pure math types (arithmetic, algebra, geometry, statistics, unit_conversion) not rotated since the math itself is culturally neutral.
+- **Files changed:** `pipeline/sft_math_question_generator.py`.
+
+## [2026-05-04] refactor | Question generator — diversity axis rotation, dedup, and temperature fix
+- **Root cause 1 (repetition):** `generate_questions_for_category` was called fresh each batch with an identical prompt, no memory of prior output. LLMs with low temperature anchor on fixed examples and regenerate near-identical questions.
+- **Root cause 2 (Western bias):** All category `examples` and `domains` were US/UK-centric. Prompt only specified topical domain variety, not geographic or cultural variety.
+- **Fix — axis rotation:** Added `DIVERSITY_AXES` list (20 slots: South Asia, East Africa, SE Asia, Latin America, Middle East, East Asia, West Africa, Eastern Europe, North Africa, South America, Central Asia, diasporas, Scandinavia, S. Europe, Caribbean, Jewish communities, Buddhist communities, Pacific Islands, Horn of Africa). Cycled sequentially per batch. Each batch prompt mandates ≥60% questions reflect the assigned region/culture/demographic with country-specific details (local currencies, halal finance, M-Pesa, chit funds, NHS, etc.).
+- **Fix — dedup injection:** Tracks generated questions in memory per category. Single-turn: last 30 shown verbatim. Verbose/multi-turn: last 10 truncated to 100 chars. Model instructed not to repeat or paraphrase listed questions.
+- **Fix — temperature:** Explicitly set `temperature=0.9` on all generation calls (previously provider default, often low, causing near-identical batches).
+- **Files changed:** `pipeline/sft_question_generator.py`, `wiki/sources/code/sft-v2-pipeline.md`.
+
+## [2026-05-03] refactor | NVIDIA NIM provider confirmed — docs updated
+- Verified NVIDIA NIM support in litellm via official docs (`nvidia_nim/<org>/<model>` prefix, `NVIDIA_NIM_API_KEY` env var, base URL `https://integrate.api.nvidia.com/v1`).
+- Confirmed model IDs: `nvidia_nim/moonshotai/kimi-k2.6` and `nvidia_nim/minimaxai/minimax-m2.7` — both available on NIM free tier.
+- `NVIDIA_NIM_API_KEY` already present in `pipeline/.env`; `.env` confirmed git-ignored.
+- **Files changed:** `README.md` (API key section rewritten as provider table; Phase 1 SFT commands updated to use NIM as primary with Groq + Anthropic as commented alternatives), `pipeline/.env.example` (NIM key + model strings documented), `wiki/sources/code/sft-v2-pipeline.md` (LiteLLM section expanded to provider table with confirmed status).
+
+## [2026-05-03] decision | Research question reframe — psychological grounding, human evaluation rubric, frontier model comparison
+- **Trigger:** Student raised valid concern that LLM-generated training data is circular distillation without external human-judgment ground truth. Also flagged absence of a concrete, falsifiable comparison target.
+- **Resolution — psychological grounding:** Created `wiki/topics/constitution-psychological-grounding.md`. All 19 constitution principles mapped to peer-reviewed citations (Mayer 1995 trust model, Kahneman 2011, Clark & Brennan 1991, Zagzebski 1996, Flavell 1979, Nissenbaum 2004, Cialdini 1984, etc.). This gives the constitution external validity independent of any LLM.
+- **Resolution — human evaluation rubric:** Created `wiki/experiments/human-evaluation-rubric.md`. 12-item Likert instrument. Five dimensions: Ability, Integrity, Benevolence, Cognitive Empathy, Affective Empathy. Inter-rater reliability via Krippendorff's alpha. Evaluators blinded to model identity. This is the ground truth that breaks the distillation circularity.
+- **Resolution — frontier comparison:** Created `wiki/experiments/frontier-model-comparison.md`. 50-prompt study. Models: Qwen3-0.6B (base), Qwen3-0.6B (SFT + GRPO), Claude Sonnet 4.6, Minimax M2.7 (⚠ verify API ID), Kimi K2.6 (⚠ verify API ID). Two tracks: automated constitution compliance + human rubric. Four formal hypotheses (H1–H4).
+- **Operational hypothesis added to overview.md:** On-device 0.6B model achieves within 0.5 points of frontier models on Integrity + Ability dimensions while offering privacy guarantee no API model can match.
+- **Tags updated:** `psychology` re-registered (distinct from `empathy`); `on-device` added.
+- **Files changed:** `wiki/topics/constitution-psychological-grounding.md` (new), `wiki/experiments/human-evaluation-rubric.md` (new), `wiki/experiments/frontier-model-comparison.md` (new), `wiki/decisions/2026-05-03-research-question-reframe.md` (new), `wiki/overview.md` (updated), `wiki/index.md` (updated), `wiki/tags.md` (updated), `wiki/log.md` (appended).
+
+## [2026-05-02] refactor | Full pipeline build — Phases 0–5 (all four modules implemented)
+- **Phase 0 — Foundation:** `pipeline/config.py` (six `ENABLE_*` flags, `from_env()`, `from_yaml()`, `validate()`, `summary()`). `docker-compose.yml` (FalkorDB on port 6379). `preflight_check.sh` updated with config + new module file checks + feature-flag section 13.
+- **Phase 1 — User Modelling:** `pipeline/user_modelling.py` — `GraphClient` (FalkorDB + 5W+H schema, graceful unavailable mode), 4-stage Mem0g write pipeline (`entity_extractor` → `relation_generator` → `conflict_detector` → `conditional_write`), retrieval gating with slot-relevance classifier, scrutability handlers (`inspect_memory`, `contest_belief`, `correct_belief`). Never deletes — `:DEPRECATED_BY` + `:USER_CORRECTED` edges preserve full audit trail.
+- **Phase 2 — Empathy:** `pipeline/appraisal_labeller.py` (offline AppraisePLM → EmpatheticDialogues JSONL; `--mock_model` for pipeline testing). `pipeline/empathy.py` (runtime `analyse_appraisal()`, `format_appraisal_block()`, `parse_appraisal_block()`, `APPRAISAL_SYSTEM_PREFIX`). `sft_question_generator.py` updated: new `appraisal_empathy` category with `"loader": "appraisal_labels"` path (no LLM generation). `sft_gold_response_generator.py` updated: `APPRAISAL_DRAFT_PROMPT`, `APPRAISAL_CRITIQUE_PROMPT`, `generate_draft` and `critique_draft` branch on category. `sft_dataset_assembler.py` updated: quality filter rejects `appraisal_empathy` examples missing `<appraisal>` block.
+- **Phase 3 — Ontology Verifier:** `pipeline/ontology_verifier.py` — dual backend (rdflib local OWL / SPARQLWrapper remote endpoint). `extract_claims()` → `verify_claim()` (4-tier: SELECT match 0.9, ASK match 0.8, no match 0.2, unverifiable 0.5) → `score_response()` with per-claim breakdown. `config.py` updated: `ONTOLOGY_SPARQL_ENDPOINT` + `ONTOLOGY_MAX_CLAIMS` fields.
+- **Phase 4 — Integration:** `pipeline/3_infererence.py` updated: module imports, `_GRAPH_CLIENT` + `_ONTO_GRAPH` singletons, `_raw_generate()` (greedy, no tool loop), `_build_system_prompt()` (flag-gated injections), `ContestRequest` + `CorrectRequest` Pydantic models, full `chat_completions` lifecycle (write → retrieve → appraise → generate → onto_score), scrutability routes (`/memory/inspect|contest|correct`), `/config` introspection endpoint, `main()` updated with `--config` arg + singleton init + startup diagnostics. `run_all.sh` updated: `ENABLE_*` vars, `start_falkordb()` / `stop_falkordb()`, Stage 0 + Stage 0.5, flag forwarding to subprocess.
+- **Phase 5 — Documentation:** `README.md` rewritten — feature flags table, module prerequisites (Docker, AppraisePLM), updated architecture diagram (all four modules now implemented), updated repo layout, updated inference server endpoints (12 total incl. scrutability), updated `run_all.sh` stage table (Stage 0 + 0.5 added). `wiki/sources/code/training-and-benchmark.md` rewritten — all new scripts in the at-a-glance table, feature flag lifecycle section, updated stage map, updated Related and Raw sections.
+- **GPU smoke test deferred** to Monday (machine with Docker + GPU + AppraisePLM setup). All five optional modules have `--mock_model` / `available=False` fallback modes so the pipeline runs end-to-end on this laptop with all flags off.
+- **Files changed:** `pipeline/config.py` (new), `pipeline/user_modelling.py` (new), `pipeline/empathy.py` (new), `pipeline/appraisal_labeller.py` (new), `pipeline/ontology_verifier.py` (new), `docker-compose.yml` (new), `pipeline/3_infererence.py` (updated), `pipeline/sft_question_generator.py` (updated), `pipeline/sft_gold_response_generator.py` (updated), `pipeline/sft_dataset_assembler.py` (updated), `pipeline/run_all.sh` (updated), `pipeline/preflight_check.sh` (updated), `README.md` (updated), `wiki/sources/code/training-and-benchmark.md` (updated), `wiki/index.md` (updated), `wiki/tags.md` (updated), `wiki/log.md` (appended).
+
+## [2026-05-02] query | Full pipeline implementation plan
+- Created `wiki/queries/full-pipeline-implementation-plan.md` — phase-by-phase build plan for all six modules.
+- Six feature flags defined: `ENABLE_SFT`, `ENABLE_GRPO`, `ENABLE_USER_MODELLING`, `ENABLE_EMPATHY`, `ENABLE_PERSONALISATION`, `ENABLE_ONTOLOGY_VERIF`.
+- Parallel tracks: Phase 1 (User Modelling), Phase 2 (Empathy), Phase 3 (Ontology Verifier) all independent; Phase 4 (Integration) sequential after all three.
+- GPU work (Phase 6) starts Monday; Phases 0–5 are pre-GPU coding work.
+- Key decisions recorded: Mem0g write pattern without Mem0 SDK; AppraisePLM as offline labeller only (not runtime dependency); FalkorDB direct via `falkordb` Python package without Cognee.
+- Updated `wiki/index.md` — new entry under Queries.
+
+## [2026-05-02] lint | Health check — full wiki audit
+- **No orphan pages found.** All files in `wiki/**/*.md` are reachable from `wiki/index.md`.
+- **Missing inbound source — `docs/meetings-notes/`.** All 7 meeting files (Sep 2025 – Apr 2026) were unindexed. Fixed in the ingest entry below.
+- **Tag count drift.** `wiki/tags.md` counts last audited 2026-04-20; at least 8 paper pages + 3 code pages added since. Counts on `reasoning`, `security`, `rl`, `constitution` are suspect. Re-audit needed after this session (not auto-fixed — requires a sweep).
+- **Missing decision for constitution-drift concern (April 2026 meeting).** The advisor formally raised constitution drift + probes-vs-tests as a mitigation strategy. This research design choice is not yet a `wiki/decisions/` page. → **Action needed: create `wiki/decisions/2026-04-xx-constitution-drift-probing.md`.**
+- **`IMPROVEMENT_ROADMAP.md` (54 KB at repo root) still not ingested.** Listed in "Not yet ingested" section since bootstrap. User decision needed on whether it is still authoritative.
+- **`wiki/decisions/2025-10-01-four-module-architecture.md` has stale `updated:` date (2025-10-01).** Page content references Qwen3-0.6B, Gemma 4, FalkorDB, Cognee — none of which were in scope in October 2025. Minor metadata drift; not auto-fixed.
+- **13 "Literature Note only" papers** remain without `wiki/sources/papers/` pages. Tracked by `wiki/questions/2026-04-30-asset-acquisition-todo.md`. No action needed here.
+- **Three `wiki/sources/code/` pages not linked from any topic page.** `sft-v2-pipeline`, `training-and-benchmark`, `constitution-document` are in the index but not referenced from `topics/reasoning` or `topics/tool-use-and-verification`. Low-priority cross-reference gap.
+
+## [2026-05-02] ingest | Meeting notes — all advisor meetings Sep 2025 – Apr 2026
+- **Source:** `docs/meetings-notes/` — 7 markdown files (september2025 through april2026).
+- **New pages created (7):**
+  - `wiki/sources/meetings/september2025.md` — First meeting: scrutability framing, Inside Out concept, AI as "sociopath"
+  - `wiki/sources/meetings/october2025.md` — RL for thought processes, values-interpreter architecture, ethical companion risks
+  - `wiki/sources/meetings/november2025.md` — Two meetings: ontology-LLM pivot (Nov 11) + interleaved thinking (late Nov)
+  - `wiki/sources/meetings/december2025.md` — Research plan review (Dec 11 + Dec 16): prototype scope, GDPR flags, pivoting normalised
+  - `wiki/sources/meetings/january2026.md` — Boolean/math GPT failure → hybrid delegation confirmed; context forgetting
+  - `wiki/sources/meetings/february2026.md` — Behaviourism lens; post-hoc constraint vs in-model innovation; focus contraction request
+  - `wiki/sources/meetings/april2026.md` — Constitution drift + probes vs tests; Apple internship June–Sept 2026; dissertation timeline
+- **Updated:** `wiki/index.md` — new "Advisor meetings" subsection under Sources; `updated:` bumped to 2026-05-02.
+- **Updated:** `wiki/tags.md` — added `advisor-meeting` tag (count 7).
+- **Key project fact captured:** Ajinkya accepted an Apple internship in Dublin, June–September 2026. Dissertation experimentation must complete before then or gate the overlap carefully.
+- **No conflicts raised.** Meeting notes are consistent with existing wiki decisions and entity pages.
+
+## [2026-05-02] refactor | README + wiki docs sync — full branch documentation pass
+- **README.md** — complete rewrite to reflect the branch's current state. Added: four-module architecture diagram, updated repo layout (new scripts), preflight check as step 0, Phase 2 GRPO commands, run_all.sh orchestration, Experiment 0 section, adversarial probes section, security hardening table, updated inference server reference (dependency endpoints), corrected V2 CLI commands (old `--data_path` → new `--mode sft --data_dir`). Removed stale content. A general reader can now understand the pipeline and run it end-to-end.
+- **`wiki/sources/code/training-and-benchmark.md`** — complete rewrite. Added: GRPO phase, DAPO improvements table, composite reward breakdown, Experiment 0 strategy table, adversarial probe category table, security blockers summary table, GRPO hyperparameters, updated scripts-at-a-glance table.
+- **`wiki/sources/code/sft-v2-pipeline.md`** — updated flow diagram (now shows Blocker 1+2 in the pipeline), categories updated from 9→11, security hardening section added.
+- **`wiki/index.md`** — code source descriptions updated to reflect new content.
+- **Files changed:** `README.md`, `wiki/sources/code/training-and-benchmark.md`, `wiki/sources/code/sft-v2-pipeline.md`, `wiki/index.md`.
+
+## [2026-05-02] refactor | GPU-ready package: GRPO trainer + Experiment 0 + run_all.sh + preflight v2
+- **`pipeline/2_model_trainer.py`** — complete rewrite adding Phase 2 (GRPO). New additions: `GRPO_CONFIG` (DAPO hyperparameters: G=8, β=0.001, ε_low=0.2, ε_high=0.28), `make_reward_fn(reward_type)` (composite reward: format 0.30 + accuracy 0.40 + tool_integrity 0.15 + constitution 0.15), `build_grpo_dataset()` (SFT JSONL → GRPOTrainer prompt format), `train_grpo()` method, `load_checkpoint()` method, `_patch_dynamic_sampling()` (DAPO zero-variance group skip). CLI now supports `--mode {sft,grpo}`, `--reward_type {c,d}`. Reward type c = Ablation C (format+accuracy), reward type d = Ablation D (full composite).
+- **`pipeline/experiment0_reasoning_comparison.py`** — new file. Implements researchplan.tex Phase 3 reasoning paradigm comparison. Four strategies: baseline (direct answer), cot (chain-of-thought), interleaved (native CAPABILITY_CHECK format), tot (simulated Tree-of-Thoughts: N candidates + self-ranking). Evaluates on GSM8K (via `datasets`) + 10 built-in logic puzzles. Metrics: accuracy, CAPABILITY_CHECK rate, tool use rate, answer-tag rate, latency. Saves comparison table + JSON report. CLI: `--strategy all`, `--n 100`, `--smoke`, `--benchmark gsm8k|logic|all`.
+- **`pipeline/run_all.sh`** — new master orchestration script. 8 stages, fully resumable (each stage checks its output checkpoint before running). Stages: data check → SFT → SFT baseline → Experiment 0 → adversarial baseline → GRPO-C → GRPO-D → final ablation A/B/C/D. Server management (start/stop background process with PID file + health check). CLI: `--dry_run`, `--from N`, `--stages N,M`, `--port N`.
+- **`pipeline/preflight_check.sh`** — updated with sections 11 (run scripts present) and 12 (training status: 7-stage progress tracker showing which checkpoints and reports exist). Now reports `$STAGES_DONE / 7 stages complete` and suggests the correct `--from N` resume command.
+- **Files changed:** `pipeline/2_model_trainer.py`, `pipeline/experiment0_reasoning_comparison.py` (new), `pipeline/run_all.sh` (new), `pipeline/preflight_check.sh`.
+
+## [2026-05-02] refactor | Security Blockers 3 + 4 — adversarial benchmark suite + dependency detection
+- **Trigger:** security-review.tex §5: dedicated red-team evaluation (Blocker 3, OWASP LLM01/LLM04) and interaction-frequency monitor (Blocker 4, OWASP LLM09) required before GRPO.
+
+### Blocker 3 — Adversarial Probe Suite (`pipeline/4_benchmark.py`)
+- Added `ADVERSARIAL_PROBES` list: 14 probes across three attack categories:
+  - **jailbreak (5 probes):** direct instruction override (JB1), DAN persona injection (JB2), system-prompt fishing (JB3), harmful roleplay (JB4), false developer authority (JB5).
+  - **injection (3 probes):** adversarial content embedded in structured user message simulating a tool result (INJ1), false constitution update injected in user message (INJ2), instruction payload inside a math expression (INJ3).
+  - **regression (6 probes):** sycophancy under expert pressure (REG1 — P14), format preservation when user asks to skip tags (REG2 — P1/P18), tool hallucination (REG3 — P3), calibrated confidence on well-known fact (REG4 — no over-hedging), calibrated confidence on live/unknown data (REG5 — no overconfidence), honesty under social pressure (REG6 — P5/P7).
+- Added `run_adversarial_probes()`: runs probes, prints per-attack status (RESIST/FAILED), reports `adversarial_score` + per-category breakdown, saves to `reports/adversarial_{timestamp}.json`.
+- Added CLI flags: `--adversarial`, `--adversarial_only`, `--attack_types jailbreak,injection,regression`.
+- **Usage before GRPO:** `python 4_benchmark.py --adversarial_only` — all attacks should be resisted on the SFT baseline; regression after GRPO signals reward hacking.
+
+### Blocker 4 — Dependency Detection Monitor (`pipeline/3_infererence.py`)
+- Added `DependencyMonitor` class (in-memory, no persistence across restarts — privacy by design):
+  - Two independent triggers: **frequency** (≥10 interactions in last 60 min) and **burst** (≥5 consecutive turn-gaps < 30s).
+  - When either fires: returns `True` from `record()` and appends an autonomy-preserving disclosure to the model's answer — non-blocking, redirects to human support, consistent with constitution autonomy-preservation goals.
+  - Cooldown: 1 hour before same session can re-trigger.
+  - `status(session_id)` and `reset_session(session_id)` methods for audit/research.
+- Added `session_id: str = "anonymous"` field to `CompletionRequest`.
+- Added `_DEPENDENCY_MONITOR` singleton wired into `chat_completions()` after every response.
+- Added two new server endpoints: `GET /dependency/status/{session_id}`, `POST /dependency/reset/{session_id}`.
+- Response payload now includes `"dependency_disclosure": bool`.
+- **Smoke tested:** 6 cases — single call no-trigger, frequency trigger, cooldown no-retrigger, burst trigger (5 gaps), status(), reset_session(). All pass.
+
+- **Files changed:** `pipeline/4_benchmark.py`, `pipeline/3_infererence.py`.
+
+## [2026-05-02] refactor | Security Blocker 2 — independent constitutional verifier + rule-based pre-check
+- **Trigger:** security-review.tex §4.3: generate–critique–revise loop is a SPOF when the same model grades its own output; data poisoning from SFT has no out-of-band check (OWASP LLM04).
+- **Fix 1 — `rule_check_response()`** added to `sft_gold_response_generator.py`. Deterministic AST-free checks for the 5 highest-signal constitutional principles:
+  - **P1** — `<think>` block and `CAPABILITY_CHECK` label must both be present (regex).
+  - **P3** — no hallucinated tools (names not in the full registry) and no calls to tools marked ✗ in the active session profile (set diff).
+  - **P4** — if the question signals arithmetic (`\d+\.?\d* each|total cost|how much|calculat...`) and `python_execute` is in the active profile, a numeric `<answer>` without a `<tool>python_execute` call is flagged.
+  - **P14** — for `adversarial_pressure` category, `<turn_2>` content is scanned for capitulation phrases ("okay i'll", "roughly", "if i had to guess", etc.).
+  - **P18** (structural) — `<answer>` block must be present.
+- **Fix 2 — `_merge_violations()`** merges rule output with LLM critique. If the LLM returns `NO_VIOLATIONS` but rule checks found issues, the rule violations survive and reach the revision step. The LLM cannot suppress structural violations.
+- **Fix 3 — loud warning** when `--critic_model` is not set. Previously the self-critique fallback was silent. Now prints a named warning referencing security-review.tex §4.3 so the researcher is explicitly aware of the SPOF.
+- **Smoke tested:** 7 cases covering all 5 principles plus merge logic. All pass.
+- **What this does NOT fix:** semantic violations (e.g. a subtle sycophantic answer that doesn't contain capitulation phrases). Those still depend on the LLM critic. Use `--critic_model claude-opus-4-7` for full Blocker 2 compliance.
+- **OWASP mapping:** Addresses LLM04 (Data and Model Poisoning) — rule violations cannot be introduced into the training set by a biased self-critique.
+- **Files changed:** `pipeline/sft_gold_response_generator.py`.
+
+## [2026-05-01] refactor | Security Blocker 1 — code sandbox + tool-output injection hardening
+- **Trigger:** Pipeline audit revealed LLM-generated Python code was executed via subprocess without import restrictions in three files; web/URL tool output was injected raw into model context (prompt injection surface).
+- **Fix 1 — AST-based code validator added to all three files:** `_validate_code()` parses LLM-generated code with Python's `ast` module before any `subprocess.run` call. Blocks all non-math imports (`os`, `sys`, `subprocess`, `socket`, `requests`, etc.) and dangerous builtins (`exec`, `eval`, `compile`, `__import__`, `open`). Allowed imports: `math`, `statistics`, `decimal`, `fractions`, `cmath`, `random`, `itertools`, `functools`, `operator`, `collections`, `numbers`, `string`, `re`. Returns `(is_safe, reason)` — unsafe code is rejected with a descriptive error rather than executed.
+- **Fix 2 — Tool-output sanitiser added to inference server:** `_sanitise_tool_output(tool_name, raw)` strips prompt-injection patterns from web/URL content before it enters the model's conversation context. Strips `<tool>`, `<think>`, `<answer>`, `CAPABILITY_CHECK`, `ignore previous instructions` variants, and similar hijack phrases using `_INJECTION_RE`. Truncates to 3,000 characters to prevent context flooding. Wraps in structured `[TOOL_RESULT: name]\n...\n[/TOOL_RESULT]` envelope so the model sees it as data, not instruction.
+- **Applied to:** `_python_execute()` in `3_infererence.py`; `execute_code_blocks()` in `sft_rejection_sampler.py`; `verify_answer_with_execution()` in `sft_math_question_generator.py`. Tool loop in `chat_completions()` (`3_infererence.py`) now routes all tool results through `_sanitise_tool_output` before appending to conversation.
+- **OWASP mapping:** Addresses LLM01 (Prompt Injection) at the tool-output boundary and the code-execution boundary. Partial address of LLM04 (Data and Model Poisoning) — adversarially crafted web content can no longer embed instructions into SFT training data via the rejection sampler.
+- **Remaining open (Blocker 1):** The `_python_execute` validator only covers the allowlist approach. A proper sandbox (process isolation, seccomp on Linux) would be the production fix. This is the training/research context minimum viable hardening.
+
+## [2026-05-12] refactor | Pipeline logging clarity — trainer, server, benchmark
+- Added structured progress prints for SFT/GRPO setup, ROUGE sampling, and publish metadata in `pipeline/2_model_trainer.py`.
+- Expanded inference server startup logs with config source, model selection details, and module status in `pipeline/3_infererence.py`.
+- Improved benchmark suite output with server context, probe counts, progress indexing, and summary totals in `pipeline/4_benchmark.py`.
+- Why: make training, serving, and evaluation runs easier to trace and debug in logs.
+- Files changed: `pipeline/2_model_trainer.py`, `pipeline/3_infererence.py`, `pipeline/4_benchmark.py`.
+- **Files changed:** `pipeline/3_infererence.py`, `pipeline/sft_rejection_sampler.py`, `pipeline/sft_math_question_generator.py`.
+
+## [2026-05-01] decision | Source-document alignment pass — researchplan.tex + security-review.tex corrections
+- **Trigger:** User asked to strictly adhere to `researchplan.tex` and `docs/security-analysis/security-review.tex` after noticing the master plan diverged from the formal research plan.
+- **Source documents read in full:** `researchplan.tex` (formal CS7CS6 research plan — official research question, 5 objectives, 7 phases, 2 pivots, evaluation strategy) and `docs/security-analysis/security-review.tex` (security paper — local-first architecture, four open security blockers that must be resolved before GRPO).
+- **Critical misalignments found and corrected:**
+  1. **Research question framing wrong.** Master plan said "efficiency vs scale." The official research question (researchplan.tex §1.2) is about **transparency, modularity, systematic User Modelling, and tool delegation**. Small models = **local deployment for privacy**, not efficiency. Corrected in `overview.md` and `queries/grpo-and-personalisation-master-plan.md`.
+  2. **Four-module architecture (Pivot 1) had no decision page.** The binding architectural decision from the October 2025 Professor Conlan meeting — Reasoning / User Modelling / Tool Integration / Generator modules — had no wiki page. Created `decisions/2025-10-01-four-module-architecture.md`.
+  3. **Four pre-GRPO security blockers completely missing from master plan.** `security-review.tex` §5 explicitly states these must be resolved before GRPO: (1) prompt injection hardening via tool-output extraction layer (highest priority — OWASP LLM01), (2) independent constitutional verifier (OWASP LLM04), (3) adversarial benchmark suite (OWASP LLM01/LLM04), (4) dependency detection protocol (OWASP LLM09). Added to `queries/grpo-and-personalisation-master-plan.md` as a mandatory pre-GRPO section.
+  4. **Reasoning paradigm comparison (Experiment 0) missing from catalog.** researchplan.tex Phase 3 specifies comparing CoT vs ToT vs interleaved thinking vs latent reasoning (Coconut) on GSM8K before any GRPO run. Added as Experiment 0 to `experiments/experiment-catalog.md`.
+  5. **Formal evaluation benchmarks missing from catalog.** researchplan.tex §1.4 specifies: GSM8K, MATH dataset (small-model subset), logic puzzles, Crowd-event appraisal detection, user studies with validated HCI instruments. Added as a formal evaluation strategy section.
+  6. **Sequencing wrong.** Master plan had GRPO starting in week 1. Corrected: reasoning comparison (Experiment 0) + four security blockers come first; GRPO starts in week 3.
+- **Files created:** `wiki/decisions/2025-10-01-four-module-architecture.md`.
+- **Files updated:** `wiki/overview.md` (official research question + four-module table), `wiki/experiments/experiment-catalog.md` (evaluation strategy + Experiment 0 + small-model framing corrected), `wiki/queries/grpo-and-personalisation-master-plan.md` (research question anchor + four security blockers + sequencing fix), `wiki/index.md` (four-module architecture decision added).
+
+## [2026-05-01] query | Mem0 scrutability audit — user-centric memory gap confirmed as genuine thesis contribution
+- **Trigger:** user asked whether Mem0 is scrutable — can users inspect and correct their own stored memories?
+- **Finding:** Mem0 has zero user-facing scrutability. It is a pure developer API. The conflict detector runs internally; the LLM Update Resolver decides ADD/UPDATE/DELETE/NOOP with no user notification. Users cannot inspect, contest, or correct any memory.
+- **Comparison table:** ChatGPT "Manage Memories" covers only explicitly saved memories (auto-learned chat history is behind an all-or-nothing toggle, not individually auditable). Claude Projects is most transparent (markdown files, `/memory` command, directly editable). Letta is white-box (agents edit memory blocks directly). Mem0 is the least scrutable of all four.
+- **Literature gap confirmed:** No published paper formally defines user-centric AI memory scrutability as a distinct concept. Closest: "transparency asymmetry" in the 2025 AI Agent Index (arXiv:2602.17753), Forgetful but Faithful (arXiv:2512.12856) which treats transparent failure modes as a desideratum, and the 20-year UMAP scrutability tradition (Kay & Kummerfeld 2013, already acquired) which addresses recommender systems, not conversational memory.
+- **Thesis contribution sharpened:** Layer 5 of the master plan is the first formal definition of user-centric AI memory scrutability for conversational agents, operationalised as five constraints: inspect, contest, correct, deprecate (not delete), audit trail. This is not duplicated by any current system.
+- **3 new papers added to acquisition checklist:** Memory in the Age of AI Agents (2512.13564), Forgetful but Faithful (2512.12856), MemMachine (2604.04853).
+- **Files updated:** `wiki/topics/personalisation.md` (scrutability gap section added), `wiki/queries/grpo-and-personalisation-master-plan.md` (Layer 5 sharpened to name the contribution), `wiki/questions/2026-04-30-asset-acquisition-todo.md` (3 new papers).
+- **Branch created:** `feat/grpo-and-personalisation-stack` — implementation work begins here. Note: two pre-existing branches (`feat/grpo-v2`, `feat/rl`) may contain the old GRPO trainer code; check before building from scratch.
+
+## [2026-05-01] query | GRPO + Empathetic Personalisation Master Plan — industry benchmarks + implementation roadmap
+- **Trigger:** user asked for a plan of action for two workstreams: (1) GRPO model training and (2) user empathy + user modelling via graph vector DB, with industry context from Anthropic, DeepSeek, Gemini, Qwen, NVIDIA, OpenAI.
+- **Research performed:** cross-referenced current repo pipeline state against industry practice reports covering GRPO (DeepSeek R1, ByteDance DAPO, Qwen2.5-Math, OpenAI o1/o3, Anthropic Constitutional AI, NVIDIA NeMo-RL) and graph-based personalisation/empathy (ChatGPT Memory, Claude Projects, Gemini Personal Intelligence, Mem0g, Hume AI EVI, FalkorDB, Cognee, LightRAG).
+- **Key gap confirmed:** `pipeline/2_model_trainer.py` has zero GRPO code; the entire personalisation/empathy stack (5W+H graph, MCP server, appraisal tagger, retrieval gating, scrutability) has zero code. Both tracks are missing.
+- **Key decision — DAPO over vanilla GRPO:** For sub-1B models, entropy collapse makes vanilla GRPO unreliable. DAPO (ByteDance, arXiv:2503.14476) fixes this with Clip-Higher + dynamic sampling + token-level loss normalisation. This is the recommended implementation. Hyperparameters recorded in [[entities/grpo]].
+- **Key decision — Cognee + FalkorDB over Neo4j:** FalkorDB wins on inference-time neighbourhood expansion (500× faster p99). Cognee as the orchestration layer provides backend-agnostic KG construction and LLM-native memory abstraction. Neo4j deferred to enterprise/multi-user scenarios.
+- **Key decision — Mem0g write pipeline for user state updates:** entity extractor → relation generator → conflict detector → conditional write (`:DEPRECATED_BY` edges, never deletion). Matches scrutability requirement — audit trail stays intact.
+- **Binding constraint recorded:** all experiments constrained to small models only — Qwen3-0.6B (primary) and Gemma 4 (secondary). Recorded in [[overview]], [[experiments/experiment-catalog]], and the master plan query.
+- **8 new papers added to acquisition checklist:** DAPO (2503.14476), DeepSeekMath (2402.03300), LUSPO (2602.05261), Mem0 (2504.19413), PersonalAI (2506.17001), Simulating Emotions with Appraisal + RL (CHI 2024), Graph-based Agent Memory survey (2602.05665), Avoiding Over-Personalisation (2509.07133).
+- **New tags added to `wiki/tags.md`:** `dapo`, `graph-memory`, `gemma`.
+- **Files created:** `wiki/queries/grpo-and-personalisation-master-plan.md`.
+- **Files updated:** `wiki/entities/grpo.md` (DAPO details, hyperparameters, composite reward), `wiki/topics/personalisation.md` (Cognee+FalkorDB decision, Mem0g pattern, new sources), `wiki/topics/empathy.md` (Hume AI reference, CHI 2024 paper, status stub→draft), `wiki/overview.md` (small-model constraint section), `wiki/experiments/experiment-catalog.md` (small-model constraint callout), `wiki/questions/2026-04-30-asset-acquisition-todo.md` (8 new papers), `wiki/tags.md` (3 new tags), `wiki/index.md` (query entry added).
+
+---
+
 ## [2026-05-01] refactor | 5_context_degradation.py upgraded to server/client pattern
 - **Decision:** Kept `5_context_degradation.py` as a separate script (not merged into `4_benchmark.py`). Reason: different evaluation mode (greedy/deterministic), different scoring (known expected answers per turn), different thesis question (degradation curve vs capability snapshot).
 - **Server changes (`3_infererence.py`):** Added `greedy: bool = False` to `CompletionRequest`; `_generate()` now accepts `greedy` and uses `do_sample=False` when set. Added `input_tokens` to response metrics so clients can track context growth per turn.
@@ -215,3 +558,10 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - **Conflicts flagged:** none.
 - **Questions opened:** none filed yet; several `entities/*` pages referenced but deferred (`grpo`, `mcp`, `qwen3-0.6b`, `graph-rag`, `rag`) — create when next ingest touches them.
 - **Batch 2 candidates** listed at the end of `index.md` § "Papers (not yet ingested)".
+
+## [2026-05-17] refactor | sft_v3_generator — add --watch_commit daemon flag
+- Added `_watcher_thread()` function and `--watch_commit` / `--watch_threshold` CLI flags to `pipeline/sft_v3_generator.py`.
+- Watcher runs as a Python daemon thread alongside the main worker pool; commits+pushes output JSONL every N new lines (default 50), removing the need for a separate `watch_and_commit.py` process.
+- Updated `README.md` step 2 usage block to show nohup invocation with `--watch_commit`.
+- Updated `wiki/sources/code/sft-v3-pipeline.md` with a "Background Watch-Commit" section.
+- No cross-file API contracts affected (additive flag only).

@@ -1,17 +1,42 @@
 ---
 title: Experiment Catalog
 type: experiment
-tags: [experiments, planning, ablation]
+tags: [experiments, planning, ablation, small-model, qwen, gemma]
 sources:
   - docs/Dissertation/Experimental Planning Document.md
   - README.md
-updated: 2026-04-19
+updated: 2026-05-01
 status: current
 ---
 
 # Experiment Catalog
 
 **All experiments in scope for the dissertation plus the current repo pipeline's ablation. Sourced from the 2025-11-10 meeting + post-meeting revisions.**
+
+> **Binding constraint (2026-05-01):** All experiments use small models only — Qwen3-0.6B as the primary model and Gemma 4 as the secondary comparison. Small models enable **local on-device deployment**, which is the architectural basis for the privacy guarantee (a model that physically cannot exfiltrate data does not need to be trusted not to). The thesis does not claim to beat frontier models at capability; it claims that the right four-module architecture (see [[decisions/2025-10-01-four-module-architecture]]) produces more trustworthy, scrutable, and empathetic outputs. See [[queries/grpo-and-personalisation-master-plan]] and [[overview]] for full rationale.
+
+## Formal evaluation strategy (researchplan.tex §1.4)
+
+All experiments share the following evaluation instruments. **This is the binding evaluation specification from the research plan — do not add metrics that cannot be measured with these instruments.**
+
+**Quantitative benchmarks:**
+- Reasoning accuracy: GSM8K and MATH dataset (subset appropriate for small-model scale — do not use full MATH competition set)
+- Logic puzzles where baseline LLMs demonstrably fail (design custom; focus on backtracking and multi-step)
+- Appraisal detection accuracy: Crowd-event dataset ground truth (AppraisePLM, 21 dimensions)
+- Computational accuracy: 100% expected when delegating to Python tool (MATH=CODE principle)
+
+**Qualitative user studies (subject to TCD ethics approval):**
+- Perceived empathy ratings: validated HCI instruments
+- Trustworthiness assessment: scenario-based evaluation
+- Explanation comprehension: can users understand *why* the system made a decision? (critical distinction: "satisfying" vs genuinely causal — post-hoc rationalisation can score high on the former)
+
+**Ablation structure (per researchplan.tex):**
+- With vs without ToT reasoning
+- With vs without User Modelling
+- With vs without tool augmentation
+- Each ablation measures the individual contribution of that component
+
+---
 
 ## Dissertation experiments (by priority)
 
@@ -41,6 +66,24 @@ Process-reward RL vs outcome-only RL on math, logic, and novel problems. Metrics
 
 ### 🔴 Experiment 5 — Real-Time User Modelling with Dynamic Adaptation
 5W+H-driven user model, updated per turn. Control: no modelling; static profile; dynamic (proposed). Metrics: satisfaction over turns, personalisation accuracy, adaptation responsiveness, privacy comfort.
+
+### 🟡 Experiment 0 — Reasoning Paradigm Comparative Analysis (Phase 3, researchplan.tex)
+
+**This experiment is specified in researchplan.tex Phase 3 (Dec 2025 – Mar 2026) and is absent from the current pipeline.** It must be completed before GRPO begins because its results determine which reasoning approach the Reasoning Module uses. From the plan: "implementing multiple reasoning approaches in parallel and running controlled comparisons."
+
+Four conditions to compare on the same benchmark set (GSM8K subset + logic puzzles):
+
+| Condition | Approach | Papers |
+|---|---|---|
+| R0 | Standard LLM with system prompt engineering (baseline) | — |
+| R1 | Chain-of-Thought prompting | [[sources/papers/chain-of-thought-prompting]] |
+| R2 | Tree-of-Thoughts (branching + backtracking) | [[sources/papers/tree-of-thoughts]] |
+| R3 | Interleaved thinking (RL-trained alternating reasoning + action) | [[sources/papers/interleaved-reasoning]] |
+| R4 | Latent reasoning (CoCoNut — continuous thought vectors) | [[sources/papers/coconut-continuous-latent]] |
+
+Metrics: accuracy, intermediate-step quality (where visible), token efficiency, transparency to the user (can a user follow the reasoning?). The winner feeds into the Reasoning Module design. Results also inform the SFT training data format (which style of reasoning trace to teach).
+
+> ⚠ **Not yet implemented.** Phase 3 deadline was Mar 2026. Either implement now as a pre-GRPO prerequisite, or document why it was superseded.
 
 ## Current repo ablation — Conditions A / B / C / D
 
