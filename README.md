@@ -197,6 +197,88 @@ docs/                               PDFs, dissertation drafts, literature notes
 
 ---
 
+## GPU setup (vast.ai)
+
+Training requires a GPU. The pipeline is tested on RTX 4090 (24 GB VRAM) — ~3 hours per SFT stage. An A100 40 GB is ~2×faster but costs more.
+
+### 1. Rent an instance
+
+- Go to **vast.ai → Search**
+- Filter: GPU = `RTX 4090`, Disk ≥ `50 GB`, Reliability ≥ `0.98`
+- Sort by **DLPerf** descending — higher score = healthier GPU
+- Pick **On-demand** (not spot/interruptible) — spot instances can be preempted mid-run
+- Use the **vastai/pytorch cuda-12.1.1** template image
+
+> If you see `Error: GPU error, unable to start instance` or repeated `retries exceeded` in the instance log, the host machine's GPU is faulty. Destroy the instance and pick a different one — this is common on consumer hardware.
+
+### 2. Verify the GPU on first login
+
+```bash
+nvidia-smi
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+Both must succeed before proceeding. If `nvidia-smi` hangs or errors, destroy and repick.
+
+### 3. Set up the environment
+
+vast.ai auto-starts a `tmux` session on SSH. Your terminal is already inside tmux — if you disconnect and reconnect, run `tmux attach -t ssh_tmux` to resume without losing your process.
+
+```bash
+# Clone the repo
+git clone https://github.com/AjinkyaTaranekar/trustworthy-personalized-ai.git
+cd trustworthy-personalized-ai
+
+# Install dependencies
+pip install -r pipeline/requirements.txt
+
+# Install unsloth (needs a CUDA-specific build — do this separately)
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+
+# Add your API keys
+cp pipeline/.env.example pipeline/.env
+nano pipeline/.env   # set NVIDIA_NIM_API_KEY, EXA_API_KEY, HF_TOKEN
+```
+
+### 4. Smoke test before the full run
+
+Confirms VRAM is sufficient and the training loop starts without errors:
+
+```bash
+python pipeline/2_model_trainer.py --mode sft --curriculum_stage 1 \
+    --output_name checkpoint_test --max_steps 20
+```
+
+Watch for tokens/sec in the output and no OOM errors. If OOM, lower `max_seq_length` from 2048 → 1024 in `2_model_trainer.py`.
+
+### 5. Save checkpoints before destroying
+
+The instance disk is wiped on Destroy. Upload to HuggingFace after each stage:
+
+```bash
+huggingface-cli login   # paste your HF token (same as HF_TOKEN in .env)
+python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft \
+    --hf_username AjinkyaTaranekar
+```
+
+Or copy back locally (run from your local machine, not the instance):
+
+```bash
+scp -P <port> -r root@<host>:~/trustworthy-personalized-ai/models ./
+```
+
+### Data persistence
+
+| Action | Data |
+|--------|------|
+| SSH disconnect | Survives (tmux keeps processes running) |
+| **Stop** instance | Survives — can restart and continue (small storage fee) |
+| **Destroy** instance | Wiped — upload checkpoints first |
+
+> No volume setup needed. The disk you selected at rental time is automatically available at `/root/`.
+
+---
+
 ## Training pipeline: two phases
 
 ### Phase 1 — Supervised Fine-Tuning (SFT)
@@ -256,10 +338,14 @@ The v3 pipeline eliminates context-window starvation in 0.6B models by keeping t
     python pipeline/sft_question_generator.py --count 200 --output pipeline/data/questions_v3.jsonl
 
     # 2. Generate gold responses with live tool execution and exa.ai web search
-    python pipeline/sft_v3_generator.py \
-        --questions pipeline/data/questions_v3.jsonl \
+    # (nohup form for long runs — auto-commits every 50 lines via --watch_commit)
+    nohup python -u pipeline/sft_v3_generator.py \
+        --questions pipeline/data/questions_partA.jsonl \
         --output pipeline/data/train_v3.jsonl \
-        --model nvidia_nim/moonshotai/kimi-k2.6
+        --model nvidia_nim/minimaxai/minimax-m2.7 \
+        --workers 5 \
+        --watch_commit \
+        > pipeline/nohup_generator.out 2>&1 &
 
     # 2b. Negative trajectories (inventory constraints + environment timeouts)
     python pipeline/sft_v3_generator.py \

@@ -12,19 +12,19 @@ Replaces four separate scripts:
   sft_add_robustness_variants.py
 
 Outputs:
-  data/train_sft_v3_robust.jsonl  — training set (final)
+  data/train_sft_v3.jsonl  — training set (final)
   data/eval_sft_v3.jsonl          — eval set (v3 format, no variants)
   data/sft_stats.json             — dataset statistics
 
 Usage:
-    python pipeline/sft_dataset_assembler.py
-    python pipeline/sft_dataset_assembler.py \\
+    python sft_dataset_assembler.py
+    python sft_dataset_assembler.py \\
         --part_a data/train_partA.jsonl \\
         --part_b data/train_partB.jsonl \\
         --output_dir data/
 
     # Skip individual stages:
-    python pipeline/sft_dataset_assembler.py --no_native --no_robustness
+    python sft_dataset_assembler.py --no_native --no_robustness
 """
 
 import argparse
@@ -44,7 +44,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 MIN_RESPONSE_CHARS  = 80
-CAPABILITY_REQUIRED = True
+CAPABILITY_REQUIRED = False  # v3 data uses narrative think blocks — no CAPABILITY_CHECK header
 MAX_PER_CATEGORY    = 400
 MAX_TOOL_TURNS      = 5       # examples with more tool calls are likely malformed
 MAX_RESULT_CHARS    = 3000    # mirror 3_infererence.py _MAX_TOOL_OUTPUT
@@ -700,7 +700,7 @@ def run(
     rng.shuffle(train)
     rng.shuffle(eval_set)
 
-    train_path = out / "train_sft_v3_robust.jsonl"
+    train_path = out / "train_sft_v3.jsonl"
     eval_path  = out / "eval_sft_v3.jsonl"
     stats_path = out / "sft_stats.json"
 
@@ -726,7 +726,7 @@ def run(
     print(f"\nTool-turn examples : {stats['train']['tool_turn_examples']}")
     print(f"Native examples    : {stats['train']['native_tool_examples']}")
     print(f"\nNext step → train:")
-    print(f"  python pipeline/2_model_trainer.py --mode sft --data_dir {output_dir}")
+    print(f"  python 2_model_trainer.py --mode sft --data_dir {output_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -737,13 +737,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="SFT dataset assembler v3 — load, filter, transform, augment, split"
     )
-    parser.add_argument("--part_a",      default="pipeline/data/train_partA.jsonl")
-    parser.add_argument("--part_b",      default="pipeline/data/train_partB.jsonl")
-    parser.add_argument("--output_dir",  default="pipeline/data")
+    parser.add_argument("--part_a",      default="data/train_partA_v3.jsonl")
+    parser.add_argument("--part_b",      default="data/train_partB_v3.jsonl")
+    parser.add_argument("--output_dir",  default="data")
     parser.add_argument("--eval_frac",   type=float, default=0.10)
     parser.add_argument("--max_per_category", type=int, default=MAX_PER_CATEGORY)
     parser.add_argument("--seed",        type=int,   default=42)
     # Transform flags
+    parser.add_argument("--capability_check", action="store_true",
+                        help="Enable CAPABILITY_CHECK filter (for legacy v2 data that uses structured think blocks)")
     parser.add_argument("--no_transform",    action="store_true", help="Skip v2→v3 tool format transform")
     # Native tool flags
     parser.add_argument("--no_native",       action="store_true", help="Skip native JSON tool examples")
@@ -754,6 +756,10 @@ def main() -> None:
     parser.add_argument("--brief",           type=float, default=0.10)
     parser.add_argument("--no_principles",   type=float, default=0.05)
     args = parser.parse_args()
+
+    if args.capability_check:
+        global CAPABILITY_REQUIRED
+        CAPABILITY_REQUIRED = True
 
     print(f"SFT Dataset Assembler v3")
     print(f"  Part A : {args.part_a}")

@@ -1,7 +1,7 @@
 """
 Per-user persistent memory with 5W+H ontology sections.
 
-Stores one JSON file per user at pipeline/data/user_memory/<user_id>.json.
+Stores one JSON file per user at data/user_memory/<user_id>.json.
 The UserMemoryStore interface is designed to be wire-compatible with the
 GraphRAG integration planned for a later milestone — read/update stay the same.
 """
@@ -19,6 +19,28 @@ _SECTIONS: Dict[str, str] = {
     "how":         "Preferred formats, communication style, tool preferences",
     "facts":       "Confirmed factual assertions about the user",
     "constraints": "Hard limits: budget, time, access restrictions",
+}
+
+_SECTION_ALIASES: Dict[str, str] = {
+    "background":  "who",
+    "identity":    "who",
+    "role":        "who",
+    "expertise":   "who",
+    "goals":       "what",
+    "projects":    "what",
+    "topics":      "what",
+    "location":    "where",
+    "domain":      "where",
+    "motivation":  "why",
+    "reason":      "why",
+    "style":       "how",
+    "preferences": "how",
+    "format":      "how",
+    "fact":        "facts",
+    "assertion":   "facts",
+    "constraint":  "constraints",
+    "limit":       "constraints",
+    "limits":      "constraints",
 }
 
 _STOP_WORDS = frozenset({
@@ -96,6 +118,7 @@ class UserMemoryStore:
         return f"=== USER MEMORY (id: {user_id}) ===\n\n" + "\n\n".join(lines)
 
     def update(self, user_id: str, section: str, content: str) -> str:
+        section = _SECTION_ALIASES.get(section, section)
         if section not in _SECTIONS:
             return (
                 f"Error: '{section}' is not a valid section. "

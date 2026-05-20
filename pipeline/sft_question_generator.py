@@ -512,8 +512,8 @@ def load_appraisal_questions(category_name: str, count: int) -> list:
     if not labels_path.exists():
         raise FileNotFoundError(
             f"Appraisal labels file not found: {labels_path}\n"
-            "Run:  python pipeline/appraisal_labeller.py\n"
-            "Or:   python pipeline/appraisal_labeller.py --mock_model  (for testing)"
+            "Run:  python appraisal_labeller.py\n"
+            "Or:   python appraisal_labeller.py --mock_model  (for testing)"
         )
     rows = []
     with labels_path.open(encoding="utf-8") as f:
@@ -838,7 +838,7 @@ def main():
     )
 
     print(f"\nNext step → generate gold responses for Part A:")
-    print(f"  python pipeline/sft_gold_response_generator.py --questions {args.output} --output data/train_partA.jsonl")
+    print(f"  python sft_gold_response_generator.py --questions {args.output} --output data/train_partA.jsonl")
 
 
 if __name__ == "__main__":

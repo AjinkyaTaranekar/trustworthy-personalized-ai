@@ -16,16 +16,16 @@ Four strategies:
 
 Usage:
     # Start the inference server first (base model or SFT checkpoint):
-    python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
+    python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 
     # Run full comparison (default 100 GSM8K questions):
-    python pipeline/experiment0_reasoning_comparison.py
+    python experiment0_reasoning_comparison.py
 
     # Smoke test — 10 questions, all strategies:
-    python pipeline/experiment0_reasoning_comparison.py --smoke
+    python experiment0_reasoning_comparison.py --smoke
 
     # Single strategy:
-    python pipeline/experiment0_reasoning_comparison.py --strategy interleaved --n 50
+    python experiment0_reasoning_comparison.py --strategy interleaved --n 50
 
 Dependencies: requests, datasets
 """

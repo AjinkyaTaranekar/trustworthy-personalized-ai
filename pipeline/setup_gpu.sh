@@ -8,9 +8,9 @@
 # imports work.
 #
 # Usage:
-#   bash pipeline/setup_gpu.sh                  # full setup
-#   bash pipeline/setup_gpu.sh --skip-torch      # if PyTorch already installed
-#   bash pipeline/setup_gpu.sh --smoke-only      # seed data + validate only
+#   bash setup_gpu.sh                  # full setup
+#   bash setup_gpu.sh --skip-torch      # if PyTorch already installed
+#   bash setup_gpu.sh --smoke-only      # seed data + validate only
 # =============================================================================
 
 set -uo pipefail
@@ -165,7 +165,7 @@ fi
 
 step "Creating directories"
 mkdir -p "$DATA_DIR" "$SCRIPT_DIR/models" "$SCRIPT_DIR/reports"
-ok "pipeline/data, pipeline/models, pipeline/reports"
+ok "data, models, reports"
 
 # =============================================================================
 # 5. Seed training data from smoke file (skips Stage 1 / API key requirement)
@@ -292,15 +292,15 @@ echo ""
 echo "  1. Fill in .env (at least ANTHROPIC_API_KEY if running Stage 1)"
 echo ""
 echo "  2. Quick GPU smoke test (Stage 2 only, uses seeded smoke data):"
-echo "       bash pipeline/run_all.sh --stages 2"
+echo "       bash run_all.sh --stages 2"
 echo ""
 echo "  3. Full run from SFT:"
-echo "       bash pipeline/run_all.sh --from 2"
+echo "       bash run_all.sh --from 2"
 echo ""
 echo "  4. To enable FalkorDB Cloud (user modelling):"
 echo "       Edit .env → set PIPELINE_FALKORDB_HOST, PIPELINE_FALKORDB_PASSWORD"
 echo "       Set PIPELINE_ENABLE_USER_MODELLING=true"
-echo "       bash pipeline/run_all.sh --from 2"
+echo "       bash run_all.sh --from 2"
 echo ""
-echo "  Log: pipeline/run_all.log"
+echo "  Log: run_all.log"
 echo "${CYN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}"

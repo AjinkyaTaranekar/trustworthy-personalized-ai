@@ -9,8 +9,8 @@ Install dependencies:
     pip install fastapi uvicorn pydantic
 
 Usage:
-    python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
-    python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
+    python 3_infererence.py --model_dir models/checkpoint_sft --port 8000
+    python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 
 Endpoints:
     GET  /health                   liveness + model name
@@ -179,7 +179,7 @@ def _is_non_retryable_tool_error(raw: str) -> bool:
         return True
     if "code rejected by safety validator" in text and "syntax_error" not in text:
         return True
-    if "not registered" in text or "not available in profile" in text:
+    if "not registered" in text or "not available in profile" in text or "not available in this session" in text:
         return True
     return False
 
@@ -397,107 +397,45 @@ def _resolve_gguf_path(gguf_arg: str) -> str:
     return hf_hub_download(repo_id=gguf_arg, filename=target)
 
 
-# Canonical tool order — must match sft_gold_response_generator.py TOOL_PROFILES context strings
-_TOOL_ORDER = ["python_execute", "web_search", "read_url", "get_datetime"]
-
-# Profile notes — identical to sft_gold_response_generator.py system_note fields
-_PROFILE_NOTES: Dict[str, str] = {
-    "all_tools":          "All four tools are available in this session.",
-    "compute_only":       "Only python_execute is available. No internet or time access.",
-    "compute_and_search": "python_execute and web_search/read_url are available. No datetime tool.",
-    "no_tools":           "No tools are available in this session. Training knowledge only.",
+# v3 student prompts — kept in sync with sft_v3_generator.py STUDENT_PROMPTS.
+# The teacher-side constitution (CAPABILITY_CHECK, 5W+H etc.) is never saved to the training
+# JSONL and must NOT appear here — the model was trained only on these short prompts.
+_STUDENT_PROMPTS: Dict[str, str] = {
+    "all_tools": (
+        "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
+        "Available tools: python_execute, web_search, read_url, get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
+    ),
+    "compute_only": (
+        "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
+        "Available tools: python_execute, get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
+    ),
+    "compute_and_search": (
+        "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
+        "Available tools: python_execute, web_search, read_url, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
+    ),
+    "no_tools": (
+        "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
+        "Available tools: get_datetime, "
+        "scratchpad_sections, scratchpad_read, scratchpad_update, "
+        "user_memory_sections, user_memory_read, user_memory_update. "
+        "Call *_sections() before writing to learn section keys."
+    ),
 }
-
-# 23-principle constitution — verbatim copy from sft_gold_response_generator.py
-# Keeping both files in sync is intentional: the model is trained on this exact text,
-# so serving a different set of principles at inference would break the learned behaviour.
-_CONSTITUTION = """You follow all 23 constitution principles:
-1. DECOMPOSE FIRST — list requirements before answering
-2. TOOL INVENTORY — state exactly which tools you have this session
-3. TOOL DISCIPLINE — never invent a tool
-4. MATH = CODE — use python_execute for any precision arithmetic
-5. REAL-TIME HONESTY — live data: use web_search if available; if not, say so
-6. USER CONTEXT GATE — missing personal context → ask ONE question
-7. UNCERTAINTY QUANTIFICATION — hedge genuine uncertainty; never hedge well-known facts
-8. IMPOSSIBILITY ACKNOWLEDGMENT — explain WHY it's impossible; redirect usefully
-9. TRADEOFF PRESENTATION — subjective questions → enumerate dimensions; never declare a winner
-10. CORRECT TOOL USE — if tool is available and needed, call it correctly
-11. TOOL AVOIDANCE — stable knowledge → no tool; entity facts → web_search if available
-12. TOOL FAILURE HANDLING — fail once → retry; fail twice → honest about gap
-13. NO TOOL FAKING — never call a tool just to appear rigorous
-14. HOLD UNDER PRESSURE — user insists you guess after correct refusal → explain WHY guessing is harmful
-15. EXPLICIT SELF-CORRECTION — catch own error → label it, correct explicitly
-16. KNOWLEDGE CUTOFF AWARENESS — time-sensitive: web_search if available, else state cutoff
-17. MULTI-STEP CLARIFICATION — multiple unknowns → ask the single most critical one first
-18. EXPLICIT I DON'T KNOW — no basis for answer → say so clearly
-19. SEARCH FOR ENTITY FACTS — proper nouns → web_search if available
-20. FIRST PRINCIPLES — break non-trivial questions to irreducible truths; name unverified assumptions
-21. 5W+H QUESTIONING — address WHO/WHAT/WHEN/WHERE/WHY/HOW in every CAPABILITY_CHECK
-22. CONSEQUENCE_CHECK — assess stakes, failure mode, user action, accountability in every response
-23. INTERLEAVED TOOL CHAINING — data + computation → chain web_search → python_execute; never stop at one tool"""
 
 
 def _system_prompt_for_profile(profile: str) -> str:
-    """Build the system prompt for a given tool profile.
-
-    Produces output identical to sft_gold_response_generator.make_system_prompt()
-    so that the model sees the same prompt format it was trained on.
-    """
-    available = TOOL_PROFILES.get(profile, set())
-
-    # Pipe-separated context string — same format as training TOOL_PROFILES[*]["context"]
-    tool_context = " | ".join(
-        f"{t} {'✓' if t in available else '✗'}" for t in _TOOL_ORDER
-    )
-
-    tool_note = _PROFILE_NOTES.get(
-        profile,
-        f"Active tools: {sorted(available) if available else ['none']}.",
-    )
-
-    call_lines = []
-    if "python_execute" in available:
-        call_lines.append("  <tool>python_execute(code='...')</tool>")
-    if "web_search" in available:
-        call_lines.append("  <tool>web_search(query='...')</tool>")
-    if "read_url" in available:
-        call_lines.append("  <tool>read_url(url='...', prompt='what to extract')</tool>")
-    if "get_datetime" in available:
-        call_lines.append("  <tool>get_datetime()</tool>")
-    call_examples = "\n".join(call_lines) if call_lines else "  (no tools available this session)"
-
-    return (
-        "You are a trustworthy AI assistant. Before answering any question, complete a full "
-        "CAPABILITY_CHECK inside your <think> block using this exact structure:\n\n"
-        "<think>\n"
-        "CAPABILITY_CHECK:\n\n"
-        "  5W+H:\n"
-        "    WHO is affected: ...\n"
-        "    WHAT is required: ...\n"
-        "    WHEN: ...\n"
-        "    WHERE: ...\n"
-        "    WHY: ...\n"
-        "    HOW: ...\n\n"
-        "  First Principles:\n"
-        "    Core truth: ...\n"
-        "    Assumptions: ...\n\n"
-        f"  Session tools: {tool_context}\n"
-        "  Gap: ...\n"
-        "  Strategy: ...\n\n"
-        "  CONSEQUENCE_CHECK:\n"
-        "    Stakes: ...\n"
-        "    If wrong: ...\n"
-        "    User will likely: ...\n"
-        "    Accountability: ...\n"
-        "</think>\n"
-        "<answer>\n"
-        "...\n"
-        "</answer>\n\n"
-        f"{tool_note}\n\n"
-        "Tool call syntax (place between </think> and <answer>, or inside <think> before the final answer):\n"
-        f"{call_examples}\n\n"
-        f"{_CONSTITUTION}"
-    )
+    """Return the v3 student system prompt for the given tool profile.
+    Must match sft_v3_generator.py STUDENT_PROMPTS exactly."""
+    return _STUDENT_PROMPTS.get(profile, _STUDENT_PROMPTS["all_tools"])
 
 
 def _to_openai_schemas(active_tools: set) -> List[Dict[str, Any]]:
@@ -587,11 +525,13 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
         return _generate_gguf(conversation, max_new_tokens, temperature, greedy, tools)
     prompt = _TOKENIZER.apply_chat_template(
         conversation, tokenize=False, add_generation_prompt=True, tools=tools,
+        enable_thinking=True,
     )
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     n_in = inputs["input_ids"].shape[1]
     t0 = time.perf_counter()
     gen_kwargs: Dict[str, Any] = dict(inputs, max_new_tokens=max_new_tokens)
+    gen_kwargs.pop("max_length", None)  # avoid conflict with max_new_tokens
     if greedy:
         gen_kwargs["do_sample"] = False       # deterministic — required for reproducible context degradation study
     else:
@@ -914,7 +854,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
                     conv.append({
                         "role": "user",
-                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error),
+                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error, active_tools),
                     })
                     fallback, _, n_tok, _ = _generate(
                         conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
@@ -1180,8 +1120,8 @@ def main() -> None:
         print(f"Model ready: {_MODEL_LABEL}")
 
     # ── Initialise optional modules ─────────────────────────────────────────
-    _GRAPH_CLIENT = GraphClient(cfg)
-    _ONTO_GRAPH   = OntologyGraph(cfg)
+    _GRAPH_CLIENT = GraphClient(cfg) if _user_modelling_available else None
+    _ONTO_GRAPH   = OntologyGraph(cfg) if _ontology_available else None
 
     if cfg.ENABLE_USER_MODELLING:
         status = "connected" if _GRAPH_CLIENT.available else "UNAVAILABLE (check docker compose up -d)"
@@ -1206,7 +1146,7 @@ def main() -> None:
     # ── User memory store ─────────────────────────────────────────────────
     if _user_memory_importable and _UserMemoryStoreClass is not None:
         _TOOL_REGISTRY._user_memory = _UserMemoryStoreClass()
-        print("[USER MEMORY] User memory store initialised (pipeline/data/user_memory/)")
+        print("[USER MEMORY] User memory store initialised (data/user_memory/)")
     else:
         print("[USER MEMORY] user_memory module not available — user_memory tools disabled")
 
@@ -1227,9 +1167,9 @@ def main() -> None:
         print("[HARNESS] Disabled (set PIPELINE_ENABLE_HARNESS=true to enable)")
 
     print(f"\nNext step (in a separate terminal once server is up) → benchmark:")
-    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port}")
+    print(f"  python 4_benchmark.py --server_url http://localhost:{args.port}")
     print(f"  # Save SFT constitution baseline (run once before any GRPO):")
-    print(f"  python pipeline/4_benchmark.py --server_url http://localhost:{args.port} --probe_only --save_as_baseline")
+    print(f"  python 4_benchmark.py --server_url http://localhost:{args.port} --probe_only --save_as_baseline")
     print(f"Ready. Listening on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

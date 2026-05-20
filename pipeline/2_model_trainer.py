@@ -2,10 +2,10 @@
 Model Trainer
 =============
 Phase 1 — SFT (Supervised Fine-Tuning):
-    python pipeline/2_model_trainer.py --mode sft
+    python 2_model_trainer.py --mode sft
 
 Phase 2 — GRPO (Group Relative Policy Optimisation, DAPO improvements):
-    python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft \
+    python 2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft \
         --reward_type d --output_name checkpoint_grpo_d
 
 Reward types:
@@ -339,10 +339,11 @@ def _constitution_reward(response: str, question: str,
         n = len(violations)
         return max(0.0, (5 - n) / 5)  # 5 = max checkable principles
     except ImportError:
-        # Minimal fallback: just check P1 + P18
         has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
-        has_cap   = "CAPABILITY_CHECK" in response
         has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+        if _V3_FORMAT_MODE:
+            return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
+        has_cap = "CAPABILITY_CHECK" in response
         n_ok = sum([has_think, has_cap, has_ans])
         return n_ok / 3.0
 
@@ -543,6 +544,7 @@ def messages_to_text(example, tokenizer):
             tokenize=False,
             add_generation_prompt=False,
             tools=native_tools,
+            enable_thinking=True,
         )
     }
 
@@ -826,7 +828,7 @@ class ModelTrainer:
     def train(self):
         self.load_base_model()
         self.apply_lora()
-        dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
+        dataset_path = self.data_dir / "train_sft_v3.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
     def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
@@ -838,6 +840,7 @@ class ModelTrainer:
         import torch
         prompt_text = self.tokenizer.apply_chat_template(
             prompt_msgs, tokenize=False, add_generation_prompt=True,
+            enable_thinking=True,
         )
         inputs = self.tokenizer(prompt_text, return_tensors="pt").to("cuda")
         n_in = inputs["input_ids"].shape[1]
@@ -938,6 +941,7 @@ class ModelTrainer:
                     continue
                 prompt_text = self.tokenizer.apply_chat_template(
                     prompt, tokenize=False, add_generation_prompt=True,
+                    enable_thinking=True,
                 )
                 rewards = reward_fn(
                     prompts=[prompt_text],
@@ -988,7 +992,7 @@ class ModelTrainer:
         # When called via --mode publish, train_sft() was never run so _eval_raw is empty.
         # Load the eval split from disk so ROUGE has real references.
         if not self._eval_raw:
-            dataset_path = self.data_dir / "train_sft_v3_robust.jsonl"
+            dataset_path = self.data_dir / "train_sft_v3.jsonl"
             if dataset_path.exists():
                 try:
                     raw = load_dataset("json", data_files=str(dataset_path))
@@ -1207,7 +1211,7 @@ def main():
         else:
             trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
         _effective_dataset_path = str(dataset_path)
         if args.curriculum_stage:
             all_examples = []
@@ -1233,11 +1237,11 @@ def main():
         trainer.train_sft(_effective_dataset_path, args.output_name,
                           resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
-        print(f"  python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
+        print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")
-        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  python 3_infererence.py --model_dir {checkpoint_path}")
         print(f"  # To re-upload this checkpoint later (if publish failed):")
-        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
+        print(f"  python 2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
 
     elif args.mode == "grpo":
         print(f"\n=== Phase 2: GRPO (reward_type={args.reward_type}) ===")
@@ -1245,7 +1249,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_sft_v3_robust.jsonl"
+        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),
@@ -1254,9 +1258,9 @@ def main():
             resume_from_checkpoint=args.resume,
         )
         print(f"\nNext step → serve the GRPO checkpoint:")
-        print(f"  python pipeline/3_infererence.py --model_dir {checkpoint_path}")
+        print(f"  python 3_infererence.py --model_dir {checkpoint_path}")
         print(f"  # To re-upload this checkpoint later (if publish failed):")
-        print(f"  python pipeline/2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
+        print(f"  python 2_model_trainer.py --mode publish --output_name {args.output_name} --hf_username {args.hf_username}")
 
     elif args.mode == "publish":
         print(f"\n=== Publish: uploading existing checkpoint to HuggingFace ===")
@@ -1265,9 +1269,9 @@ def main():
             print(f"  Expected file: {checkpoint_path / 'adapter_config.json'}")
             print(f"  Check --output_name and --output_dir point to a trained checkpoint.")
             print(f"  Available checkpoints:")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_sft")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_c")
-            print(f"    python pipeline/2_model_trainer.py --mode publish --output_name checkpoint_grpo_d")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_sft")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_grpo_c")
+            print(f"    python 2_model_trainer.py --mode publish --output_name checkpoint_grpo_d")
             return
         print(f"  Checkpoint    : {checkpoint_path}")
         print(f"  HF username   : {args.hf_username}")

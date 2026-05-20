@@ -1,0 +1,969 @@
+Generator : nvidia_nim/moonshotai/kimi-k2.6
+[watcher] started — file: train_partA_v3.jsonl, threshold: 50 lines/commit
+Resume: 1091 questions already processed (by id)
+Questions: 977 to process (skipped=1255, parse_errors=0)
+Workers   : 5 max / 1 min (adaptive)
+API keys  : 2 key(s) loaded — rotating after 5 rate limits per key
+Rate limit: 76 RPM token bucket (38 RPM × 2 key(s))
+
+[1/977:user_context_behavioral:305f94a672e2] profile=compute_and_search elapsed=0s
+  Q: Should I take an online certification course in cloud computing or attend a bootcamp for s...
+  [1/977:user_context_behavioral:305f94a672e2] user_profile='Retired secondary school teacher, 68, living in rural Britta'
+  [1/977:user_context_behavioral:305f94a672e2] pre-seeded 2 preamble tool(s): mem_sections, mem_read
+
+[2/977:real_time_dependent:69eec4955527] profile=compute_and_search elapsed=0s
+  Q: ¿Cuál es el tipo de cambio actual del real brasileño a pesos colombianos y cuánto me costa...
+  [2/977:real_time_dependent:69eec4955527] user_profile='Parent of two children (ages 8 and 11), part-time librarian,'
+  [2/977:real_time_dependent:69eec4955527] pre-seeded 2 preamble tool(s): mem_sections, mem_read
+
+[3/977:real_time_dependent:9d28e5170ff3] profile=all_tools elapsed=0s
+  Q: What is the current price of a string of 108 Mala beads made from lotus seeds at the Wat P...
+  [3/977:real_time_dependent:9d28e5170ff3] user_profile='MSc Computer Science student at Trinity College Dublin.'
+  [3/977:real_time_dependent:9d28e5170ff3] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[4/977:knowledge_boundary:f22178c9569a] profile=all_tools elapsed=0s
+  Q: What are the key findings of the 2025 Mediterranean climate assessment report regarding pr...
+  [4/977:knowledge_boundary:f22178c9569a] user_profile='Retired secondary school teacher, 68, living in rural Britta'
+  [4/977:knowledge_boundary:f22178c9569a] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[5/977:impossible_tasks:9257adac27c8] profile=all_tools elapsed=0s
+  Q: Predict the exact words my grandmother will use when she tells the traditional story about...
+  [5/977:impossible_tasks:9257adac27c8] user_profile='Small business owner running an independent bakery in Madrid'
+  [5/977:impossible_tasks:9257adac27c8] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [5/977:impossible_tasks:9257adac27c8] [rate_limit] [key 1/2] retry 1/5 in 4s
+  [1/977:user_context_behavioral:305f94a672e2] [rate_limit] [key 1/2] retry 1/5 in 3s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [4/977:knowledge_boundary:f22178c9569a] [adaptive] rate limited ×3 — workers ↓ 3
+  [4/977:knowledge_boundary:f22178c9569a] [rate_limit] [key 1/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m  [2/977:real_time_dependent:69eec4955527] [rate_limit] [key 1/2] retry 1/5 in 3s
+
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [3/977:real_time_dependent:9d28e5170ff3] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [3/977:real_time_dependent:9d28e5170ff3] [rate_limit] [key 2/2] retry 1/5 in 3s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [3/977:real_time_dependent:9d28e5170ff3] [rate_limit] [key 2/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [2/977:real_time_dependent:69eec4955527] [rate_limit] [key 2/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [1/977:user_context_behavioral:305f94a672e2] [rate_limit] [key 2/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [4/977:knowledge_boundary:f22178c9569a] [adaptive] rate limited ×3 — workers ↓ 2
+  [4/977:knowledge_boundary:f22178c9569a] [rate_limit] [key 2/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [5/977:impossible_tasks:9257adac27c8] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [5/977:impossible_tasks:9257adac27c8] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [3/977:real_time_dependent:9d28e5170ff3] [rate_limit] [key 1/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [1/977:user_context_behavioral:305f94a672e2] [rate_limit] [key 1/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [2/977:real_time_dependent:69eec4955527] [rate_limit] [key 1/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [5/977:impossible_tasks:9257adac27c8] [rate_limit] [key 1/2] retry 3/5 in 12s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [4/977:knowledge_boundary:f22178c9569a] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [4/977:knowledge_boundary:f22178c9569a] [adaptive] rate limited ×3 — workers ↓ 1
+  [4/977:knowledge_boundary:f22178c9569a] [rate_limit] [key 2/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [1/977:user_context_behavioral:305f94a672e2] [rate_limit] [key 2/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [5/977:impossible_tasks:9257adac27c8] [rate_limit] [key 2/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [3/977:real_time_dependent:9d28e5170ff3] [rate_limit] [key 2/2] retry 4/5 in 24s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [2/977:real_time_dependent:69eec4955527] [rate_limit] [key 2/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [4/977:knowledge_boundary:f22178c9569a] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [4/977:knowledge_boundary:f22178c9569a] [rate_limit] [key 1/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [1/977:user_context_behavioral:305f94a672e2] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[6/977:subjective_tradeoffs:7e9bb539f3f0] profile=all_tools elapsed=55s
+  Q: Given the rising inflation in Argentina, is it better to keep my savings in Argentine peso...
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] user_profile='Registered nurse with 8 years ICU experience, Toronto, Canad'
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] [rate_limit] [key 1/2] retry 1/5 in 5s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [5/977:impossible_tasks:9257adac27c8] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[7/977:subjective_tradeoffs:191bd9dd6b08] profile=no_tools elapsed=58s
+  Q: Given the current cost of living in Dakar, is it better to rent a studio apartment in the ...
+  [7/977:subjective_tradeoffs:191bd9dd6b08] user_profile='Data scientist at a mid-size e-commerce company, São Paulo, '
+  [7/977:subjective_tradeoffs:191bd9dd6b08] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [3/977:real_time_dependent:9d28e5170ff3] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[8/977:subjective_tradeoffs:87b26d36edcc] profile=compute_only elapsed=60s
+  Q: Given the traffic congestion in Lagos, should I buy a car for ₦4 million to improve my com...
+  [8/977:subjective_tradeoffs:87b26d36edcc] user_profile='Software engineer at a fintech startup, 5 years Python/Go ex'
+  [8/977:subjective_tradeoffs:87b26d36edcc] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [2/977:real_time_dependent:69eec4955527] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [2/977:real_time_dependent:69eec4955527] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[9/977:subjective_tradeoffs:340412cad271] profile=all_tools elapsed=61s
+  Q: Given the high cost of diesel in Nigeria currently at ₦900 per liter, should I convert my ...
+  [9/977:subjective_tradeoffs:340412cad271] user_profile='Data scientist at a mid-size e-commerce company, São Paulo, '
+  [9/977:subjective_tradeoffs:340412cad271] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [9/977:subjective_tradeoffs:340412cad271] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [8/977:subjective_tradeoffs:87b26d36edcc] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [4/977:knowledge_boundary:f22178c9569a] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[10/977:multi_step_clarification:a08a675a2178] profile=all_tools elapsed=66s
+  Q: I work as a daily laborer in Bossaso port. During the kharma (dry season), work is scarce....
+  [10/977:multi_step_clarification:a08a675a2178] user_profile='Registered nurse with 8 years ICU experience, Toronto, Canad'
+  [10/977:multi_step_clarification:a08a675a2178] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [rate_limit] [key 2/2] retry 1/5 in 3s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [10/977:multi_step_clarification:a08a675a2178] [rate_limit] [key 1/2] retry 1/5 in 3s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [9/977:subjective_tradeoffs:340412cad271] [rate_limit] [key 1/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [8/977:subjective_tradeoffs:87b26d36edcc] [rate_limit] [key 1/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [rate_limit] [key 1/2] retry 2/5 in 8s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [10/977:multi_step_clarification:a08a675a2178] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [10/977:multi_step_clarification:a08a675a2178] [rate_limit] [key 2/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] [rate_limit] [key 2/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [9/977:subjective_tradeoffs:340412cad271] [rate_limit] [key 2/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [8/977:subjective_tradeoffs:87b26d36edcc] [rate_limit] [key 2/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [10/977:multi_step_clarification:a08a675a2178] [rate_limit] [key 2/2] retry 3/5 in 12s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [rate_limit] [key 1/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] [rate_limit] [key 1/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [9/977:subjective_tradeoffs:340412cad271] [rate_limit] [key 1/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [8/977:subjective_tradeoffs:87b26d36edcc] [rate_limit] [key 1/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [10/977:multi_step_clarification:a08a675a2178] [rate_limit] [key 1/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [7/977:subjective_tradeoffs:191bd9dd6b08] [rate_limit] [key 2/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [6/977:subjective_tradeoffs:7e9bb539f3f0] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[11/977:multi_step_clarification:da4782d0f5ae] profile=no_tools elapsed=118s
+  Q: My mother insists on a large daami (bride price) for my sister but the groom's family can'...
+  [11/977:multi_step_clarification:da4782d0f5ae] user_profile='Small business owner running an independent bakery in Madrid'
+  [11/977:multi_step_clarification:da4782d0f5ae] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [9/977:subjective_tradeoffs:340412cad271] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[12/977:subjective_tradeoffs:d5c8d125cab5] profile=compute_only elapsed=120s
+  Q: I'm a bicycle courier in Kigali planning to upgrade. Given fuel prices at 1,400 RWF/liter ...
+  [12/977:subjective_tradeoffs:d5c8d125cab5] user_profile='Small business owner running an independent bakery in Madrid'
+  [12/977:subjective_tradeoffs:d5c8d125cab5] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [12/977:subjective_tradeoffs:d5c8d125cab5] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [11/977:multi_step_clarification:da4782d0f5ae] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [8/977:subjective_tradeoffs:87b26d36edcc] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [8/977:subjective_tradeoffs:87b26d36edcc] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[13/977:multi_step_clarification:710ce161b9dc] profile=compute_only elapsed=124s
+  Q: I'm a teacher in Astana and want to build a retirement fund - what's the difference betwee...
+  [13/977:multi_step_clarification:710ce161b9dc] user_profile='Parent of two children (ages 8 and 11), part-time librarian,'
+  [13/977:multi_step_clarification:710ce161b9dc] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [13/977:multi_step_clarification:710ce161b9dc] [rate_limit] [key 1/2] retry 1/5 in 5s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [10/977:multi_step_clarification:a08a675a2178] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[14/977:multi_step_clarification:080c2b213223] profile=compute_only elapsed=127s
+  Q: A supervisor at my factory in Karaganda keeps making comments about women belonging in the...
+  [14/977:multi_step_clarification:080c2b213223] user_profile='Registered nurse with 8 years ICU experience, Toronto, Canad'
+  [14/977:multi_step_clarification:080c2b213223] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [7/977:subjective_tradeoffs:191bd9dd6b08] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[15/977:knowledge_boundary:d14ef34e80e3] profile=all_tools elapsed=128s
+  Q: What is the average price of a 50‑kg bag of rice in the Honiara central market in May 2025...
+  [15/977:knowledge_boundary:d14ef34e80e3] user_profile='Parent of two children (ages 8 and 11), part-time librarian,'
+  [15/977:knowledge_boundary:d14ef34e80e3] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [12/977:subjective_tradeoffs:d5c8d125cab5] [rate_limit] [key 1/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [11/977:multi_step_clarification:da4782d0f5ae] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [11/977:multi_step_clarification:da4782d0f5ae] [rate_limit] [key 2/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [14/977:multi_step_clarification:080c2b213223] [rate_limit] [key 2/2] retry 1/5 in 5s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [15/977:knowledge_boundary:d14ef34e80e3] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [13/977:multi_step_clarification:710ce161b9dc] [rate_limit] [key 2/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [12/977:subjective_tradeoffs:d5c8d125cab5] [rate_limit] [key 2/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [11/977:multi_step_clarification:da4782d0f5ae] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [11/977:multi_step_clarification:da4782d0f5ae] [rate_limit] [key 1/2] retry 3/5 in 12s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [14/977:multi_step_clarification:080c2b213223] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [15/977:knowledge_boundary:d14ef34e80e3] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [13/977:multi_step_clarification:710ce161b9dc] [rate_limit] [key 1/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [14/977:multi_step_clarification:080c2b213223] [rate_limit] [key 1/2] retry 3/5 in 12s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [15/977:knowledge_boundary:d14ef34e80e3] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [15/977:knowledge_boundary:d14ef34e80e3] [rate_limit] [key 2/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [12/977:subjective_tradeoffs:d5c8d125cab5] [rate_limit] [key 2/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [11/977:multi_step_clarification:da4782d0f5ae] [rate_limit] [key 2/2] retry 4/5 in 24s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [13/977:multi_step_clarification:710ce161b9dc] [rate_limit] [key 2/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [14/977:multi_step_clarification:080c2b213223] [rate_limit] [key 2/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [15/977:knowledge_boundary:d14ef34e80e3] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [15/977:knowledge_boundary:d14ef34e80e3] [rate_limit] [key 1/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [12/977:subjective_tradeoffs:d5c8d125cab5] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[16/977:knowledge_boundary:a2f70e52a635] profile=all_tools elapsed=179s
+  Q: Has the traditional ‘kava’ ceremony been restricted by new public‑health regulations in To...
+  [16/977:knowledge_boundary:a2f70e52a635] user_profile='Parent of two children (ages 8 and 11), part-time librarian,'
+  [16/977:knowledge_boundary:a2f70e52a635] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [11/977:multi_step_clarification:da4782d0f5ae] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[17/977:knowledge_boundary:6e2ed54e1d52] profile=all_tools elapsed=180s
+  Q: Are there any new customs duties on imported motorcycles in Papua New Guinea for 2025, and...
+  [17/977:knowledge_boundary:6e2ed54e1d52] user_profile='Software engineer at a fintech startup, 5 years Python/Go ex'
+  [17/977:knowledge_boundary:6e2ed54e1d52] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [16/977:knowledge_boundary:a2f70e52a635] [rate_limit] [key 1/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [17/977:knowledge_boundary:6e2ed54e1d52] [rate_limit] [key 1/2] retry 1/5 in 3s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [13/977:multi_step_clarification:710ce161b9dc] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [13/977:multi_step_clarification:710ce161b9dc] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[18/977:knowledge_boundary:28f4dbd0f86f] profile=all_tools elapsed=186s
+  Q: What are the current guidelines for the control of the papaya mealybug pest in Fiji’s frui...
+  [18/977:knowledge_boundary:28f4dbd0f86f] user_profile='Software engineer at a fintech startup, 5 years Python/Go ex'
+  [18/977:knowledge_boundary:28f4dbd0f86f] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [18/977:knowledge_boundary:28f4dbd0f86f] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [16/977:knowledge_boundary:a2f70e52a635] [rate_limit] [key 2/2] retry 2/5 in 6s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [17/977:knowledge_boundary:6e2ed54e1d52] [rate_limit] [key 2/2] retry 2/5 in 8s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [14/977:multi_step_clarification:080c2b213223] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[19/977:user_context_behavioral:34caf68f1145] profile=no_tools elapsed=192s
+  Q: Should I follow the traditional practice of rotating crops every year or adopt the new int...
+  [19/977:user_context_behavioral:34caf68f1145] user_profile='Parent of two children (ages 8 and 11), part-time librarian,'
+  [19/977:user_context_behavioral:34caf68f1145] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [15/977:knowledge_boundary:d14ef34e80e3] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [15/977:knowledge_boundary:d14ef34e80e3] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[20/977:user_context_behavioral:7e786e3e0daa] profile=all_tools elapsed=193s
+  Q: I'm a freelance graphic designer in Jordan — should I register as a sole proprietor or for...
+  [20/977:user_context_behavioral:7e786e3e0daa] user_profile='Data scientist at a mid-size e-commerce company, São Paulo, '
+  [20/977:user_context_behavioral:7e786e3e0daa] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [18/977:knowledge_boundary:28f4dbd0f86f] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [19/977:user_context_behavioral:34caf68f1145] [rate_limit] [key 1/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [20/977:user_context_behavioral:7e786e3e0daa] [rate_limit] [key 1/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [16/977:knowledge_boundary:a2f70e52a635] [rate_limit] [key 1/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [17/977:knowledge_boundary:6e2ed54e1d52] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [17/977:knowledge_boundary:6e2ed54e1d52] [rate_limit] [key 2/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [19/977:user_context_behavioral:34caf68f1145] [rate_limit] [key 2/2] retry 2/5 in 8s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [20/977:user_context_behavioral:7e786e3e0daa] [rate_limit] [key 2/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [18/977:knowledge_boundary:28f4dbd0f86f] [rate_limit] [key 2/2] retry 3/5 in 14s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [19/977:user_context_behavioral:34caf68f1145] [rate_limit] [key 2/2] retry 3/5 in 12s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [20/977:user_context_behavioral:7e786e3e0daa] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [20/977:user_context_behavioral:7e786e3e0daa] [rate_limit] [key 1/2] retry 3/5 in 13s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [16/977:knowledge_boundary:a2f70e52a635] [rate_limit] [key 1/2] retry 4/5 in 24s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [17/977:knowledge_boundary:6e2ed54e1d52] [rate_limit] [key 1/2] retry 4/5 in 26s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [18/977:knowledge_boundary:28f4dbd0f86f] [rate_limit] [key 1/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [19/977:user_context_behavioral:34caf68f1145] [rate_limit] [key 1/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [20/977:user_context_behavioral:7e786e3e0daa] [key_rotator] key 1/2 exhausted — rotating to key 2/2
+  [20/977:user_context_behavioral:7e786e3e0daa] [rate_limit] [key 2/2] retry 4/5 in 25s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [16/977:knowledge_boundary:a2f70e52a635] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[21/977:knowledge_boundary:080d6d742f2e] profile=all_tools elapsed=240s
+  Q: What are the latest requirements for obtaining the 'Energy Performance Certificate' for re...
+  [21/977:knowledge_boundary:080d6d742f2e] user_profile='Software engineer at a fintech startup, 5 years Python/Go ex'
+  [21/977:knowledge_boundary:080d6d742f2e] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [21/977:knowledge_boundary:080d6d742f2e] [rate_limit] [key 2/2] retry 1/5 in 4s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [17/977:knowledge_boundary:6e2ed54e1d52] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[22/977:knowledge_boundary:97c8d9e39541] profile=all_tools elapsed=243s
+  Q: What are the current export duties on fresh sea cucumber from Papua New Guinea as of 2025,...
+  [22/977:knowledge_boundary:97c8d9e39541] user_profile='Retired secondary school teacher, 68, living in rural Britta'
+  [22/977:knowledge_boundary:97c8d9e39541] pre-seeded 3 preamble tool(s): mem_sections, mem_read, datetime
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [22/977:knowledge_boundary:97c8d9e39541] [rate_limit] [key 2/2] retry 1/5 in 5s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [18/977:knowledge_boundary:28f4dbd0f86f] [key_rotator] key 2/2 exhausted — rotating to key 1/2
+  [18/977:knowledge_boundary:28f4dbd0f86f] error: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+
+[23/977:entity_facts_web_search:619d84e8be7a] profile=compute_and_search elapsed=246s
+  Q: Who is the current President of the Kenya Football Federation?
+  [23/977:entity_facts_web_search:619d84e8be7a] user_profile='Small business owner running an independent bakery in Madrid'
+  [23/977:entity_facts_web_search:619d84e8be7a] pre-seeded 2 preamble tool(s): mem_sections, mem_read
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [21/977:knowledge_boundary:080d6d742f2e] [rate_limit] [key 1/2] retry 2/5 in 7s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [23/977:entity_facts_web_search:619d84e8be7a] [rate_limit] [key 1/2] retry 1/5 in 5s
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[1;31mProvider List: https://docs.litellm.ai/docs/providers[0m
+
+  [22/977:knowledge_boundary:97c8d9e39541] [rate_limit] [key 1/2] retry 2/5 in 7s

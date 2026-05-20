@@ -29,6 +29,7 @@ import json
 import os
 import re
 import random
+import subprocess
 import sys
 import threading
 import time
@@ -37,6 +38,7 @@ from pathlib import Path
 import litellm
 from dotenv import load_dotenv
 from pipeline_tools import ToolRegistry as _ToolRegistry
+from scratchpad import ScratchpadStore as _ScratchpadStore
 
 _TOOL_REGISTRY = _ToolRegistry()   # no scratchpad/user_memory — training context
 
@@ -47,6 +49,157 @@ if hasattr(sys.stdout, "reconfigure"):
 
 _MAX_RETRIES: int = 5
 _BASE_DELAY: float = 3.0
+
+# ---------------------------------------------------------------------------
+# Adaptive concurrency — scales workers down on rate limits, up after quiet period
+# ---------------------------------------------------------------------------
+
+class _AdaptiveSemaphore:
+    """Semaphore whose count halves on sustained rate limits and recovers gradually."""
+
+    def __init__(self, initial: int, min_val: int = 1, scale_up_interval: float = 300.0):
+        self._min = min_val
+        self._max = initial
+        self._current = initial
+        self._sem = threading.Semaphore(initial)
+        self._lock = threading.Lock()
+        self._rl_events: list[float] = []
+        self._rl_window = 60.0       # look-back window for rate-limit events
+        self._rl_threshold = 3       # events in window before scaling down
+        self._scale_up_interval = scale_up_interval
+        self._last_scale_up = time.monotonic()
+
+    # -- public API --
+
+    def acquire(self) -> None:
+        self._sem.acquire()
+
+    def release(self) -> None:
+        self._sem.release()
+
+    def on_rate_limit(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self._rl_events.append(now)
+            self._rl_events = [t for t in self._rl_events if now - t < self._rl_window]
+            if len(self._rl_events) >= self._rl_threshold and self._current > self._min:
+                target = max(self._min, self._current // 2)
+                drop = self._current - target
+                stolen = 0
+                for _ in range(drop):
+                    if self._sem.acquire(blocking=False):
+                        stolen += 1
+                    else:
+                        break
+                if stolen:
+                    self._current -= stolen
+                    self._rl_events.clear()
+                    print(f"  {_tag()} [adaptive] rate limited ×{self._rl_threshold} — workers ↓ {self._current}", flush=True)
+
+    def try_scale_up(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._rl_events if now - t < self._rl_window]
+            if (self._current < self._max
+                    and not recent
+                    and now - self._last_scale_up >= self._scale_up_interval):
+                self._sem.release()
+                self._current += 1
+                self._last_scale_up = now
+                print(f"  [adaptive] quiet for {self._scale_up_interval/60:.0f}min — workers ↑ {self._current}/{self._max}", flush=True)
+
+    @property
+    def current(self) -> int:
+        return self._current
+
+
+_adaptive_sem: _AdaptiveSemaphore | None = None
+
+
+# ---------------------------------------------------------------------------
+# Token bucket — global rate limiter, paces all threads to ≤ N calls/min
+# ---------------------------------------------------------------------------
+
+class _TokenBucket:
+    """Thread-safe token bucket. Callers block in acquire() until a token is available."""
+
+    def __init__(self, rate_per_minute: float):
+        self._rate = rate_per_minute / 60.0          # tokens per second
+        self._max = max(1.0, rate_per_minute / 10)   # max burst ≈ 6s worth
+        self._tokens = self._max                     # start full
+        self._last = time.monotonic()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._tokens = min(self._max, self._tokens + (now - self._last) * self._rate)
+                self._last = now
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                wait = (1.0 - self._tokens) / self._rate
+            time.sleep(wait)
+
+    def update_rate(self, rate_per_minute: float) -> None:
+        with self._lock:
+            self._rate = rate_per_minute / 60.0
+            self._max = max(1.0, rate_per_minute / 10)
+
+
+_token_bucket: _TokenBucket | None = None
+
+
+# ---------------------------------------------------------------------------
+# API key rotation — cycles through multiple keys when one hits rate limits
+# ---------------------------------------------------------------------------
+
+class _KeyRotator:
+    """Round-robin key rotator. Rotates to the next key after N consecutive rate limits."""
+
+    def __init__(self, keys: list[str], threshold: int = 3):
+        self._keys = keys
+        self._threshold = threshold
+        self._idx = 0
+        self._hits = 0
+        self._lock = threading.Lock()
+
+    @property
+    def current_key(self) -> str | None:
+        return self._keys[self._idx] if self._keys else None
+
+    @property
+    def n_keys(self) -> int:
+        return len(self._keys)
+
+    def on_rate_limit(self) -> None:
+        if len(self._keys) <= 1:
+            return
+        with self._lock:
+            self._hits += 1
+            if self._hits >= self._threshold:
+                old = self._idx + 1
+                self._idx = (self._idx + 1) % len(self._keys)
+                self._hits = 0
+                print(
+                    f"  {_tag()} [key_rotator] key {old}/{len(self._keys)} exhausted "
+                    f"— rotating to key {self._idx + 1}/{len(self._keys)}",
+                    flush=True,
+                )
+
+    def reset_hits(self) -> None:
+        with self._lock:
+            self._hits = 0
+
+
+_key_rotator: _KeyRotator | None = None
+
+# Per-thread context so any helper can emit tagged log lines without passing tag everywhere.
+_thread_local = threading.local()
+
+def _tag() -> str:
+    return getattr(_thread_local, "tag", "[?]")
 
 # ---------------------------------------------------------------------------
 # Tool profiles — must match 3_infererence.py and sft_gold_response_generator.py
@@ -268,26 +421,50 @@ def _call_with_stop(
     stop: list[str] | None = None,
 ) -> str:
     for attempt in range(_MAX_RETRIES):
+        # Pace rate first, then gate concurrency — both released before any sleep.
+        if _token_bucket:
+            _token_bucket.acquire()
+        if _adaptive_sem:
+            _adaptive_sem.acquire()
         try:
             kwargs: dict = dict(model=model, messages=messages, max_tokens=max_tokens)
             if api_base:
                 kwargs["api_base"] = api_base
             if stop:
                 kwargs["stop"] = stop
+            if _key_rotator and _key_rotator.current_key:
+                kwargs["api_key"] = _key_rotator.current_key
             resp = litellm.completion(**kwargs)
             content = resp.choices[0].message.content or ""
+            # Reset key hit counter on success — key is healthy
+            if _key_rotator:
+                _key_rotator.reset_hits()
+            snippet = content[:200].replace("\n", " ")
+            key_label = f" [key {_key_rotator._idx + 1}/{_key_rotator.n_keys}]" if _key_rotator and _key_rotator.n_keys > 1 else ""
+            print(f"  {_tag()} api←{key_label} {snippet}{'…' if len(content) > 200 else ''}", flush=True)
             return content.strip()
-        except litellm.RateLimitError:
+        except litellm.RateLimitError as exc:
+            if _key_rotator:
+                _key_rotator.on_rate_limit()
+            if _adaptive_sem:
+                _adaptive_sem.on_rate_limit()
             if attempt == _MAX_RETRIES - 1:
                 raise
             wait = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 2)
-            print(f"  [rate_limit] retry {attempt+1}/{_MAX_RETRIES} in {wait:.0f}s")
-            time.sleep(wait)
+            key_label = f" [key {_key_rotator._idx + 1}/{_key_rotator.n_keys}]" if _key_rotator and _key_rotator.n_keys > 1 else ""
+            print(f"  {_tag()} [rate_limit]{key_label} retry {attempt+1}/{_MAX_RETRIES} in {wait:.0f}s", flush=True)
         except (litellm.APIConnectionError, litellm.Timeout):
             if attempt == _MAX_RETRIES - 1:
                 raise
             wait = _BASE_DELAY * (2 ** attempt)
-            print(f"  [conn_error] retry {attempt+1}/{_MAX_RETRIES} in {wait:.0f}s")
+            print(f"  {_tag()} [conn_error] retry {attempt+1}/{_MAX_RETRIES} in {wait:.0f}s", flush=True)
+        else:
+            wait = None
+        finally:
+            if _adaptive_sem:
+                _adaptive_sem.release()
+        # Sleep outside the semaphore so slots are free for the scaler to steal.
+        if wait:
             time.sleep(wait)
     raise RuntimeError(f"_call_with_stop: all {_MAX_RETRIES} attempts failed")
 
@@ -302,7 +479,7 @@ def _generate_with_intercept(
     tool_profile: dict,
     api_base: str | None = None,
     failure_config: dict | None = None,
-    max_rounds: int = 8,
+    max_rounds: int = 5,
     registry: "_ToolRegistry | None" = None,
 ) -> list[dict]:
     """Generate text iteratively, intercept <tool> calls, execute them live.
@@ -368,22 +545,33 @@ def _generate_with_intercept(
             result = _registry.execute(tool_inner, active_tools, failure_config)
             tool_call_counts[tool_name] = call_count + 1
 
+        args_snippet = tool_inner[:120].replace("\n", " ")
+        result_snippet = result[:200].replace("\n", " ")
+        print(
+            f"  {_tag()} [tool r{round_num}] call={tool_name}({args_snippet}{'…' if len(tool_inner) > 120 else ''})  "
+            f"result({len(result)}c)={result_snippet}{'…' if len(result) > 200 else ''}",
+            flush=True,
+        )
+
         # Inject result and require a new <think> block — trains the model to
         # re-reason after each tool result before calling the next tool or answering.
         # The instructional suffix is stripped in _build_v3_example so it does not
         # pollute student training data.
-        wrapped = (
-            f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n"
+        is_last_round = round_num >= max_rounds - 2
+        followup = (
+            "Open a new <think>...</think> block to reason about this result, "
+            "then write your <answer> — no more tool calls."
+            if is_last_round else
             "Open a new <think>...</think> block to reason about this result, "
             "then call the next tool or write your <answer>."
         )
+        wrapped = f"[TOOL_RESULT: {tool_name}]\n{result}\n[/TOOL_RESULT]\n{followup}"
 
         conversation.append({"role": "assistant", "content": full_assistant_content})
         # Use "user" role here for the teacher's generation (NVIDIA NIM and most
         # OpenAI-compatible APIs reject role="tool" without a native tool_call_id).
         # _build_v3_example converts these to role="tool" for the student JSONL.
         conversation.append({"role": "user", "content": wrapped})
-        print(f"    [intercept r{round_num}] {tool_name}() -> {len(result)} chars  (call #{call_count + 1})")
 
     return conversation
 
@@ -643,6 +831,7 @@ def _process_one_v3(
     tool_profile, failure_config = pick_tool_profile(category, item)
     elapsed = time.monotonic() - run_start
     tag = f"[{idx}/{total}:{category}:{q_id}]"
+    _thread_local.tag = tag  # available to _call_with_stop and any helper on this thread
     print(f"\n{tag} profile={tool_profile['label']} elapsed={elapsed:.0f}s")
     print(f"  Q: {question[:90]}{'...' if len(question) > 90 else ''}")
 
@@ -650,54 +839,89 @@ def _process_one_v3(
     # teacher sees realistic memory data and learns genuine personalisation.
     sampled_profile = random.choice(_SAMPLE_USER_PROFILES)
     memory_store = _OneProfileMemoryStore(sampled_profile)
-    q_registry = _ToolRegistry(user_memory_store=memory_store)
+    scratchpad_store = _ScratchpadStore()
+    q_registry = _ToolRegistry(user_memory_store=memory_store, scratchpad_store=scratchpad_store)
+    q_registry.session_id = q_id  # required — registry gates memory/scratchpad reads on session_id being set
     print(f"  {tag} user_profile='{sampled_profile['who'][:60]}'")
 
     ideal = _IDEAL_BEHAVIORS_V3.get(category, _DEFAULT_IDEAL_V3)
     teacher_system = _make_teacher_prompt(tool_profile, category, ideal)
+
+    # Pre-execute mandatory preamble tool calls and inject them as fake turns.
+    # This skips 2–3 LLM round trips that every conversation wastes on boilerplate
+    # tool discovery (user_memory_sections → user_memory_read → get_datetime).
+    # The model starts generating from *after* the preamble, with context already loaded.
+    _active_tools = {
+        part.split("✓")[0].strip()
+        for part in tool_profile["context"].split("|")
+        if "✓" in part
+    }
+    _followup = (
+        "Open a new <think>...</think> block to reason about this result, "
+        "then call the next tool or write your <answer>."
+    )
+    preamble: list[dict] = []
+
+    mem_sections = q_registry.execute("user_memory_sections()", _active_tools, None)
+    mem_content = q_registry.execute(
+        "user_memory_read(prompt='user background and preferences')", _active_tools, None
+    )
+    preamble += [
+        {"role": "assistant", "content": "<think>I should check what user memory sections exist, then read the stored profile to personalise my response.</think><tool>user_memory_sections()</tool>"},
+        {"role": "user", "content": f"[TOOL_RESULT: user_memory_sections]\n{mem_sections}\n[/TOOL_RESULT]\n{_followup}"},
+        {"role": "assistant", "content": "<think>Good, I can see the section keys. Now I'll read the user's stored context before answering.</think><tool>user_memory_read(prompt='user background and preferences')</tool>"},
+        {"role": "user", "content": f"[TOOL_RESULT: user_memory_read]\n{mem_content}\n[/TOOL_RESULT]\n{_followup}"},
+    ]
+
+    if "get_datetime" in _active_tools:
+        dt_result = q_registry.execute("get_datetime()", _active_tools, None)
+        preamble += [
+            {"role": "assistant", "content": "<think>Let me anchor the current time before responding to any time-sensitive aspects of this question.</think><tool>get_datetime()</tool>"},
+            {"role": "user", "content": f"[TOOL_RESULT: get_datetime]\n{dt_result}\n[/TOOL_RESULT]\n{_followup}"},
+        ]
+
+    print(f"  {tag} pre-seeded {len(preamble)//2} preamble tool(s): mem_sections, mem_read"
+          + (", datetime" if "get_datetime" in _active_tools else ""))
+
     initial_messages = [
         {"role": "system", "content": teacher_system},
         {"role": "user", "content": question},
+        *preamble,
     ]
 
     try:
         t0 = time.monotonic()
-        conversation = None
-        for _think_attempt in range(2):
-            conversation = _generate_with_intercept(
-                messages=initial_messages,
-                model=model,
-                tool_profile=tool_profile,
-                api_base=api_base,
-                failure_config=failure_config,
-                registry=q_registry,
-            )
-            # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
-            # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write
-            # flowing prose that we wrap here so training data stays format-consistent.
-            first_asst_idx = next(
-                (i for i, m in enumerate(conversation) if m["role"] == "assistant"), None
-            )
-            if first_asst_idx is not None:
-                original = conversation[first_asst_idx]["content"]
-                wrapped = _wrap_missing_think(original)
-                if wrapped != original:
-                    conversation[first_asst_idx] = {**conversation[first_asst_idx], "content": wrapped}
-                    print(f"  {tag} auto-wrapped missing <think> block")
-                first_asst = conversation[first_asst_idx]["content"]
-            else:
-                first_asst = ""
-
-            if _think_block_length(first_asst) >= 150:
-                break
-            if _think_attempt == 0:
-                print(f"  {tag} insufficient <think> content (attempt 1) — retrying")
+        conversation = _generate_with_intercept(
+            messages=initial_messages,
+            model=model,
+            tool_profile=tool_profile,
+            api_base=api_base,
+            failure_config=failure_config,
+            registry=q_registry,
+        )
+        # Find the first assistant turn and auto-wrap reasoning in <think> if needed.
+        # Models that don't natively emit <think> tags (e.g. Minimax M2.7) write
+        # flowing prose that we wrap here so training data stays format-consistent.
+        first_asst_idx = next(
+            (i for i, m in enumerate(conversation) if m["role"] == "assistant"), None
+        )
+        if first_asst_idx is not None:
+            original = conversation[first_asst_idx]["content"]
+            wrapped = _wrap_missing_think(original)
+            if wrapped != original:
+                conversation[first_asst_idx] = {**conversation[first_asst_idx], "content": wrapped}
+                print(f"  {tag} auto-wrapped missing <think> block")
+            first_asst = conversation[first_asst_idx]["content"]
         else:
-            print(f"  {tag} skipped: reasoning too short after 2 attempts")
-            return "error"
+            first_asst = ""
 
+        think_len = _think_block_length(first_asst)
+        if think_len < 150:
+            print(f"  {tag} short <think> ({think_len} chars) — proceeding anyway")
+
+        q_elapsed = time.monotonic() - t0
         n_tool_turns = sum(1 for m in conversation if m["role"] == "user" and m["content"].startswith("[TOOL_RESULT:"))
-        print(f"  {tag} {len(conversation)} msgs ({n_tool_turns} tool turns) in {time.monotonic()-t0:.1f}s")
+        print(f"  {tag} {len(conversation)} msgs ({n_tool_turns} tool turns) in {q_elapsed:.1f}s", flush=True)
 
         example = _build_v3_example(conversation, question, category, tool_profile, question_id=q_id)
 
@@ -705,12 +929,50 @@ def _process_one_v3(
             out_file.write(json.dumps(example, ensure_ascii=False) + "\n")
             out_file.flush()
 
-        print(f"  {tag} written")
+        print(f"  {tag} ✓ written (q_time={q_elapsed:.1f}s, workers={_adaptive_sem.current if _adaptive_sem else '?'})", flush=True)
         return "ok"
 
     except Exception as e:
         print(f"  {tag} error: {e}")
         return "error"
+
+
+# ---------------------------------------------------------------------------
+# Background watcher — commit+push output file every N new lines
+# ---------------------------------------------------------------------------
+
+def _watcher_thread(out_path: Path, threshold: int, interval: int = 30) -> None:
+    """Daemon thread: commit+push output file every `threshold` new non-blank lines."""
+    try:
+        repo_root = Path(
+            subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode().strip()
+        )
+        rel_path = out_path.relative_to(repo_root)
+    except Exception as exc:
+        print(f"[watcher] git repo not found — watch_commit disabled ({exc})", flush=True)
+        return
+    def _count() -> int:
+        try:
+            return sum(1 for l in out_path.open("r", encoding="utf-8") if l.strip())
+        except OSError:
+            return 0
+    baseline = _count()
+    last_committed = (baseline // threshold) * threshold
+    print(f"[watcher] started — file: {out_path.name}, threshold: {threshold} lines/commit", flush=True)
+    while True:
+        time.sleep(interval)
+        current = _count()
+        checkpoint = (current // threshold) * threshold
+        if checkpoint > last_committed:
+            msg = f"data: auto-checkpoint — {current} lines in {out_path.name}"
+            try:
+                subprocess.run(["git", "add", str(rel_path)], cwd=repo_root, check=True)
+                subprocess.run(["git", "commit", "-m", msg], cwd=repo_root, check=True)
+                subprocess.run(["git", "push"], cwd=repo_root, check=True)
+                print(f"[watcher] committed + pushed at {current} lines", flush=True)
+                last_committed = checkpoint
+            except subprocess.CalledProcessError as exc:
+                print(f"[watcher] git error: {exc}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -726,6 +988,10 @@ def process_questions_v3(
     overwrite: bool = False,
     category_filter: str | None = None,
     workers: int = 4,
+    min_workers: int = 1,
+    api_keys: list[str] | None = None,
+    skip_categories: set[str] | None = None,
+    rpm_per_key: float = 38.0,
 ) -> None:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     write_mode = "w" if overwrite else "a"
@@ -764,6 +1030,9 @@ def process_questions_v3(
             if category_filter and category_filter != "all" and cat != category_filter:
                 skipped += 1
                 continue
+            if skip_categories and cat in skip_categories:
+                skipped += 1
+                continue
             q = item.get("question", "").strip()
             if not q or _question_id(item) in done_ids:
                 skipped += 1
@@ -774,6 +1043,36 @@ def process_questions_v3(
         items = items[:max_examples]
 
     print(f"Questions: {len(items)} to process (skipped={skipped}, parse_errors={parse_errors})")
+
+    global _adaptive_sem, _key_rotator
+    _adaptive_sem = _AdaptiveSemaphore(initial=workers, min_val=min_workers, scale_up_interval=300.0)
+    print(f"Workers   : {workers} max / {min_workers} min (adaptive)", flush=True)
+
+    # Key rotation — merge CLI keys with env var NVIDIA_NIM_API_KEYS
+    _all_keys: list[str] = []
+    env_keys_raw = os.environ.get("NVIDIA_NIM_API_KEYS", "")
+    if env_keys_raw:
+        _all_keys.extend(k.strip() for k in env_keys_raw.split(",") if k.strip())
+    if api_keys:
+        _all_keys.extend(k for k in api_keys if k not in _all_keys)
+    if _all_keys:
+        _key_rotator = _KeyRotator(_all_keys, threshold=5)
+        total_rpm = rpm_per_key * len(_all_keys)
+        print(f"API keys  : {len(_all_keys)} key(s) loaded — rotating after 5 rate limits per key", flush=True)
+    else:
+        _key_rotator = None
+        total_rpm = rpm_per_key
+
+    global _token_bucket
+    _token_bucket = _TokenBucket(rate_per_minute=total_rpm)
+    print(f"Rate limit: {total_rpm:.0f} RPM token bucket ({rpm_per_key:.0f} RPM × {len(_all_keys) if _all_keys else 1} key(s))", flush=True)
+
+    _scaler_stop = threading.Event()
+    def _scaler_loop():
+        while not _scaler_stop.is_set():
+            _scaler_stop.wait(timeout=60)
+            _adaptive_sem.try_scale_up()
+    threading.Thread(target=_scaler_loop, daemon=True, name="adaptive-scaler").start()
 
     processed = errors = 0
     run_start = time.monotonic()
@@ -818,22 +1117,37 @@ def process_questions_v3(
 def main() -> None:
     p = argparse.ArgumentParser(description="SFT v3 asymmetric distillation generator")
     p.add_argument("--questions", required=True, help="JSONL from sft_question_generator.py")
-    p.add_argument("--output", default="data/train_v3.jsonl")
+    p.add_argument("--output", default="data/train_partA_v3.jsonl")
     p.add_argument("--model", default="nvidia_nim/moonshotai/kimi-k2.6")
     p.add_argument("--api_base", default=None)
     p.add_argument("--max", type=int, default=None)
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--type", "--category", dest="category_filter", default=None)
+    p.add_argument("--skip_type", dest="skip_categories", default=None, help="Comma-separated categories to skip")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--min_workers", type=int, default=1)
+    p.add_argument("--api_keys", default=None, help="Comma-separated API keys; rotates after 5 rate limits per key. Also reads NVIDIA_NIM_API_KEYS from .env")
+    p.add_argument("--rpm", type=float, default=38.0, help="Requests per minute per key (default 38, slightly under NIM free-tier 40)")
     p.add_argument("--max_retries", type=int, default=5)
     p.add_argument("--base_delay", type=float, default=3.0)
+    p.add_argument("--watch_commit", action="store_true",
+                   help="Commit+push output file every --watch_threshold new lines in a background daemon thread")
+    p.add_argument("--watch_threshold", type=int, default=50,
+                   help="Lines between auto-commits when --watch_commit is active (default 50)")
     args = p.parse_args()
 
     global _MAX_RETRIES, _BASE_DELAY
     _MAX_RETRIES = args.max_retries
     _BASE_DELAY = args.base_delay
 
+    if args.watch_commit:
+        out_abs = Path(args.output).resolve()
+        wt = threading.Thread(target=_watcher_thread, args=(out_abs, args.watch_threshold), daemon=True)
+        wt.start()
+
+    cli_keys = [k.strip() for k in args.api_keys.split(",") if k.strip()] if args.api_keys else None
     print(f"Generator : {args.model}")
+    skip_cats = {c.strip() for c in args.skip_categories.split(",")} if args.skip_categories else set()
     process_questions_v3(
         questions_path=args.questions,
         output_path=args.output,
@@ -842,7 +1156,11 @@ def main() -> None:
         max_examples=args.max,
         overwrite=args.overwrite,
         category_filter=args.category_filter,
+        skip_categories=skip_cats,
         workers=args.workers,
+        min_workers=args.min_workers,
+        api_keys=cli_keys,
+        rpm_per_key=args.rpm,
     )
 
 

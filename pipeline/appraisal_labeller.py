@@ -13,10 +13,10 @@ Setup:
     pip install datasets transformers torch
 
 Usage:
-    python pipeline/appraisal_labeller.py
-    python pipeline/appraisal_labeller.py --limit 2000 --output data/appraisal_labels.jsonl
-    python pipeline/appraisal_labeller.py --smoke          # 20 examples, validates pipeline
-    python pipeline/appraisal_labeller.py --mock_model     # random vectors, no model needed
+    python appraisal_labeller.py
+    python appraisal_labeller.py --limit 2000 --output data/appraisal_labels.jsonl
+    python appraisal_labeller.py --smoke          # 20 examples, validates pipeline
+    python appraisal_labeller.py --mock_model     # random vectors, no model needed
 
 Output format (one JSON object per line):
     {

@@ -1,0 +1,76 @@
+{
+  "train": {
+    "total": 1865,
+    "by_category": {
+      "math_word_problems": 554,
+      "math_algebra": 164,
+      "math_arithmetic": 158,
+      "user_context_behavioral": 107,
+      "interleaved_tool_reasoning": 98,
+      "ambiguous_underspecified": 82,
+      "math_statistics": 81,
+      "subjective_tradeoffs": 80,
+      "math_trigonometry": 77,
+      "math_geometry": 71,
+      "entity_facts_web_search": 67,
+      "real_time_dependent": 63,
+      "impossible_tasks": 61,
+      "multi_step_clarification": 56,
+      "adversarial_pressure": 48,
+      "knowledge_boundary": 40,
+      "partial_capability_honest": 31,
+      "verbose_context_behavioral": 24,
+      "scratchpad_decomposition": 3
+    },
+    "by_source": {
+      "v3_distillation": 760,
+      "math": 551,
+      "gsm8k": 554
+    },
+    "by_pipeline": {
+      "sft_v3": 760,
+      "partb_converted": 1105
+    },
+    "revised_count": 0,
+    "tool_turn_examples": 1859,
+    "native_tool_examples": 193,
+    "avg_response_chars": 2214
+  },
+  "eval": {
+    "total": 144,
+    "by_category": {
+      "math_word_problems": 45,
+      "math_algebra": 11,
+      "math_arithmetic": 10,
+      "user_context_behavioral": 10,
+      "impossible_tasks": 9,
+      "math_statistics": 9,
+      "interleaved_tool_reasoning": 7,
+      "ambiguous_underspecified": 7,
+      "real_time_dependent": 6,
+      "multi_step_clarification": 5,
+      "math_geometry": 4,
+      "adversarial_pressure": 4,
+      "math_trigonometry": 4,
+      "subjective_tradeoffs": 4,
+      "partial_capability_honest": 3,
+      "entity_facts_web_search": 3,
+      "knowledge_boundary": 1,
+      "scratchpad_decomposition": 1,
+      "verbose_context_behavioral": 1
+    },
+    "by_source": {
+      "v3_distillation": 61,
+      "math": 38,
+      "gsm8k": 45
+    },
+    "by_pipeline": {
+      "sft_v3": 61,
+      "partb_converted": 83
+    },
+    "revised_count": 0,
+    "tool_turn_examples": 143,
+    "native_tool_examples": 0,
+    "avg_response_chars": 2392
+  }
+}

@@ -131,7 +131,7 @@ class PipelineConfig:
         if self.ENABLE_EMPATHY and not Path(self.APPRAISAL_LABELS_PATH).exists():
             issues.append(
                 f"ENABLE_EMPATHY=True requires {self.APPRAISAL_LABELS_PATH} — "
-                "run: python pipeline/appraisal_labeller.py"
+                "run: python appraisal_labeller.py"
             )
         if self.ENABLE_ONTOLOGY_VERIF and not Path(self.ONTOLOGY_PATH).exists():
             issues.append(

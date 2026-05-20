@@ -39,6 +39,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import litellm
@@ -78,14 +79,22 @@ def _set_global_backoff(seconds: float) -> None:
 # System prompt — appears in every training example (must match 3_inference.py)
 # ---------------------------------------------------------------------------
 
-TRAINING_SYSTEM = """You are a trustworthy AI assistant.
-Available tools in this session: python_execute
+TRAINING_SYSTEM = (
+    "You are a trustworthy AI assistant. Reason step-by-step in <think> tags before answering. "
+    "Available tools: python_execute. "
+    "Use python_execute for all arithmetic — never approximate mentally. "
+    "Give your final answer in <answer>...</answer>. "
+    "Format: 2 decimal places for money/geometry, 4 for probability/fractions, integers for counts."
+)
 
-Before every response, write a <think> block starting with CAPABILITY_CHECK.
-Then break down the problem step by step before writing any code.
-Use python_execute for all arithmetic — never approximate mentally.
-Give your final answer in <answer>...</answer>.
-Format: 2 decimal places for money/geometry, 4 for probability/fractions, integers for counts."""
+CATEGORY_MAP = {
+    "word_problems": "math_word_problems",
+    "algebra":       "math_algebra",
+    "trigonometry":  "math_trigonometry",
+    "statistics":    "math_statistics",
+    "geometry":      "math_geometry",
+    "arithmetic":    "math_arithmetic",
+}
 
 # ---------------------------------------------------------------------------
 # Generation prompt — sent to the LLM to produce each training response
@@ -438,20 +447,53 @@ def generate_training_example(
 
             if answers_match(computed, expected):
                 print(f"    attempt {attempt + 1}: ✓  computed={computed}  expected={expected}")
+                # Build multi-turn v3 format: think → tool call → tool result → answer
+                think_m = re.search(r'<think>(.*?)</think>', content, re.DOTALL)
+                if think_m:
+                    think_text = think_m.group(1).strip()
+                else:
+                    # LLM skipped <think> tags — use text before <tool> tag, or reconstruct from comments
+                    tool_pos = content.find('<tool>')
+                    think_text = content[:tool_pos].strip() if tool_pos != -1 else ""
+                    if not think_text:
+                        comment_lines = [
+                            l.lstrip("# ").strip()
+                            for l in code_blocks[0].splitlines()
+                            if l.strip().startswith("#") and l.strip() != "#"
+                        ]
+                        narration = "\n".join(f"- {c}" for c in comment_lines[:10])
+                        think_text = f"Let me solve this step-by-step.\n\n{narration}" if narration else "Let me solve this step-by-step."
+
+                code = code_blocks[0]
                 return {
                     "messages": [
-                        {"role": "system",    "content": TRAINING_SYSTEM},
-                        {"role": "user",      "content": question},
-                        {"role": "assistant", "content": content.strip()},
+                        {"role": "system", "content": TRAINING_SYSTEM},
+                        {"role": "user",   "content": question},
+                        {
+                            "role": "assistant",
+                            "content": f'<think>\n{think_text}\n</think>\n<tool>python_execute(code="""{code}""")</tool>',
+                        },
+                        {
+                            "role": "tool",
+                            "name": "python_execute",
+                            "content": f"[TOOL_RESULT: python_execute]\n{output}\n[/TOOL_RESULT]",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": f"<answer>{computed}</answer>",
+                        },
                     ],
                     "metadata": {
                         "source":          item["source"],
-                        "question_type":   q_type,
-                        "subject":         item.get("subject", ""),
-                        "level":           item.get("level", 1),
-                        "expected_answer": expected,
-                        "computed_answer": computed,
+                        "question_id":     uuid.uuid4().hex[:12],
+                        "category":        CATEGORY_MAP.get(q_type, q_type),
+                        "tool_profile":    "compute_only",
+                        "constitution_score": 1.0,
+                        "revised":         False,
                         "pipeline":        "part_b_datasets",
+                        "original_level":  item.get("level", 1),
+                        "subject":         item.get("subject", ""),
+                        "expected_answer": expected,
                     },
                 }
             else:
@@ -568,8 +610,8 @@ def main():
                         help="Questions to sample from MATH dataset (default: 500)")
     parser.add_argument("--math_max_level", type=int, default=3,
                         help="Max difficulty level for MATH dataset 1–5 (default: 3 = medium)")
-    parser.add_argument("--output", type=str, default="data/train_partB.jsonl",
-                        help="Output JSONL (default: data/train_partB.jsonl)")
+    parser.add_argument("--output", type=str, default="data/train_partB_v3.jsonl",
+                        help="Output JSONL (default: data/train_partB_v3.jsonl)")
     parser.add_argument("--model", type=str, default="nvidia_nim/minimaxai/minimax-m2.7",
                         help="litellm model string for generating training responses")
     parser.add_argument("--api_base", type=str, default=None,
@@ -618,7 +660,7 @@ def main():
     )
 
     print(f"\nNext step → assemble final SFT dataset:")
-    print(f"  python pipeline/sft_dataset_assembler.py --part_b {args.output}")
+    print(f"  python sft_dataset_assembler.py --part_b {args.output}")
 
 
 if __name__ == "__main__":

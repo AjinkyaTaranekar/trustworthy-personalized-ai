@@ -18,19 +18,19 @@ Rationale for keeping separate from 4_benchmark.py:
 
 Usage:
     # Start the inference server first:
-    python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
+    python 3_infererence.py --model_dir models/checkpoint_sft --port 8000
 
     # Fine-tuned model only:
-    python pipeline/5_context_degradation.py --server_url http://localhost:8000
+    python 5_context_degradation.py --server_url http://localhost:8000
 
     # Base vs fine-tuned comparison (start base model server on port 8001):
-    python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001
-    python pipeline/5_context_degradation.py \\
+    python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001
+    python 5_context_degradation.py \\
         --server_url http://localhost:8000 \\
         --compare_url http://localhost:8001
 
 Output:
-    pipeline/reports/degradation_<timestamp>.json   (full turn-by-turn data)
+    reports/degradation_<timestamp>.json   (full turn-by-turn data)
     Printed table: turn | category | ctx_tokens | tool_called | correct
 """
 
@@ -318,16 +318,16 @@ def main() -> None:
         epilog="""
 Examples:
   # Fine-tuned model only
-  python pipeline/5_context_degradation.py --server_url http://localhost:8000
+  python 5_context_degradation.py --server_url http://localhost:8000
 
   # Base vs fine-tuned comparison (start two servers)
-  python pipeline/3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001
-  python pipeline/5_context_degradation.py \\
+  python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001
+  python 5_context_degradation.py \\
       --server_url http://localhost:8000 \\
       --compare_url http://localhost:8001
 
   # Sampled (non-greedy) run for variance analysis
-  python pipeline/5_context_degradation.py --no_greedy
+  python 5_context_degradation.py --no_greedy
 """,
     )
     parser.add_argument("--server_url", default="http://localhost:8000",
@@ -336,7 +336,7 @@ Examples:
                         help="Second server URL (e.g. base model on port 8001)")
     parser.add_argument("--no_greedy", action="store_true",
                         help="Use sampled decoding instead of greedy (less reproducible but more realistic)")
-    parser.add_argument("--output_dir", default="./pipeline/reports")
+    parser.add_argument("--output_dir", default="./reports")
     args = parser.parse_args()
 
     greedy = not args.no_greedy
@@ -387,7 +387,7 @@ Examples:
     print("Ablation: run this script against checkpoints A, B, C, D for the four conditions.")
 
     print(f"\nNext step → repeat for each GRPO checkpoint to build ablation curves:")
-    print(f"  python pipeline/5_context_degradation.py --server_url {args.server_url} --compare_url <base_model_url>")
+    print(f"  python 5_context_degradation.py --server_url {args.server_url} --compare_url <base_model_url>")
     print(f"  # Or analyse the saved report:")
     print(f"  python -c \"import json; r=json.load(open('{output_path}')); print(r['models'])\"")
 

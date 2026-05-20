@@ -558,3 +558,10 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - **Conflicts flagged:** none.
 - **Questions opened:** none filed yet; several `entities/*` pages referenced but deferred (`grpo`, `mcp`, `qwen3-0.6b`, `graph-rag`, `rag`) — create when next ingest touches them.
 - **Batch 2 candidates** listed at the end of `index.md` § "Papers (not yet ingested)".
+
+## [2026-05-17] refactor | sft_v3_generator — add --watch_commit daemon flag
+- Added `_watcher_thread()` function and `--watch_commit` / `--watch_threshold` CLI flags to `pipeline/sft_v3_generator.py`.
+- Watcher runs as a Python daemon thread alongside the main worker pool; commits+pushes output JSONL every N new lines (default 50), removing the need for a separate `watch_and_commit.py` process.
+- Updated `README.md` step 2 usage block to show nohup invocation with `--watch_commit`.
+- Updated `wiki/sources/code/sft-v3-pipeline.md` with a "Background Watch-Commit" section.
+- No cross-file API contracts affected (additive flag only).
