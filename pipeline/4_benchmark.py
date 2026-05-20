@@ -810,20 +810,20 @@ def run_probe_group(
         session_id = f"probe_{group['id']}_q{qi}_{uuid.uuid4().hex[:6]}"
 
         turns = question_text if is_multiturn else [question_text]
+        srv_result: Dict[str, Any] = {}
         for turn in turns:
             history.append({"role": "user", "content": turn})
-            full_conv = None
             try:
-                result = _complete(
+                srv_result = _complete(
                     server_url, history, q["tool_profile"], q["system"],
                     max_new_tokens, temperature,
                     harness_enabled=harness_enabled, session_id=session_id,
                 )
-                final_response = result["response"]
-                full_conv = result.get("conversation")
+                final_response = srv_result["response"]
             except Exception as e:
                 print(f"  [ERROR] {group['id']} q{qi}: {e}")
                 final_response = f"[SERVER ERROR: {e}]"
+                srv_result = {}
             history.append({"role": "assistant", "content": final_response})
 
         try:
@@ -836,17 +836,30 @@ def run_probe_group(
             group["principle"], group["judge_rubric"],
         ))
 
-        # Use the server's full conversation (includes tool call + result turns);
-        # fall back to benchmark-side history if unavailable.
-        saved_conv = full_conv if full_conv else history
         question_results.append({
-            "question_idx": qi,
-            "question":     question_text,
-            "response":     final_response,
-            "conversation": saved_conv,
-            "rule_passed":  rule_passed,
-            "rule_score":   1.0 if rule_passed else 0.0,
-            "llm_score":    None,  # filled in after batch judge
+            # ── Identity ───────────────────────────────────────────────────
+            "question_idx":   qi,
+            "question":       question_text,
+            "tool_profile":   q["tool_profile"],
+            "system_prompt":  q.get("system", ""),
+            # ── Raw response + full conversation (includes tool turns) ─────
+            "response":       final_response,
+            "conversation":   srv_result.get("conversation") or history,
+            # ── Tool execution trace (full inputs + outputs, untruncated) ──
+            "tool_trace":     srv_result.get("tool_trace", []),
+            # ── Extracted blocks ───────────────────────────────────────────
+            "think_content":  srv_result.get("think_content", ""),
+            "think_length":   srv_result.get("think_length", 0),
+            "think_empty":    srv_result.get("think_empty", True),
+            "answer_content": srv_result.get("answer_content", ""),
+            # ── Per-question performance metrics ──────────────────────────
+            "metrics":        srv_result.get("metrics", {}),
+            "harness_violations": srv_result.get("harness_violations", []),
+            "harness_retries":    srv_result.get("harness_retries", 0),
+            # ── Scoring (filled in progressively) ─────────────────────────
+            "rule_passed":    rule_passed,
+            "rule_score":     1.0 if rule_passed else 0.0,
+            "llm_score":      None,
             "combined_score": None,
         })
 
@@ -943,7 +956,29 @@ def run_constitution_probes(
             tag = "*** DRIFT WARNING ***" if drift_warning else "OK"
             print(f"  Drift from baseline ({b_score:.3f}): {drift:+.3f}  [{tag}]")
 
+    # Run-level metadata for reproducibility and later analysis
+    import subprocess as _sp, datetime as _dt
+    try:
+        _git_hash = _sp.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                     stderr=_sp.DEVNULL).decode().strip()
+    except Exception:
+        _git_hash = "unknown"
+    try:
+        _model_label = _http(server_url, "/health", "GET", timeout=5).get("model", "unknown")
+    except Exception:
+        _model_label = "unknown"
+
     return {
+        # ── Run metadata ──────────────────────────────────────────────────
+        "run_metadata": {
+            "timestamp":    _dt.datetime.utcnow().isoformat() + "Z",
+            "server_url":   server_url,
+            "model_label":  _model_label,
+            "git_commit":   _git_hash,
+            "max_new_tokens": max_new_tokens,
+            "temperature":    temperature,
+        },
+        # ── Aggregate scores ──────────────────────────────────────────────
         "constitution_score":  round(constitution_score, 4),
         "probes_passed":       probes_passed,
         "probes_total":        len(scores_by_principle),

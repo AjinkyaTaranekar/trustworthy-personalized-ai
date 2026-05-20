@@ -105,10 +105,11 @@ GRPO_CONFIG = {
 
 # Reward component weights — must sum to 1.0
 REWARD_WEIGHTS = {
-    "format":        0.30,  # structural: think + CAPABILITY_CHECK + answer
-    "accuracy":      0.40,  # correctness: math code execution
-    "tool_integrity": 0.15, # no hallucinated/unavailable tools (P3)
-    "constitution":  0.15,  # broader rule check: P1+P4+P14+P18
+    "format":         0.25,  # structural quality: think content + answer tag
+    "accuracy":       0.35,  # correctness: math code execution
+    "tool_integrity": 0.10,  # no hallucinated/unavailable tools (P3)
+    "tool_quality":   0.20,  # correct tool for question type + non-empty params
+    "constitution":   0.10,  # broader rule check: P1+P4+P14+P18
 }
 
 
@@ -273,36 +274,78 @@ def _answers_match(a: str, b: str, tol: float = 0.01) -> bool:
 # v3 training data has no CAPABILITY_CHECK — format reward only requires <think> + <answer>
 _V3_FORMAT_MODE: bool = True
 
+# All tools the model is permitted to call (includes always-on tools like user_memory/scratchpad)
+_ALL_KNOWN_TOOLS = frozenset({
+    "python_execute", "web_search", "read_url", "get_datetime",
+    # always-on memory/scratchpad tools — must not be treated as hallucinated
+    "user_memory_sections", "user_memory_read", "user_memory_update",
+    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
+})
+
+# Math category names used in both v3 training data and GRPO dataset
+_MATH_CATEGORIES = frozenset({
+    "arithmetic", "algebra", "geometry", "statistics",
+    "unit_conversion", "word_problems", "trigonometry", "calculus", "advanced_geometry",
+    # v3 prefixed variants
+    "math_arithmetic", "math_algebra", "math_geometry", "math_statistics",
+    "math_trigonometry", "math_word_problems", "math_calculus",
+    # gsm8k / partB labels
+    "math_word_problems", "gsm8k",
+})
+
+
+def _extract_think(response: str) -> str:
+    m = re.search(r"<think>(.*?)</think>", response, re.DOTALL | re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
 
 def _format_reward(response: str) -> float:
-    """Structural check: <think> + <answer> required; CAPABILITY_CHECK required in v2 mode only."""
+    """Graded structural quality: think block must be present AND substantive."""
     has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
     has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
-    if _V3_FORMAT_MODE:
-        return 1.0 if (has_think and has_ans) else 0.0
-    has_cap = "CAPABILITY_CHECK" in response
-    return 1.0 if (has_think and has_cap and has_ans) else 0.0
+
+    if not (has_think and has_ans):
+        return 0.0   # missing core structure
+
+    think_text = _extract_think(response)
+
+    if len(think_text) == 0:
+        return 0.15  # has tags but zero thinking — strongly discourage
+
+    if len(think_text) < 40:
+        return 0.4   # trivial think block (e.g. one word)
+
+    if _V3_FORMAT_MODE and "CAPABILITY_CHECK" in response:
+        return 0.6   # v2 artifact leaked into v3 response
+
+    if len(think_text) < 100:
+        return 0.75  # thinking present but shallow
+
+    return 1.0       # substantive thinking + correct structure
 
 
 def _accuracy_reward(response: str, expected_answer: str | None,
                      question_type: str) -> float:
-    """For verifiable math categories: execute code and check answer.
-    For behavioural categories: neutral 0.5 (no ground truth)."""
-    math_types = {"arithmetic", "algebra", "geometry", "statistics",
-                  "unit_conversion", "word_problems",
-                  "trigonometry", "calculus", "advanced_geometry"}
-    if not expected_answer or question_type not in math_types:
+    """For verifiable math: execute code and check answer.
+    For behavioural: neutral 0.5 (no ground truth to verify against)."""
+    if not expected_answer or question_type not in _MATH_CATEGORIES:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
     code_blocks = _extract_code_from_response(response)
     if not code_blocks:
-        # Gave numeric answer without code — wrong method when code is expected
+        # No code at all — check if mental-math answer is at least correct
         answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
         if answer_m:
             num = _last_number(answer_m.group(1))
             if num and _answers_match(num, expected_answer):
-                return 0.3  # partial credit — right answer, wrong method (mental math)
+                return 0.3  # right answer, wrong method (mental math)
         return 0.0
+
+    # Penalise empty code blocks explicitly — worse than no tool call
+    # because the model learned a broken pattern (call but don't fill)
+    for code in code_blocks:
+        if len(code.strip()) < 5:
+            return 0.0  # empty / trivial code is a hard failure
 
     all_output = ""
     for code in code_blocks:
@@ -318,20 +361,77 @@ def _accuracy_reward(response: str, expected_answer: str | None,
 
 
 def _tool_integrity_reward(response: str, active_tools: set) -> float:
-    """P3: no calls to non-existent or session-unavailable tools."""
-    _ALL_TOOLS = frozenset({
-        "python_execute", "web_search", "read_url",
-        "get_datetime",
-    })
+    """P3: no calls to completely unknown tools.
+    Always-on tools (user_memory_*, scratchpad_*) are never hallucinated."""
     called = set(re.findall(r"<tool>(\w+)\(", response))
-    hallucinated = called - _ALL_TOOLS
-    unavailable  = (called & _ALL_TOOLS) - active_tools
+    # A tool is hallucinated only if it is not in the global known set
+    hallucinated = called - _ALL_KNOWN_TOOLS
+    # Profile-restricted tools: only penalise if called AND not available AND not always-on
+    profile_restricted = {"python_execute", "web_search", "read_url", "get_datetime"}
+    unavailable = (called & profile_restricted) - active_tools
     return 0.0 if (hallucinated or unavailable) else 1.0
+
+
+def _tool_quality_reward(response: str, question_type: str, active_tools: set) -> float:
+    """Reward correct tool selection and non-empty parameters.
+
+    Checks per question type:
+      real_time_dependent  → must call get_datetime (or web_search if no datetime)
+      user_context_*       → should call user_memory_read / user_memory_sections
+      entity_facts_*       → must call web_search
+      math categories      → python_execute must have non-empty, non-trivial code
+    """
+    called = set(re.findall(r"<tool>(\w+)\(", response))
+    tool_calls_raw = re.findall(r"<tool>(.*?)</tool>", response, re.DOTALL)
+
+    # ── Hard failure: empty python_execute code ───────────────────────────────
+    for call in tool_calls_raw:
+        if "python_execute" not in call:
+            continue
+        code_triple = re.search(r'code\s*=\s*"""(.*?)"""', call, re.DOTALL)
+        code_single = re.search(r'code\s*=\s*["\']([^"\']*)["\']', call)
+        code_text = ""
+        if code_triple:
+            code_text = code_triple.group(1).strip()
+        elif code_single:
+            code_text = code_single.group(1).strip()
+        if len(code_text) < 5:
+            return 0.0  # called python_execute but left code empty
+
+    score = 1.0
+
+    # ── Real-time questions: must use get_datetime or web_search ─────────────
+    _REALTIME = {"real_time_dependent", "real_time_data"}
+    if question_type in _REALTIME:
+        time_tools = {"get_datetime", "web_search"} & active_tools
+        if time_tools and not (called & time_tools):
+            score *= 0.1   # strong signal: tool available but not used
+
+    # ── User-context questions: should read user memory first ─────────────────
+    _USER_CTX = {"user_context_behavioral", "verbose_context_behavioral"}
+    if question_type in _USER_CTX:
+        memory_tools = {"user_memory_read", "user_memory_sections"}
+        if not (called & memory_tools):
+            score *= 0.4   # model skipped personalisation step
+
+    # ── Entity fact questions: must search ────────────────────────────────────
+    _ENTITY = {"entity_facts_web_search"}
+    if question_type in _ENTITY:
+        if "web_search" in active_tools and "web_search" not in called:
+            score *= 0.05  # near-zero: hallucinating entity facts is dangerous
+
+    # ── Math questions: must use python_execute (already covered by accuracy,
+    #    but doubling signal accelerates learning of the tool habit) ──────────
+    if question_type in _MATH_CATEGORIES:
+        if "python_execute" in active_tools and "python_execute" not in called:
+            score *= 0.2
+
+    return score
 
 
 def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
-    """Broader rule check using Blocker 2's rule_check_response.
+    """Broader rule check using rule_check_response.
     Falls back to a subset check if import fails."""
     try:
         from sft_gold_response_generator import rule_check_response
@@ -370,7 +470,7 @@ def make_reward_fns(reward_type: str = "d") -> list:
     function; only the logging granularity changes.
 
     reward_type 'c': format + accuracy only (Ablation C — two functions)
-    reward_type 'd': full composite         (Ablation D — four functions)
+    reward_type 'd': full composite         (Ablation D — five functions)
     """
     def format_reward(
         prompts: list[str], completions: list[str], **kwargs
@@ -422,7 +522,7 @@ def make_reward_fns(reward_type: str = "d") -> list:
 
         return [format_reward_c, accuracy_reward_c]
 
-    # Ablation D — full composite (four functions)
+    # Ablation D — full composite (five functions)
     def tool_integrity_reward(
         prompts: list[str], completions: list[str],
         tool_profile_label: list[str] | None = None,
@@ -434,6 +534,22 @@ def make_reward_fns(reward_type: str = "d") -> list:
         return [
             float(w * _tool_integrity_reward(c, _profile_to_set(tpl)))
             for c, tpl in zip(completions, tp_list)
+        ]
+
+    def tool_quality_reward(
+        prompts: list[str], completions: list[str],
+        question_type: list[str] | None = None,
+        tool_profile_label: list[str] | None = None,
+        category: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        qt_list = question_type or category or ["unknown"] * n
+        tp_list = tool_profile_label or ["compute_only"] * n
+        w = REWARD_WEIGHTS["tool_quality"]
+        return [
+            float(w * _tool_quality_reward(c, qt, _profile_to_set(tpl)))
+            for c, qt, tpl in zip(completions, qt_list, tp_list)
         ]
 
     def constitution_reward(
@@ -463,7 +579,8 @@ def make_reward_fns(reward_type: str = "d") -> list:
             results.append(float(w * _constitution_reward(comp, q, qt, tool_profile_dict)))
         return results
 
-    return [format_reward, accuracy_reward, tool_integrity_reward, constitution_reward]
+    return [format_reward, accuracy_reward, tool_integrity_reward,
+            tool_quality_reward, constitution_reward]
 
 
 def make_reward_fn(reward_type: str = "d"):
@@ -765,9 +882,9 @@ class ModelTrainer:
             num_generations=GRPO_CONFIG["num_generations"],
             learning_rate=GRPO_CONFIG["learning_rate"],
             **{_kl_key: GRPO_CONFIG["kl_coef"]},
-            clip_range_ratio=GRPO_CONFIG["clip_range_ratio"],
+            epsilon=GRPO_CONFIG["clip_range_ratio"],          # clip_range_ratio → epsilon
             temperature=GRPO_CONFIG["temperature"],
-            max_new_tokens=GRPO_CONFIG["max_new_tokens"],
+            max_completion_length=GRPO_CONFIG["max_new_tokens"],  # max_new_tokens → max_completion_length
             num_train_epochs=GRPO_CONFIG["num_train_epochs"],
             per_device_train_batch_size=GRPO_CONFIG["per_device_train_batch_size"],
             gradient_accumulation_steps=GRPO_CONFIG["gradient_accumulation_steps"],
@@ -777,21 +894,21 @@ class ModelTrainer:
             optim=GRPO_CONFIG["optim"],
             report_to="none",
         )
-        print(f"  KL penalty key: {_kl_key}={GRPO_CONFIG['kl_coef']}")
+        print(f"  KL penalty key : {_kl_key}={GRPO_CONFIG['kl_coef']}")
+        print(f"  epsilon        : {GRPO_CONFIG['clip_range_ratio']}")
+        print(f"  max_completion : {GRPO_CONFIG['max_new_tokens']}")
 
-        # Attempt DAPO Clip-Higher if TRL supports it
+        # Attempt DAPO Clip-Higher (epsilon_high) if TRL supports it
         try:
             config = GRPOConfig(
                 **grpo_kwargs,
-                clip_range_ratio_high=GRPO_CONFIG["clip_range_ratio_high"],
+                epsilon_high=GRPO_CONFIG["clip_range_ratio_high"],  # clip_range_ratio_high → epsilon_high
             )
-            print("  DAPO Clip-Higher active (clip_range_ratio_high="
+            print("  DAPO Clip-Higher active (epsilon_high="
                   f"{GRPO_CONFIG['clip_range_ratio_high']})")
         except TypeError:
-            # Older TRL — fall back to symmetric clipping
             config = GRPOConfig(**grpo_kwargs)
-            print("  NOTE: TRL version does not support clip_range_ratio_high. "
-                  "Using symmetric clipping. Update to trl>=0.13.0 for DAPO Clip-Higher.")
+            print("  NOTE: epsilon_high not supported by this TRL version — symmetric clipping.")
 
         trainer = GRPOTrainer(
             model=self.model,

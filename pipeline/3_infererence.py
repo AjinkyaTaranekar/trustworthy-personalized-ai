@@ -806,6 +806,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
 
     tools_used: Dict[str, int] = {}
     tool_failures: Dict[str, int] = {}
+    tool_trace: List[Dict[str, Any]] = []   # full per-call record for analysis
     max_tool_failures = 2
     total_tokens = 0
     first_input_tokens = 0
@@ -813,10 +814,12 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
 
     try:
         for iteration in range(req.max_tool_iterations):
+            t_gen = time.perf_counter()
             response, n_in, n_tok, _ = _generate(
                 conv, req.max_new_tokens, req.temperature, req.greedy,
                 tools=tool_schemas,
             )
+            gen_ms = round((time.perf_counter() - t_gen) * 1000)
             if iteration == 0:
                 first_input_tokens = n_in
             total_tokens += n_tok
@@ -831,18 +834,21 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 fn_name = tc["function"]
                 kwargs_preview = str(tc["kwargs"])[:120]
                 print(f"[TOOL] Calling: {fn_name}({kwargs_preview})")
+                t_tool = time.perf_counter()
                 raw_result = _TOOL_REGISTRY.call(
                     fn_name, tc["kwargs"], active_tools,
                     check_profile=not use_native,
                 )
-                result_preview = str(raw_result)[:80].replace("\n", "\\n")
-                print(f"[TOOL] Result ({len(str(raw_result))} chars): {result_preview}")
+                tool_ms = round((time.perf_counter() - t_tool) * 1000)
+                raw_str = str(raw_result)
+                result_preview = raw_str[:80].replace("\n", "\\n")
+                print(f"[TOOL] Result ({len(raw_str)} chars): {result_preview}")
                 tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
-                is_error = _is_tool_error(str(raw_result))
-                non_retryable_error = _is_non_retryable_tool_error(str(raw_result)) if is_error else False
+                is_error = _is_tool_error(raw_str)
+                non_retryable_error = _is_non_retryable_tool_error(raw_str) if is_error else False
                 if is_error:
                     tool_failures[fn_name] = tool_failures.get(fn_name, 0) + 1
-                result = _sanitise_tool_output(fn_name, str(raw_result))
+                result = _sanitise_tool_output(fn_name, raw_str)
                 if (
                     _SCRATCHPAD_STORE is not None
                     and _TOOL_REGISTRY.session_id
@@ -851,9 +857,27 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                     task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
                     if task_status:
                         result = result + f"\n{task_status}"
+
+                # Record full trace entry — output_full is untruncated for analysis;
+                # output_model is what the model actually sees (truncated).
+                _think_m = re.search(r"<think>(.*?)</think>", response, re.DOTALL | re.IGNORECASE)
+                tool_trace.append({
+                    "iteration":        iteration,
+                    "tool":             fn_name,
+                    "input":            tc["kwargs"],          # full input kwargs, not truncated
+                    "model_invocation": response,              # full assistant turn that triggered the call
+                    "think_before_call": _think_m.group(1).strip() if _think_m else "",
+                    "output_full":      raw_str,               # full output, untruncated
+                    "output_model":     result,                # truncated to _MAX_TOOL_OUTPUT
+                    "output_chars":     len(raw_str),
+                    "success":          not is_error,
+                    "is_error":         is_error,
+                    "non_retryable":    non_retryable_error,
+                    "gen_ms":           gen_ms,
+                    "tool_ms":          tool_ms,
+                })
+
                 # Both XML and native modes use role="tool" — consistent with training JSONL.
-                # XML mode omits tool_call_id (not used with XML intercept), native mode
-                # would need it but goes through a different code path above.
                 if use_native:
                     conv.append({"role": "tool", "tool_call_id": tc.get("id", "call_0"),
                                  "name": fn_name, "content": result})
@@ -862,7 +886,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
                     conv.append({
                         "role": "user",
-                        "content": _tool_failure_prompt(fn_name, str(raw_result), non_retryable_error, active_tools),
+                        "content": _tool_failure_prompt(fn_name, raw_str, non_retryable_error, active_tools),
                     })
                     fallback, _, n_tok, _ = _generate(
                         conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
@@ -929,6 +953,12 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 "conflict_count": len(write_result.conflicts),
             }
 
+        # Extract think / answer blocks from final response for analysis
+        _think_final = re.search(r"<think>(.*?)</think>", final, re.DOTALL | re.IGNORECASE)
+        _answer_final = re.search(r"<answer>(.*?)</answer>", final, re.DOTALL | re.IGNORECASE)
+        think_content  = _think_final.group(1).strip() if _think_final else ""
+        answer_content = _answer_final.group(1).strip() if _answer_final else ""
+
         logging.info("[RESP] tools=%s tokens=%d latency=%.1fs answer=%s resp=%r",
                      tools_used, total_tokens, latency,
                      "✓" if "<answer>" in final.lower() else "✗",
@@ -937,6 +967,12 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             "response":             final,
             "dependency_disclosure": dep_disclosure,
             "conversation":         conv,
+            "tool_trace":           tool_trace,   # full per-call record: inputs, outputs, timing
+            # Extracted blocks — easier for analysis than parsing the raw response string
+            "think_content":        think_content,
+            "think_length":         len(think_content),
+            "think_empty":          len(think_content) == 0,
+            "answer_content":       answer_content,
             "metrics": {
                 "latency_s":        round(latency, 3),
                 "input_tokens":     first_input_tokens,
@@ -944,6 +980,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                 "tokens_per_sec":   round(total_tokens / latency, 1) if latency > 0 else 0,
                 "tool_calls":       tools_used,
                 "tool_iterations":  len([m for m in conv if m["role"] == "tool"]),
+                "tool_failures":    dict(tool_failures),
             },
             # Optional module metadata — None when the module is disabled
             "user_modelling":  memory_meta,
