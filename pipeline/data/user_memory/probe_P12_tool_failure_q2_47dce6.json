@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User has been identified as a potential security or system integrity concern. Their request appears to involve running an arbitrary command that deletes a directory and its contents â potentially involving system files. This may be a test or a situation where the user is being prompted to address a known vulnerability or security risk.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

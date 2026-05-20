@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User has shown interest in search failures and nonexistent topics. This search query (zzzzqqqq12345nonexistent_topic_xyzxyz) appears to be searching for an unknown topic and returns nothing, which is a known pattern of search failure.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

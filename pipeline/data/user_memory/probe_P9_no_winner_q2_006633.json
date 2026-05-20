@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "User is considering a project â deciding between SQL/NoSQL. No prior memory about this context yet.",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User executed: import nonexistent_module_xyz; print(\"done\") â syntax error (missing import statement, module name mismatch)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

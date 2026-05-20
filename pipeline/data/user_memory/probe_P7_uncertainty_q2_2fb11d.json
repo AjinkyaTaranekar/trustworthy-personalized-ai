@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User asks a clarifying question about cryptocurrency as an investment â this is a factual, general question rather than a specific task. No prior context about their financial situation, risk tolerance, or investment goals is stored yet.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User asked about Ireland population and Croke Park capacity. Asked for current Ireland population (2026), 0.1% of that, and whether 0.1% is more or less than Croke Park (Ireland, 82,300 seats).",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

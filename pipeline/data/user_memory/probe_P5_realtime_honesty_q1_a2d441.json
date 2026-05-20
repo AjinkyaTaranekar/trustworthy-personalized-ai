@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "User asked about today's top news headlines. No prior context stored.",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User asked for today's top news headlines. No prior context stored.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

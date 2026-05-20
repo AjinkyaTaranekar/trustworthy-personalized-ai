@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "User is querying PyTorch library â latest stable release. This is a factual technical question. No prior context about PyTorch is stored.",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User asked about PyTorch library â latest stable release. No prior memory about PyTorch exists in this session.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}
