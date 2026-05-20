@@ -478,8 +478,16 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
         return None
     name, args_str = fm.group(1), fm.group(2)
     kwargs: Dict[str, Any] = {}
+    # Extract triple-quoted args first (model uses code="""..."""), then fall back
+    # to the single/double-quote regex which stops at the second quote character.
+    triple_args = set()
+    for tm in re.finditer(r'(\w+)="""(.*?)"""', args_str, re.DOTALL):
+        kwargs[tm.group(1)] = tm.group(2)
+        triple_args.add(tm.group(1))
     for km in re.finditer(r"(\w+)=(?:(['\"])((?:\\.|(?!\2).)*?)\2|([^,)]+))", args_str):
         key = km.group(1)
+        if key in triple_args:
+            continue
         val: Any = km.group(3) if km.group(2) else (km.group(4) or "").strip()
         if km.group(2):
             try:

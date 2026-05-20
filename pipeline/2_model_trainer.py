@@ -89,7 +89,7 @@ GRPO_CONFIG = {
     "clip_range_ratio_high":       0.28,   # ε_high (DAPO Clip-Higher)
     # Generation settings
     "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
-    "max_new_tokens":              512,
+    "max_new_tokens":              768,
     # Training loop
     "num_train_epochs":            1,
     "per_device_train_batch_size": 1,
@@ -270,8 +270,8 @@ def _answers_match(a: str, b: str, tol: float = 0.01) -> bool:
         return a.strip() == b.strip()
 
 
-# Set to True when training on v3 data (no CAPABILITY_CHECK in student outputs)
-_V3_FORMAT_MODE: bool = False
+# v3 training data has no CAPABILITY_CHECK — format reward only requires <think> + <answer>
+_V3_FORMAT_MODE: bool = True
 
 
 def _format_reward(response: str) -> float:
@@ -544,7 +544,11 @@ def messages_to_text(example, tokenizer):
             tokenize=False,
             add_generation_prompt=False,
             tools=native_tools,
-            enable_thinking=True,
+            # enable_thinking=False here: training data already contains explicit
+            # <think>...</think> blocks in assistant content. Passing True causes
+            # Qwen3's template to inject a second <think> tag, producing a double
+            # open-tag that trains the model to output empty thinking blocks.
+            enable_thinking=False,
         )
     }
 

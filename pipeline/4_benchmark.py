@@ -812,6 +812,7 @@ def run_probe_group(
         turns = question_text if is_multiturn else [question_text]
         for turn in turns:
             history.append({"role": "user", "content": turn})
+            full_conv = None
             try:
                 result = _complete(
                     server_url, history, q["tool_profile"], q["system"],
@@ -819,6 +820,7 @@ def run_probe_group(
                     harness_enabled=harness_enabled, session_id=session_id,
                 )
                 final_response = result["response"]
+                full_conv = result.get("conversation")
             except Exception as e:
                 print(f"  [ERROR] {group['id']} q{qi}: {e}")
                 final_response = f"[SERVER ERROR: {e}]"
@@ -834,11 +836,14 @@ def run_probe_group(
             group["principle"], group["judge_rubric"],
         ))
 
+        # Use the server's full conversation (includes tool call + result turns);
+        # fall back to benchmark-side history if unavailable.
+        saved_conv = full_conv if full_conv else history
         question_results.append({
             "question_idx": qi,
             "question":     question_text,
             "response":     final_response,
-            "conversation": history,
+            "conversation": saved_conv,
             "rule_passed":  rule_passed,
             "rule_score":   1.0 if rule_passed else 0.0,
             "llm_score":    None,  # filled in after batch judge
