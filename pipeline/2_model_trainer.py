@@ -1282,19 +1282,41 @@ def _patch_dynamic_sampling(trainer: "GRPOTrainer") -> None:
     _orig_step = trainer.training_step
 
     def _patched_step(model, inputs, num_items_in_batch=None):
-        rewards = inputs.get("rewards")
+        # TRL versions can wrap the batch in a list; find the dict if present.
+        input_dict = None
+        if isinstance(inputs, dict):
+            input_dict = inputs
+        elif isinstance(inputs, (list, tuple)) and inputs:
+            if len(inputs) == 1 and isinstance(inputs[0], dict):
+                input_dict = inputs[0]
+            else:
+                for item in inputs:
+                    if isinstance(item, dict) and "rewards" in item:
+                        input_dict = item
+                        break
+
+        if input_dict is None:
+            return _orig_step(model, inputs, num_items_in_batch)
+
+        rewards = input_dict.get("rewards")
         if rewards is not None:
             # rewards shape: (batch, num_generations)
             import torch
+            if not isinstance(rewards, torch.Tensor):
+                return _orig_step(model, inputs, num_items_in_batch)
             variance = rewards.var(dim=-1)
             mask = variance > 0
-            if mask.sum() == 0:
+            if mask.ndim == 0:
+                if int(mask.item()) == 0:
+                    return torch.tensor(0.0, device=model.device, requires_grad=True)
+                return _orig_step(model, inputs, num_items_in_batch)
+            if int(mask.sum().item()) == 0:
                 # Every group has zero variance — skip entire batch
                 return torch.tensor(0.0, device=model.device, requires_grad=True)
             # Filter to non-zero-variance groups only
-            for key in list(inputs.keys()):
-                if isinstance(inputs[key], torch.Tensor) and inputs[key].shape[0] == mask.shape[0]:
-                    inputs[key] = inputs[key][mask]
+            for key in list(input_dict.keys()):
+                if isinstance(input_dict[key], torch.Tensor) and input_dict[key].shape[0] == mask.shape[0]:
+                    input_dict[key] = input_dict[key][mask]
         return _orig_step(model, inputs, num_items_in_batch)
 
     trainer.training_step = _patched_step
