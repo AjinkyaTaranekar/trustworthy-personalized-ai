@@ -1,80 +1,88 @@
 {
   "train": {
-    "total": 2398,
+    "total": 2464,
     "by_category": {
-      "math_word_problems": 545,
-      "math_algebra": 181,
-      "math_arithmetic": 149,
-      "impossible_tasks": 140,
-      "subjective_tradeoffs": 127,
-      "multi_step_clarification": 125,
-      "ambiguous_underspecified": 124,
-      "user_context_behavioral": 119,
+      "math_word_problems": 555,
+      "math_algebra": 161,
+      "math_arithmetic": 150,
+      "ambiguous_underspecified": 130,
+      "impossible_tasks": 130,
+      "user_context_behavioral": 126,
+      "multi_step_clarification": 119,
+      "subjective_tradeoffs": 117,
       "entity_facts_web_search": 115,
-      "interleaved_tool_reasoning": 104,
-      "verbose_context_behavioral": 93,
-      "real_time_dependent": 87,
-      "math_geometry": 84,
-      "math_statistics": 79,
+      "interleaved_tool_reasoning": 102,
+      "verbose_context_behavioral": 96,
+      "real_time_dependent": 94,
+      "math_statistics": 88,
+      "adversarial_pressure": 79,
       "math_trigonometry": 75,
-      "partial_capability_honest": 70,
-      "knowledge_boundary": 70,
-      "adversarial_pressure": 59,
-      "environment_timeout": 28,
-      "scratchpad_decomposition": 17,
-      "inventory_constraint": 7
+      "partial_capability_honest": 71,
+      "math_geometry": 70,
+      "knowledge_boundary": 60,
+      "inventory_constraint": 43,
+      "environment_timeout": 25,
+      "scratchpad_decomposition": 24,
+      "math": 14,
+      "adversarial": 10,
+      "regression": 7,
+      "tool_use": 2,
+      "constitution": 1
     },
     "by_source": {
-      "v3_distillation": 1285,
-      "math": 568,
-      "gsm8k": 545
+      "math": 544,
+      "v3_distillation": 1331,
+      "gsm8k": 555,
+      "manual_v1": 34
     },
     "by_pipeline": {
-      "sft_v3": 1285,
-      "partb_converted": 1113
+      "partb_converted": 1089,
+      "sft_v3": 1331,
+      "unknown": 34,
+      "part_b_datasets": 10
     },
     "revised_count": 0,
-    "tool_turn_examples": 2394,
-    "native_tool_examples": 197,
-    "avg_response_chars": 2755
+    "tool_turn_examples": 2422,
+    "native_tool_examples": 181,
+    "avg_response_chars": 2764
   },
   "eval": {
-    "total": 188,
+    "total": 196,
     "by_category": {
-      "math_word_problems": 37,
+      "math_word_problems": 43,
+      "math_arithmetic": 17,
+      "impossible_tasks": 14,
       "ambiguous_underspecified": 14,
-      "user_context_behavioral": 14,
-      "math_arithmetic": 13,
+      "math_algebra": 13,
+      "user_context_behavioral": 13,
       "entity_facts_web_search": 12,
-      "verbose_context_behavioral": 11,
-      "math_algebra": 11,
-      "adversarial_pressure": 10,
-      "impossible_tasks": 9,
-      "math_trigonometry": 8,
-      "multi_step_clarification": 8,
-      "real_time_dependent": 7,
-      "math_statistics": 7,
-      "interleaved_tool_reasoning": 7,
-      "knowledge_boundary": 5,
-      "partial_capability_honest": 4,
-      "subjective_tradeoffs": 3,
-      "environment_timeout": 3,
-      "math_geometry": 2,
-      "inventory_constraint": 2,
-      "scratchpad_decomposition": 1
+      "multi_step_clarification": 9,
+      "adversarial_pressure": 8,
+      "verbose_context_behavioral": 7,
+      "interleaved_tool_reasoning": 6,
+      "partial_capability_honest": 6,
+      "math_geometry": 6,
+      "real_time_dependent": 5,
+      "math_trigonometry": 5,
+      "knowledge_boundary": 4,
+      "subjective_tradeoffs": 4,
+      "math_statistics": 4,
+      "environment_timeout": 4,
+      "inventory_constraint": 2
     },
     "by_source": {
-      "gsm8k": 37,
-      "v3_distillation": 110,
-      "math": 41
+      "v3_distillation": 108,
+      "gsm8k": 43,
+      "math": 45
     },
     "by_pipeline": {
-      "partb_converted": 78,
-      "sft_v3": 110
+      "sft_v3": 108,
+      "partb_converted": 87,
+      "part_b_datasets": 1
     },
     "revised_count": 0,
-    "tool_turn_examples": 186,
+    "tool_turn_examples": 195,
     "native_tool_examples": 0,
-    "avg_response_chars": 2978
+    "avg_response_chars": 2591
   }
 }
