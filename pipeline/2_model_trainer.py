@@ -38,20 +38,43 @@ except ImportError:
 
 # ---------------------------------------------------------------------------
 # Python 3.14 + dill compatibility patch
-# Python 3.14 changed pickle.Pickler._batch_setitems to accept an optional
-# second argument (obj), but dill overrides the method with the old 1-arg
-# signature. Every datasets.Dataset construction hits this via generate_fingerprint.
-# Patch dill BEFORE datasets is imported so all Dataset objects work.
+#
+# Root cause: Python 3.14 changed pickle.save_dict to call
+#   self._batch_setitems(obj.items(), obj)   ← 2 positional args
+# but _batch_setitems only accepts (self, items).
+# Dill does NOT define _batch_setitems in its own Pickler.__dict__ — it
+# inherits from pickle.Pickler — so a __dict__.get() check returns None
+# and the previous patch was silently skipped.
+#
+# Fix: walk the full MRO to find the real implementation, then define a new
+# override DIRECTLY on dill.Pickler that accepts and ignores the extra arg.
+# This ensures Python's dispatch finds our override before the broken one.
 # ---------------------------------------------------------------------------
-try:
-    import dill._dill as _dill_module
-    _orig_bsi = _dill_module.Pickler.__dict__.get("_batch_setitems")
-    if _orig_bsi is not None:
+def _apply_py314_dill_patch():
+    import sys
+    if sys.version_info < (3, 14):
+        return
+    try:
+        import dill._dill as _dill
+        # Walk MRO (skipping dill.Pickler itself) to find the defining class
+        _real_bsi = None
+        for _base in type.mro(_dill.Pickler):
+            if _base is _dill.Pickler:
+                continue
+            _bsi = _base.__dict__.get("_batch_setitems")
+            if _bsi is not None:
+                _real_bsi = _bsi
+                break
+        if _real_bsi is None:
+            return  # Nothing found; nothing to fix
+        # Define it on dill.Pickler so dispatch hits our version first
         def _patched_bsi(self, items, obj=None):
-            return _orig_bsi(self, items)
-        _dill_module.Pickler._batch_setitems = _patched_bsi
-except Exception:
-    pass  # dill not installed or already fixed — no action needed
+            return _real_bsi(self, items)
+        _dill.Pickler._batch_setitems = _patched_bsi
+    except Exception:
+        pass
+
+_apply_py314_dill_patch()
 
 try:
     from unsloth import FastModel
