@@ -105,6 +105,8 @@ except ImportError as _e:
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -685,6 +687,23 @@ def _build_system_prompt(
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="Trustworthy AI Inference Server", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_UI_PATH = Path(__file__).parent / "ui.html"
+
+
+@app.get("/", response_class=FileResponse, include_in_schema=False)
+def serve_ui():
+    """Serve the browser-based inference playground."""
+    if not _UI_PATH.exists():
+        return HTMLResponse("<h2>ui.html not found — run pipeline/ui.html from the repo root.</h2>", status_code=404)
+    return FileResponse(_UI_PATH, media_type="text/html")
 
 
 class Message(BaseModel):
