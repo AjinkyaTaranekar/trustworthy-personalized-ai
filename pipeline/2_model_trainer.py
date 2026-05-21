@@ -51,26 +51,26 @@ except ImportError:
 
 MODEL_CONFIG = {
     "base_model":     "unsloth/Qwen3-0.6B",
-    "max_seq_length": 3072,  # 2048 truncates long tool+answer examples; 3072 fits A100 40GB, marginal on A4000 16GB
+    "max_seq_length": 4096,  # p95 of training examples is ~3530 tokens; 4096 covers ~98% without truncation
     "load_in_4bit":   True,
     "lora_r":         16,
     "lora_alpha":     32,
 }
 
 SFT_CONFIG = {
-    "per_device_train_batch_size": 1,  # 2 risks OOM with packing on 16 GB
-    "gradient_accumulation_steps": 8,  # effective batch = 8 (same as before: 2*4)
-    "num_train_epochs":            3,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "num_train_epochs":            4,    # was 3; extra epoch improves behavioural compliance
     "learning_rate":               2e-4,
-    "warmup_steps":                50,   # ~half an epoch; was 100 (nearly a full epoch on this dataset)
+    "warmup_steps":                50,
     "logging_steps":               10,
-    "save_steps":                  25,   # ~24% of an epoch; first checkpoint at ~12 min
+    "save_steps":                  25,
     "eval_steps":                  25,
-    "save_total_limit":            4,    # keep last 4 + best; prevents disk bloat
+    "save_total_limit":            4,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
-    "packing":                     True,
+    "packing":                     False,  # disabled: packing can split multi-turn tool-call sequences at pack boundaries
 }
 
 GRPO_CONFIG = {
@@ -90,11 +90,11 @@ GRPO_CONFIG = {
     "clip_range_ratio_high":       0.28,   # ε_high (DAPO Clip-Higher)
     # Generation settings
     "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
-    "max_new_tokens":              768,
+    "max_new_tokens":              2048,   # was 768; model needs ≥2048 to produce full tool-call + reasoning responses
     # Prompt length cap — system prompt (constitution, 23 principles) + user question
-    # can reach ~700 tokens; 1024 gives headroom without eating into completion budget.
+    # can reach ~700 tokens; 1536 gives headroom for longer user messages.
     # Without this, TRL defaults to 512 and silently truncates the system prompt.
-    "max_prompt_length":           1024,
+    "max_prompt_length":           1536,
     # Training loop — 2 epochs gives ~300 gradient steps on a 1200-row dataset
     # (batch=1, grad_accum=8 → ~150 steps/epoch); Unsloth recommends 300+ for RL signal.
     "num_train_epochs":            2,
@@ -309,8 +309,37 @@ def _extract_think(response: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _coerce_text(response) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, bytes):
+        return response.decode("utf-8", errors="ignore")
+    if isinstance(response, dict):
+        for key in ("content", "text", "generated_text"):
+            val = response.get(key)
+            if isinstance(val, str):
+                return val
+    if isinstance(response, (list, tuple)):
+        parts = []
+        for item in response:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, bytes):
+                parts.append(item.decode("utf-8", errors="ignore"))
+            elif isinstance(item, dict):
+                for key in ("content", "text", "generated_text"):
+                    val = item.get(key)
+                    if isinstance(val, str):
+                        parts.append(val)
+                        break
+        if parts:
+            return "".join(parts)
+    return str(response)
+
+
 def _format_reward(response: str) -> float:
     """Graded structural quality: think block must be present AND substantive."""
+    response = _coerce_text(response)
     has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
     has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
 
@@ -338,6 +367,7 @@ def _accuracy_reward(response: str, expected_answer: str | None,
                      question_type: str) -> float:
     """For verifiable math: execute code and check answer.
     For behavioural: neutral 0.5 (no ground truth to verify against)."""
+    response = _coerce_text(response)
     if not expected_answer or question_type not in _MATH_CATEGORIES:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
@@ -373,6 +403,7 @@ def _accuracy_reward(response: str, expected_answer: str | None,
 def _tool_integrity_reward(response: str, active_tools: set) -> float:
     """P3: no calls to completely unknown tools.
     Always-on tools (user_memory_*, scratchpad_*) are never hallucinated."""
+    response = _coerce_text(response)
     called = set(re.findall(r"<tool>(\w+)\(", response))
     # A tool is hallucinated only if it is not in the global known set
     hallucinated = called - _ALL_KNOWN_TOOLS
@@ -391,6 +422,7 @@ def _tool_quality_reward(response: str, question_type: str, active_tools: set) -
       entity_facts_*       → must call web_search
       math categories      → python_execute must have non-empty, non-trivial code
     """
+    response = _coerce_text(response)
     called = set(re.findall(r"<tool>(\w+)\(", response))
     tool_calls_raw = re.findall(r"<tool>(.*?)</tool>", response, re.DOTALL)
 
@@ -443,6 +475,7 @@ def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
     """Broader rule check using rule_check_response.
     Falls back to a subset check if import fails."""
+    response = _coerce_text(response)
     try:
         from sft_gold_response_generator import rule_check_response
         violations = rule_check_response(response, question, category, tool_profile)
@@ -1282,19 +1315,41 @@ def _patch_dynamic_sampling(trainer: "GRPOTrainer") -> None:
     _orig_step = trainer.training_step
 
     def _patched_step(model, inputs, num_items_in_batch=None):
-        rewards = inputs.get("rewards")
+        # TRL versions can wrap the batch in a list; find the dict if present.
+        input_dict = None
+        if isinstance(inputs, dict):
+            input_dict = inputs
+        elif isinstance(inputs, (list, tuple)) and inputs:
+            if len(inputs) == 1 and isinstance(inputs[0], dict):
+                input_dict = inputs[0]
+            else:
+                for item in inputs:
+                    if isinstance(item, dict) and "rewards" in item:
+                        input_dict = item
+                        break
+
+        if input_dict is None:
+            return _orig_step(model, inputs, num_items_in_batch)
+
+        rewards = input_dict.get("rewards")
         if rewards is not None:
             # rewards shape: (batch, num_generations)
             import torch
+            if not isinstance(rewards, torch.Tensor):
+                return _orig_step(model, inputs, num_items_in_batch)
             variance = rewards.var(dim=-1)
             mask = variance > 0
-            if mask.sum() == 0:
+            if mask.ndim == 0:
+                if int(mask.item()) == 0:
+                    return torch.tensor(0.0, device=model.device, requires_grad=True)
+                return _orig_step(model, inputs, num_items_in_batch)
+            if int(mask.sum().item()) == 0:
                 # Every group has zero variance — skip entire batch
                 return torch.tensor(0.0, device=model.device, requires_grad=True)
             # Filter to non-zero-variance groups only
-            for key in list(inputs.keys()):
-                if isinstance(inputs[key], torch.Tensor) and inputs[key].shape[0] == mask.shape[0]:
-                    inputs[key] = inputs[key][mask]
+            for key in list(input_dict.keys()):
+                if isinstance(input_dict[key], torch.Tensor) and input_dict[key].shape[0] == mask.shape[0]:
+                    input_dict[key] = input_dict[key][mask]
         return _orig_step(model, inputs, num_items_in_batch)
 
     trainer.training_step = _patched_step
