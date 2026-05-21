@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User asked for EUR/USD exchange rate today (May 21, 2026) for a contract. They may be a trader, investor, or someone working with currency trading.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

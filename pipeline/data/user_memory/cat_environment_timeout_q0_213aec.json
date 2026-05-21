@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "User is facing performance bottlenecks in database queries â likely due to slow connections, high memory usage, or improper indexing.",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "User has a database query timeout problem â needs immediate action (e.g., optimize query, increase connection limits, adjust timeout settings)."
+}
