@@ -13,9 +13,10 @@ Reward types:
     d  format + accuracy + tool + constitution  (Ablation D — full thesis contribution)
 
 DAPO improvements applied over vanilla GRPO:
-    - Token-level loss normalisation (Dr.GRPO): divide by completion length
-    - Clip-Higher: asymmetric ε (0.2 low, 0.28 high)
-    - Dynamic sampling: skip zero-variance groups
+    - Token-level loss normalisation (Dr.GRPO): loss_type='dr_grpo' in GRPOConfig
+    - Clip-Higher: asymmetric ε (0.2 low, 0.28 high) via epsilon_high
+    - Dynamic sampling: skip zero-variance groups (monkey-patched on GRPOTrainer)
+    - Truncated completion masking: mask_truncated_completions=True
     - Reference policy = SFT checkpoint (not base model)
 """
 
@@ -90,14 +91,23 @@ GRPO_CONFIG = {
     # Generation settings
     "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
     "max_new_tokens":              768,
-    # Training loop
-    "num_train_epochs":            1,
+    # Prompt length cap — system prompt (constitution, 23 principles) + user question
+    # can reach ~700 tokens; 1024 gives headroom without eating into completion budget.
+    # Without this, TRL defaults to 512 and silently truncates the system prompt.
+    "max_prompt_length":           1024,
+    # Training loop — 2 epochs gives ~300 gradient steps on a 1200-row dataset
+    # (batch=1, grad_accum=8 → ~150 steps/epoch); Unsloth recommends 300+ for RL signal.
+    "num_train_epochs":            2,
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 8,
     "logging_steps":               5,
     "save_steps":                  100,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
+    "weight_decay":                0.01,
+    "warmup_ratio":                0.05,   # short warmup; GRPO LR is already low (1e-6)
+    "lr_scheduler_type":           "cosine",
+    "max_grad_norm":               1.0,    # gradient clipping — prevents reward spikes destabilising training
     # DAPO dynamic sampling: skip prompts where all G completions score identically
     # (zero-gradient batches waste compute and reward signal)
     "dynamic_sampling":            True,
@@ -898,6 +908,7 @@ class ModelTrainer:
             **{_kl_key: GRPO_CONFIG["kl_coef"]},
             epsilon=GRPO_CONFIG["clip_range_ratio"],          # clip_range_ratio → epsilon
             temperature=GRPO_CONFIG["temperature"],
+            max_prompt_length=GRPO_CONFIG["max_prompt_length"],
             max_completion_length=GRPO_CONFIG["max_new_tokens"],  # max_new_tokens → max_completion_length
             num_train_epochs=GRPO_CONFIG["num_train_epochs"],
             per_device_train_batch_size=GRPO_CONFIG["per_device_train_batch_size"],
@@ -906,11 +917,24 @@ class ModelTrainer:
             save_steps=GRPO_CONFIG["save_steps"],
             bf16=GRPO_CONFIG["bf16"],
             optim=GRPO_CONFIG["optim"],
+            weight_decay=GRPO_CONFIG["weight_decay"],
+            warmup_ratio=GRPO_CONFIG["warmup_ratio"],
+            lr_scheduler_type=GRPO_CONFIG["lr_scheduler_type"],
+            max_grad_norm=GRPO_CONFIG["max_grad_norm"],
             report_to="none",
+            # Dr.GRPO: token-level loss normalisation (divide by completion length)
+            # Prevents longer completions from dominating the gradient signal.
+            loss_type="dr_grpo",
+            # Mask completions that hit max_completion_length — avoids penalising
+            # correct think+tool+answer responses truncated mid-generation.
+            mask_truncated_completions=True,
         )
         print(f"  KL penalty key : {_kl_key}={GRPO_CONFIG['kl_coef']}")
         print(f"  epsilon        : {GRPO_CONFIG['clip_range_ratio']}")
+        print(f"  max_prompt     : {GRPO_CONFIG['max_prompt_length']}")
         print(f"  max_completion : {GRPO_CONFIG['max_new_tokens']}")
+        print(f"  scheduler      : {GRPO_CONFIG['lr_scheduler_type']}  warmup={GRPO_CONFIG['warmup_ratio']}")
+        print(f"  max_grad_norm  : {GRPO_CONFIG['max_grad_norm']}")
 
         # Attempt DAPO Clip-Higher (epsilon_high) if TRL supports it
         try:
