@@ -36,6 +36,23 @@ try:
 except ImportError:
     pass
 
+# ---------------------------------------------------------------------------
+# Python 3.14 + dill compatibility patch
+# Python 3.14 changed pickle.Pickler._batch_setitems to accept an optional
+# second argument (obj), but dill overrides the method with the old 1-arg
+# signature. Every datasets.Dataset construction hits this via generate_fingerprint.
+# Patch dill BEFORE datasets is imported so all Dataset objects work.
+# ---------------------------------------------------------------------------
+try:
+    import dill._dill as _dill_module
+    _orig_bsi = _dill_module.Pickler.__dict__.get("_batch_setitems")
+    if _orig_bsi is not None:
+        def _patched_bsi(self, items, obj=None):
+            return _orig_bsi(self, items)
+        _dill_module.Pickler._batch_setitems = _patched_bsi
+except Exception:
+    pass  # dill not installed or already fixed — no action needed
+
 try:
     from unsloth import FastModel
     from trl import SFTTrainer, SFTConfig, GRPOTrainer, GRPOConfig
