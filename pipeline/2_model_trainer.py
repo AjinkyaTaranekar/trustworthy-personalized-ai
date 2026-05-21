@@ -786,9 +786,11 @@ class ModelTrainer:
             f"lr={SFT_CONFIG['learning_rate']} "
             f"max_seq={MODEL_CONFIG['max_seq_length']}"
         )
-        raw = load_dataset("json", data_files=dataset_path)
-        # Split the raw dataset BEFORE text-formatting so we keep 'messages' for ROUGE
-        raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+        # Load directly to bypass DatasetBuilder fingerprinting (breaks on Python 3.14
+        # due to dill/pickle._batch_setitems signature change in 3.14).
+        with open(dataset_path, encoding="utf-8") as _f:
+            _records = [json.loads(l) for l in _f if l.strip()]
+        raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
         train_dataset = raw_split["train"].map(
             messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
@@ -1209,8 +1211,9 @@ class ModelTrainer:
             dataset_path = self.data_dir / "train_sft_v3.jsonl"
             if dataset_path.exists():
                 try:
-                    raw = load_dataset("json", data_files=str(dataset_path))
-                    raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+                    with open(dataset_path, encoding="utf-8") as _f:
+                        _records = [json.loads(l) for l in _f if l.strip()]
+                    raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
                     self._eval_raw = [dict(ex) for ex in raw_split["test"]]
                     print(f"  [publish] Loaded {len(self._eval_raw)} eval examples from {dataset_path.name}")
                 except Exception as e:
