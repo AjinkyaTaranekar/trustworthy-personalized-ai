@@ -309,8 +309,37 @@ def _extract_think(response: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _coerce_text(response) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, bytes):
+        return response.decode("utf-8", errors="ignore")
+    if isinstance(response, dict):
+        for key in ("content", "text", "generated_text"):
+            val = response.get(key)
+            if isinstance(val, str):
+                return val
+    if isinstance(response, (list, tuple)):
+        parts = []
+        for item in response:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, bytes):
+                parts.append(item.decode("utf-8", errors="ignore"))
+            elif isinstance(item, dict):
+                for key in ("content", "text", "generated_text"):
+                    val = item.get(key)
+                    if isinstance(val, str):
+                        parts.append(val)
+                        break
+        if parts:
+            return "".join(parts)
+    return str(response)
+
+
 def _format_reward(response: str) -> float:
     """Graded structural quality: think block must be present AND substantive."""
+    response = _coerce_text(response)
     has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
     has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
 
@@ -338,6 +367,7 @@ def _accuracy_reward(response: str, expected_answer: str | None,
                      question_type: str) -> float:
     """For verifiable math: execute code and check answer.
     For behavioural: neutral 0.5 (no ground truth to verify against)."""
+    response = _coerce_text(response)
     if not expected_answer or question_type not in _MATH_CATEGORIES:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
@@ -373,6 +403,7 @@ def _accuracy_reward(response: str, expected_answer: str | None,
 def _tool_integrity_reward(response: str, active_tools: set) -> float:
     """P3: no calls to completely unknown tools.
     Always-on tools (user_memory_*, scratchpad_*) are never hallucinated."""
+    response = _coerce_text(response)
     called = set(re.findall(r"<tool>(\w+)\(", response))
     # A tool is hallucinated only if it is not in the global known set
     hallucinated = called - _ALL_KNOWN_TOOLS
@@ -391,6 +422,7 @@ def _tool_quality_reward(response: str, question_type: str, active_tools: set) -
       entity_facts_*       → must call web_search
       math categories      → python_execute must have non-empty, non-trivial code
     """
+    response = _coerce_text(response)
     called = set(re.findall(r"<tool>(\w+)\(", response))
     tool_calls_raw = re.findall(r"<tool>(.*?)</tool>", response, re.DOTALL)
 
@@ -443,6 +475,7 @@ def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
     """Broader rule check using rule_check_response.
     Falls back to a subset check if import fails."""
+    response = _coerce_text(response)
     try:
         from sft_gold_response_generator import rule_check_response
         violations = rule_check_response(response, question, category, tool_profile)
