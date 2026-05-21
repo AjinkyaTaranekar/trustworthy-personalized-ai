@@ -51,26 +51,26 @@ except ImportError:
 
 MODEL_CONFIG = {
     "base_model":     "unsloth/Qwen3-0.6B",
-    "max_seq_length": 3072,  # 2048 truncates long tool+answer examples; 3072 fits A100 40GB, marginal on A4000 16GB
+    "max_seq_length": 4096,  # p95 of training examples is ~3530 tokens; 4096 covers ~98% without truncation
     "load_in_4bit":   True,
     "lora_r":         16,
     "lora_alpha":     32,
 }
 
 SFT_CONFIG = {
-    "per_device_train_batch_size": 1,  # 2 risks OOM with packing on 16 GB
-    "gradient_accumulation_steps": 8,  # effective batch = 8 (same as before: 2*4)
-    "num_train_epochs":            3,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "num_train_epochs":            4,    # was 3; extra epoch improves behavioural compliance
     "learning_rate":               2e-4,
-    "warmup_steps":                50,   # ~half an epoch; was 100 (nearly a full epoch on this dataset)
+    "warmup_steps":                50,
     "logging_steps":               10,
-    "save_steps":                  25,   # ~24% of an epoch; first checkpoint at ~12 min
+    "save_steps":                  25,
     "eval_steps":                  25,
-    "save_total_limit":            4,    # keep last 4 + best; prevents disk bloat
+    "save_total_limit":            4,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
-    "packing":                     True,
+    "packing":                     False,  # disabled: packing can split multi-turn tool-call sequences at pack boundaries
 }
 
 GRPO_CONFIG = {
@@ -90,11 +90,11 @@ GRPO_CONFIG = {
     "clip_range_ratio_high":       0.28,   # ε_high (DAPO Clip-Higher)
     # Generation settings
     "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
-    "max_new_tokens":              768,
+    "max_new_tokens":              2048,   # was 768; model needs ≥2048 to produce full tool-call + reasoning responses
     # Prompt length cap — system prompt (constitution, 23 principles) + user question
-    # can reach ~700 tokens; 1024 gives headroom without eating into completion budget.
+    # can reach ~700 tokens; 1536 gives headroom for longer user messages.
     # Without this, TRL defaults to 512 and silently truncates the system prompt.
-    "max_prompt_length":           1024,
+    "max_prompt_length":           1536,
     # Training loop — 2 epochs gives ~300 gradient steps on a 1200-row dataset
     # (batch=1, grad_accum=8 → ~150 steps/epoch); Unsloth recommends 300+ for RL signal.
     "num_train_epochs":            2,
