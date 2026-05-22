@@ -90,17 +90,34 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 MODEL_CONFIG = {
+    # unsloth/Qwen3-0.6B IS the instruct/chat model — there is no separate -Instruct variant.
+    # Qwen3 naming: the main model (pretraining + post-training) ships under the plain name;
+    # the raw base (pretraining only) is under unsloth/Qwen3-0.6B-Base.
+    # Using the plain model is correct — it already has instruction-following from post-training.
     "base_model":     "unsloth/Qwen3-0.6B",
     "max_seq_length": 4096,  # p95 of training examples is ~3530 tokens; 4096 covers ~98% without truncation
-    "load_in_4bit":   True,
-    "lora_r":         16,
-    "lora_alpha":     32,
+    # 16-bit LoRA: load the 0.6B instruct model in bf16 (~1.2 GB) instead of 4-bit.
+    # Eliminates QLoRA's quantisation noise at negligible VRAM cost on 16 GB.
+    # Full-precision base + LoRA adapters ≈ 3-4 GB vs 4-bit QLoRA ≈ 1.5 GB — both
+    # fit comfortably; the quality gain justifies the small extra overhead.
+    "load_in_4bit":   False,
+    # r=64, α=16 matches the community consensus for complex multi-behaviour tasks
+    # (distillabs benchmark that beat a 120B teacher used r=64, α=16 at 5e-5 LR).
+    # Previous r=16 gave the model insufficient capacity to internalise First
+    # Principles + 5W+H + greedy follow-up as a unified behavioural pattern.
+    "lora_r":         64,
+    "lora_alpha":     16,
 }
 
 SFT_CONFIG = {
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 8,
-    "num_train_epochs":            4,    # was 3; extra epoch improves behavioural compliance
+    # 3 epochs: SFT history showed eval loss plateauing at epoch 2.5-3.0 (~1.32)
+    # while training loss kept falling — textbook overfitting. The extra epoch at
+    # r=16 added noise, not generalisation. At r=64 the model learns faster per
+    # epoch; 3 epochs gives ~729 gradient updates on 1944 examples (eff. batch 8),
+    # matching the gradient-step budget where the previous run's best checkpoint fell.
+    "num_train_epochs":            3,
     "learning_rate":               2e-4,
     "warmup_steps":                50,
     "logging_steps":               10,
@@ -110,6 +127,7 @@ SFT_CONFIG = {
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
+    "lr_scheduler_type":           "cosine",  # cosine decay outperforms linear for behavioural SFT; matches GRPO phase
     "packing":                     False,  # disabled: packing can split multi-turn tool-call sequences at pack boundaries
 }
 
@@ -155,11 +173,12 @@ GRPO_CONFIG = {
 
 # Reward component weights — must sum to 1.0
 REWARD_WEIGHTS = {
-    "format":         0.25,  # structural quality: think content + answer tag
-    "accuracy":       0.35,  # correctness: math code execution
-    "tool_integrity": 0.10,  # no hallucinated/unavailable tools (P3)
-    "tool_quality":   0.20,  # correct tool for question type + non-empty params
-    "constitution":   0.10,  # broader rule check: P1+P4+P14+P18
+    "format":           0.20,  # structural quality: think content + answer tag (was 0.25; 0.05 reallocated to greedy_followup)
+    "accuracy":         0.35,  # correctness: math code execution
+    "tool_integrity":   0.10,  # no hallucinated/unavailable tools (P3)
+    "tool_quality":     0.15,  # correct tool for question type + non-empty params (was 0.20; 0.05 reallocated)
+    "constitution":     0.10,  # broader rule check: P1+P4+P14+P18
+    "greedy_followup":  0.10,  # <answer> ends with a 5W+H follow-up question (First Principles / personalisation principle P21)
 }
 
 
@@ -511,6 +530,80 @@ def _tool_quality_reward(response: str, question_type: str, active_tools: set) -
     return score
 
 
+_GREEDY_CATEGORIES = frozenset({
+    "first_principles_questioning", "user_context_behavioral",
+    "ambiguous_underspecified", "multi_step_clarification",
+    "appraisal_empathy", "subjective_tradeoffs",
+})
+
+# Two-regex approach so the uppercase-label check stays case-sensitive.
+# Without this split, re.IGNORECASE causes \b(WHO|WHAT|...)\b to match plain
+# "What do you think?" — a generic filler that is NOT a targeted user question.
+
+# Case-sensitive: only matches ALL-CAPS dimension labels the model uses to
+# explicitly name a 5W+H axis (e.g. "To understand your WHY better: ...").
+_WPLUS_H_UPPERCASE = re.compile(r"\b(WHO|WHAT|WHEN|WHERE|WHY|HOW)\b")
+
+# Case-insensitive: context-specific patterns that require the dimension word
+# to appear in a phrase that targets the USER's specific situation.
+_WPLUS_H_CONTEXT = re.compile(
+    r"your\s+\b(why|who|what|when|where|how|situation|context|background|goal"
+    r"|motivation|reason|timeline|use\s+case|role|setup)\b"
+    r"|\bwhy\s+(are\s+you|do\s+you|did\s+you|would\s+you|is\s+this)\b"
+    r"|\bwho\s+(are\s+you|is\s+this|is\s+the)\b"
+    r"|\bwhat\s+(is\s+your|are\s+you|does\s+your|specifically|exactly)\b"
+    r"|\bwhen\s+(do\s+you|are\s+you|is\s+this|is\s+your)\b"
+    r"|\bwhere\s+(are\s+you|do\s+you|is\s+this|does\s+this)\b"
+    r"|\bhow\s+(do\s+you|are\s+you|does\s+your|would\s+you|much)\b"
+    r"|tell\s+me\s+(more\s+)?(about\s+)?(your|who|why|what|how|when|where)\b"
+    r"|to\s+(give|help)\s+(you\s+)?(more|better|a\s+sharper|sharper)"
+    r"|\b5w\+?h\b",
+    re.IGNORECASE,
+)
+
+# Sentence splitter — split on . ! ? followed by whitespace or end of string
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _last_sentence(text: str) -> str:
+    """Return the last non-empty sentence of text."""
+    parts = [s.strip() for s in _SENTENCE_END.split(text.strip()) if s.strip()]
+    return parts[-1] if parts else ""
+
+
+def _greedy_followup_reward(response: str, category: str) -> float:
+    """P21 — greedy personalisation: <answer> must end with a 5W+H follow-up question.
+
+    Grading:
+      1.0 — last sentence of <answer> ends with '?' AND names a 5W+H user dimension
+      0.7 — last sentence ends with '?' but no specific 5W+H dimension named
+      0.3 — last sentence is not a question but there is a '?' somewhere in <answer>
+      0.0 — no question at all in <answer>
+      0.5 — neutral for categories where a closing question is not required
+    """
+    response = _coerce_text(response)
+
+    if category not in _GREEDY_CATEGORIES:
+        return 0.5
+
+    answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
+    if not answer_m:
+        return 0.0
+
+    answer_text = answer_m.group(1).strip()
+    last = _last_sentence(answer_text)
+
+    # Primary check: last sentence ends with ?
+    has_trailing_question = last.endswith("?")
+
+    if not has_trailing_question:
+        return 0.3 if "?" in answer_text else 0.0
+
+    # Trailing question present — check if it targets a 5W+H user dimension
+    has_5wh_signal = bool(_WPLUS_H_UPPERCASE.search(last) or _WPLUS_H_CONTEXT.search(last))
+    return 1.0 if has_5wh_signal else 0.7
+
+
 def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
     """Broader rule check using rule_check_response.
@@ -662,8 +755,22 @@ def make_reward_fns(reward_type: str = "d") -> list:
             results.append(float(w * _constitution_reward(comp, q, qt, tool_profile_dict)))
         return results
 
+    def greedy_followup_reward(
+        prompts: list[str], completions: list[str],
+        category: list[str] | None = None,
+        question_type: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        cat_list = category or question_type or ["unknown"] * n
+        w = REWARD_WEIGHTS["greedy_followup"]
+        return [
+            float(w * _greedy_followup_reward(c, cat))
+            for c, cat in zip(completions, cat_list)
+        ]
+
     return [format_reward, accuracy_reward, tool_integrity_reward,
-            tool_quality_reward, constitution_reward]
+            tool_quality_reward, constitution_reward, greedy_followup_reward]
 
 
 def make_reward_fn(reward_type: str = "d"):
@@ -857,11 +964,17 @@ class ModelTrainer:
             bf16=SFT_CONFIG["bf16"],
             optim=SFT_CONFIG["optim"],
             weight_decay=SFT_CONFIG["weight_decay"],
+            lr_scheduler_type=SFT_CONFIG["lr_scheduler_type"],
             packing=SFT_CONFIG["packing"],
             max_seq_length=MODEL_CONFIG["max_seq_length"],
             dataset_text_field="text",
             report_to="none",
-            load_best_model_at_end=False,
+            # Save the checkpoint with lowest eval_loss, not just the final one.
+            # The previous SFT run showed overfitting: eval plateau at epoch 2.5
+            # while training loss kept falling — the best model was mid-run, not at end.
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            greater_is_better=False,
         )
 
         trainer = SFTTrainer(

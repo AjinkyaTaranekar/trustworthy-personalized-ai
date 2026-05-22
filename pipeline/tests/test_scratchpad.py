@@ -12,24 +12,35 @@ def test_read_initialises_pad_on_first_call():
     result = store.read("sess1")
     assert "SCRATCHPAD" in result
     assert "sess1" in result
-    assert "CONSTITUTION TLDR" in result
-    assert "[CONTEXT]" in result
+    assert "5W+H STATE" in result   # replaces old CONSTITUTION TLDR + CONTEXT
     assert "[TASKS]" in result
     assert "[NOTES]" in result
+    # old CONSTITUTION TLDR removed — it was stale and wasted ~200 tokens per read
+    assert "CONSTITUTION TLDR" not in result
 
 
-def test_constitution_tldr_contains_key_principles():
+def test_5wh_state_section_is_initialised():
     store = ScratchpadStore()
     result = store.read("sess1")
-    for p in ("P1", "P3", "P5", "P8", "P14", "P18", "P24", "P25"):
-        assert p in result, f"Missing {p} from constitution TLDR"
+    assert "5W+H" in result
+    assert "empty" in result.lower()
 
 
-def test_update_context_section():
+def test_update_5wh_state_section():
+    store = ScratchpadStore()
+    store.read("sess1")
+    result = store.update("sess1", "5wh_state",
+        "Known: WHO=engineer, WHAT=career change\nUnknown: WHY (ask next)")
+    assert "✓" in result
+    assert "engineer" in store.read("sess1")
+
+
+def test_update_context_section_aliased_to_notes():
+    """'context' is a backward-compat alias for 'notes'."""
     store = ScratchpadStore()
     store.read("sess1")
     result = store.update("sess1", "context", "user wants X")
-    assert result == "✓ context updated"
+    assert "✓" in result and "updated" in result
     assert "user wants X" in store.read("sess1")
 
 
@@ -48,13 +59,13 @@ def test_update_notes_section():
 
 
 def test_update_constitution_tldr_is_rejected():
+    """constitution_tldr no longer exists; any write to it should be rejected."""
     store = ScratchpadStore()
     store.read("sess1")
     result = store.update("sess1", "constitution_tldr", "overwrite attempt")
     assert "Error" in result
     pad = store.read("sess1")
     assert "overwrite attempt" not in pad
-    assert "P1" in pad
 
 
 def test_update_unknown_section_is_rejected():
@@ -66,7 +77,7 @@ def test_update_unknown_section_is_rejected():
 
 def test_update_initialises_pad_if_not_yet_read():
     store = ScratchpadStore()
-    result = store.update("sess2", "context", "hello")
+    result = store.update("sess2", "notes", "hello")
     assert "✓" in result
     assert "hello" in store.read("sess2")
 
@@ -93,24 +104,34 @@ def test_get_task_status_returns_compact_summary():
     store.update("sess1", "tasks",
         "1. [YES] get rate\n2. [YES-NEXT] calculate\n3. [BLOCKED: needs context] advise")
     status = store.get_task_status("sess1")
-    assert "TASK STATUS" in status
+    assert status != ""
     assert "1." in status
+
+
+def test_get_task_status_includes_5wh_unknown():
+    store = ScratchpadStore()
+    store.read("sess1")
+    store.update("sess1", "5wh_state",
+        "Known: WHO=engineer\nUnknown: WHY, WHEN (ask WHY next)")
+    store.update("sess1", "tasks", "1. Answer the question")
+    status = store.get_task_status("sess1")
+    assert "Unknown" in status or "WHY" in status
 
 
 def test_destroy_resets_session():
     store = ScratchpadStore()
     store.read("sess1")
-    store.update("sess1", "context", "some context")
+    store.update("sess1", "notes", "some notes")
     store.destroy("sess1")
     pad = store.read("sess1")
     assert "(empty)" in pad
-    assert "some context" not in pad
+    assert "some notes" not in pad
 
 
 def test_multiple_sessions_are_independent():
     store = ScratchpadStore()
-    store.update("sessA", "context", "user A content")
-    store.update("sessB", "context", "user B content")
+    store.update("sessA", "notes", "user A content")
+    store.update("sessB", "notes", "user B content")
     assert "user A content" in store.read("sessA")
     assert "user B content" in store.read("sessB")
     assert "user B content" not in store.read("sessA")

@@ -46,9 +46,51 @@ _MATH_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
-_CHECKED_PRINCIPLES = ("P1", "P3", "P4", "P18")
+_CHECKED_PRINCIPLES = ("P1", "P3", "P4", "P18", "P20", "P21")
 _ADAPTATION_THRESHOLD = 0.30
 _RETRY_TEMP_SCALES = (1.3, 1.6)
+
+# Signals indicating First Principles decomposition in <think> (P20).
+# Looks for language that breaks a question to its core before answering.
+_FIRST_PRINCIPLES_RE = re.compile(
+    r"\bfirst principles?\b"
+    r"|\bfundamentally\b"
+    r"|\birreducible\b"
+    r"|\bat its core\b"
+    r"|\bwhat is (fundamentally|actually|really) being asked\b"
+    r"|\b5w\+?h\b"
+    r"|\b(who|what|when|where|why|how)\s+(is|are|do|does|did|would|am|have)\b",
+    re.IGNORECASE,
+)
+
+# Two-regex approach — mirrors the split in 2_model_trainer._WPLUS_H_UPPERCASE/CONTEXT.
+# Without splitting, re.IGNORECASE makes \b(WHO|WHAT|...)\b match plain "What",
+# so "What do you think?" falsely registers as a valid 5W+H question.
+
+# Case-sensitive: matches only when the model explicitly labels a 5W+H axis in ALLCAPS.
+_GREEDY_FOLLOWUP_CAPS = re.compile(r"\b(WHO|WHAT|WHEN|WHERE|WHY|HOW)\b")
+
+# Case-insensitive: context-specific phrases that target the USER's situation.
+_GREEDY_FOLLOWUP_CTX = re.compile(
+    r"your\s+\b(why|who|what|when|where|how|situation|context|background|goal"
+    r"|motivation|reason|timeline|role|setup)\b"
+    r"|\bwhy\s+(are\s+you|do\s+you|did\s+you|would\s+you|is\s+this)\b"
+    r"|\bwho\s+(are\s+you|is\s+this|is\s+the)\b"
+    r"|\bwhat\s+(is\s+your|are\s+you|does\s+your|specifically|exactly)\b"
+    r"|\bwhen\s+(do\s+you|are\s+you|is\s+this|is\s+your)\b"
+    r"|\bwhere\s+(are\s+you|do\s+you|is\s+this|does\s+this)\b"
+    r"|\bhow\s+(do\s+you|are\s+you|does\s+your|would\s+you|much)\b"
+    r"|tell\s+me\s+(more\s+)?(about\s+)?(your|who|why|what|how|when|where)\b"
+    r"|to\s+(give|help)\s+(you\s+)?(more|better|a\s+sharper|sharper)\b"
+    r"|\b5w\+?h\b",
+    re.IGNORECASE,
+)
+
+_BEHAVIOURAL_CATEGORIES = frozenset({
+    "first_principles_questioning", "user_context_behavioral",
+    "ambiguous_underspecified", "multi_step_clarification",
+    "appraisal_empathy", "subjective_tradeoffs",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -70,19 +112,16 @@ def run_checks(
     violations: List[str] = []
     active_tools = _TOOL_PROFILE_MAP.get(tool_profile_label, frozenset())
 
-    # ── P1: <think> + CAPABILITY_CHECK ──────────────────────────────────────
-    has_think    = bool(re.search(r"<think\b", response, re.IGNORECASE))
-    has_capcheck = "CAPABILITY_CHECK" in response
+    # ── P1: <think> block present and substantive ────────────────────────────
+    # v3 pipeline: CAPABILITY_CHECK label removed. The requirement is now that
+    # <think> exists and contains meaningful reasoning (First Principles + 5W+H).
+    has_think = bool(re.search(r"<think\b", response, re.IGNORECASE))
 
     if not has_think:
         violations.append(
             "PRINCIPLE_1: <think> block is entirely absent. "
-            "Every response must open with <think>CAPABILITY_CHECK...</think>."
-        )
-    elif not has_capcheck:
-        violations.append(
-            "PRINCIPLE_1: <think> block present but CAPABILITY_CHECK label is missing. "
-            "The capability check must be explicitly labelled so it can be audited."
+            "Open every response with <think> containing First Principles decomposition "
+            "and a 5W+H scan, then close with </think> before any tool calls or <answer>."
         )
 
     # ── P3: TOOL DISCIPLINE ──────────────────────────────────────────────────
@@ -132,6 +171,50 @@ def run_checks(
             "Every response must end with <answer>...</answer>."
         )
 
+    # ── P20: First Principles decomposition in <think> ───────────────────────
+    # Check whenever <think> is present and non-trivial (>= 20 chars).
+    # For 0.6B, missing First Principles is the most common failure — the model
+    # jumps straight to answer without decomposing the question first.
+    if has_think and think_text and len(think_text) >= 20:
+        if not _FIRST_PRINCIPLES_RE.search(think_text):
+            violations.append(
+                "PRINCIPLE_20: <think> block lacks First Principles decomposition. "
+                "Before answering, explicitly identify: what is this fundamentally asking? "
+                "What are the non-negotiable constraints? Then run the 5W+H scan: "
+                "WHO/WHAT/WHEN/WHERE/WHY/HOW — name which dimension is the critical unknown."
+            )
+
+    # ── P21: Greedy 5W+H follow-up in <answer> ──────────────────────────────
+    # Only checked for behavioural categories — not math or impossible tasks.
+    # Extract category from question context if possible; default to checking always.
+    answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
+    if answer_m:
+        answer_text = answer_m.group(1).strip()
+        # Split into sentences; check if last sentence ends with ?
+        last_sentence = ""
+        for part in re.split(r"(?<=[.!?])\s+", answer_text):
+            if part.strip():
+                last_sentence = part.strip()
+        ends_with_question = last_sentence.endswith("?")
+        has_5wh_in_question = bool(
+            _GREEDY_FOLLOWUP_CAPS.search(last_sentence)
+            or _GREEDY_FOLLOWUP_CTX.search(last_sentence)
+        )
+
+        if not ends_with_question:
+            violations.append(
+                "PRINCIPLE_21: <answer> does not end with a follow-up question. "
+                "Every response must close with ONE targeted 5W+H question — "
+                "the single most important user dimension still missing. "
+                "Example: 'To understand your WHY better: what is driving this for you?'"
+            )
+        elif ends_with_question and not has_5wh_in_question:
+            violations.append(
+                "PRINCIPLE_21: <answer> ends with a question but it does not target a "
+                "specific 5W+H dimension. Ask about WHO/WHAT/WHEN/WHERE/WHY/HOW — "
+                "name the dimension explicitly so the user knows what context you need."
+            )
+
     # ── P24a: scratchpad-first ───────────────────────────────────────────────
     if scratchpad_store is not None:
         non_pad_calls = len(re.findall(r"<tool>(?!scratchpad_)", response))
@@ -166,16 +249,20 @@ def build_corrective_prompt(violations: List[str]) -> str:
     """Format violations into a targeted corrective user turn for retry injection."""
     if not violations:
         return (
-            "[HARNESS] Please review your previous response and ensure it follows "
-            "the constitutional format: <think>CAPABILITY_CHECK...</think><answer>...</answer>."
+            "[HARNESS] Please review your previous response and ensure it follows the "
+            "required format: <think> with First Principles + 5W+H decomposition, then "
+            "tool calls, then <answer> ending with a targeted 5W+H follow-up question."
         )
     bullet_list = "\n".join(f"  - {v}" for v in violations)
     return (
-        "[HARNESS] Your previous response had constitutional violations that must be "
-        "corrected before the response can be shown to the user:\n"
+        "[HARNESS] Your previous response had violations that must be corrected:\n"
         f"{bullet_list}\n\n"
-        "Please rewrite your response in full, fixing each violation listed above. "
-        "Remember: every response requires <think>CAPABILITY_CHECK...</think> and <answer>...</answer>."
+        "Rewrite your response in full, fixing each violation. "
+        "Required structure:\n"
+        "  1. <think> — First Principles decomposition + 5W+H scan (name critical unknown)\n"
+        "  2. Tool calls as needed (user_memory_read first)\n"
+        "  3. <answer> — full response with stated assumptions\n"
+        "  4. Last line of <answer> — ONE targeted 5W+H follow-up question ending with ?"
     )
 
 

@@ -6,8 +6,10 @@ the Unsloth training loop starts. If >5% of rows fail, the pipeline is
 fundamentally broken — fix the generator, not the validator.
 
 Invariants:
-  1. System prompt ≤ 50 words  (asymmetric distillation — no leaked constitution)
-  2. <think> block ≥ 50 chars  (no synthetic laziness)
+  1. System prompt contains no leaked teacher constitution
+     (the verbose student prompt is intentional; the check is for teacher-only
+     phrases that should never reach the student JSONL)
+  2. <think> block ≥ 150 chars  (substantive reasoning, not synthetic laziness)
   3. No banned placeholders in <think>  (no v2-style shortcuts)
   4. Tool call immediately followed by tool role  (sequence integrity)
   5. Last message is assistant with <answer>  (end-to-end resolution)
@@ -28,8 +30,18 @@ _BANNED_PHRASES = frozenset({
     "capability_check:", "principle_", "5w+h:", "consequence_check:",
 })
 
-_MIN_THINK_CHARS = 50
-_MAX_SYSTEM_WORDS = 50
+_MIN_THINK_CHARS = 150
+
+# Phrases that appear ONLY in the teacher system prompt and must never leak into
+# the student JSONL. The student prompt is now intentionally verbose (400+ words
+# with First Principles + 5W+H instructions), so a word-count cap is wrong;
+# instead we detect specific teacher-only phrases.
+_TEACHER_LEAK_PHRASES = frozenset({
+    "demonstrate through behavior; never name them",   # teacher constitution header
+    "mandatory output format — follow this exactly",   # teacher format rules header
+    "you are a frontier ai assistant generating",      # teacher identity line
+    "violation invalidates the training example",      # teacher format rule label
+})
 
 
 def validate_row(row: dict) -> tuple[bool, str]:
@@ -38,16 +50,14 @@ def validate_row(row: dict) -> tuple[bool, str]:
     if not messages:
         return False, "empty_messages"
 
-    # ── 1. System prompt length ──────────────────────────────────────────────
+    # ── 1. No leaked teacher constitution ────────────────────────────────────
     system_msg = next((m for m in messages if m.get("role") == "system"), None)
     if system_msg is None:
         return False, "missing_system_message"
-    word_count = len(system_msg.get("content", "").split())
-    if word_count > _MAX_SYSTEM_WORDS:
-        return False, (
-            f"system_prompt_too_long: {word_count} words (max {_MAX_SYSTEM_WORDS}) "
-            "— leaked constitution detected"
-        )
+    sys_lower = system_msg.get("content", "").lower()
+    for phrase in _TEACHER_LEAK_PHRASES:
+        if phrase in sys_lower:
+            return False, f"teacher_constitution_leaked: '{phrase[:60]}'"
 
     # ── 2 & 3: <think> block length + banned placeholders ───────────────────
     asst_msgs = [m for m in messages if m.get("role") == "assistant"]
