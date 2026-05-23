@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "User is a small startup with no prior context stored. This is a comparison question: AWS, GCP, or Azure. No prior profile exists yet.",
+  "why": "User is a small startup with no prior context stored. This is a comparison question: AWS, GCP, or Azure. No prior profile exists yet.",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User is a small startup without prior information stored. The question is: which cloud provider â AWS, GCP, or Azure â is the right choice? No prior profile exists yet.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

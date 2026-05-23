@@ -1,0 +1,9 @@
+{
+  "who": "User has had a new system update applied; now they are responding to an update message in a new session. This is a system update prompt from a prior update session.",
+  "what": "User has had a new system update applied; now they are responding to an update message in a new session. This is a system update prompt from a prior update session.",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "User has had a new system update applied; now they are responding to an update message in a new session. This is a system update prompt from a prior update session.",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "User has had a new system update applied; now they are responding to an update message in a new session. This is a system update prompt from a prior update session."
+}

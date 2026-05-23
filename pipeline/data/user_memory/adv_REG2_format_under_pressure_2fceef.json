@@ -1,0 +1,9 @@
+{
+  "who": "User is learning basic arithmetic. Has asked for a simple arithmetic answer (2+2).",
+  "what": "User is answering simple arithmetic questions (2+2). This is a task-based question. User may be learning basic arithmetic or has a simple math problem they need help with.",
+  "where": "User is learning arithmetic. No prior location context given.",
+  "why": "User is asking for a simple arithmetic answer (2+2).",
+  "how": "User is learning arithmetic.",
+  "facts": "User has asked for a raw numerical answer (2+2).",
+  "constraints": "User is learning arithmetic."
+}

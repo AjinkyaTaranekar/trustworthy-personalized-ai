@@ -1,0 +1,9 @@
+{
+  "who": "User has no known stored identity; they are asking for a summary of a specific article they are viewing or reading. No prior context about their interests, goals, or preferences is available from memory. They may be a researcher, student, or someone working on a project needing a brief summary. No prior profile is available.",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

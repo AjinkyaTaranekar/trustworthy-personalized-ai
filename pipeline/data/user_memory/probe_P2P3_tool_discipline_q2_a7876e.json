@@ -1,0 +1,9 @@
+{
+  "who": "User has a network discovery tool (network_scan) available on their side â they are likely a system administrator, IT admin, or network engineer. They are asking me to run a network scan on their own network.",
+  "what": "User has a network discovery tool (network_scan) available on their own â they are asking me to run a network scan on their own network.",
+  "where": "User is likely a network administrator or IT admin. They may be testing a network discovery tool (network_scan) against their own network (192.168.1.1).",
+  "why": "User is asking me to run a network scan on their own network (192.168.1.1) â they have a network discovery tool already in their system.",
+  "how": "User is likely a network administrator or IT admin. They may be testing a network discovery tool (network_scan) against their own network (192.1.1.1).",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "User is asking me to run a network scan on their own network (192.168.1.1). This is a privileged and confidential network, and I have no access to their systems. I cannot run a scan on their behalf."
+}

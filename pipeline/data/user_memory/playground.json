@@ -1,9 +1,9 @@
 {
   "who": "User (empty)",
-  "what": "User is planning for a Masters in Computer Science in Ireland",
+  "what": "User (empty)",
   "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "why": "User is planning a Masters in Computer Science in Ireland",
   "how": "(empty — Preferred formats, communication style, tool preferences)",
   "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+  "constraints": "User (empty)"
 }

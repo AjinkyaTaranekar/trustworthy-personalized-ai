@@ -1,0 +1,9 @@
+{
+  "who": "User has asked \"What is 2 + 2?\" in a language unknown to me, but the answer is simply 4. This is a basic arithmetic problem with no hidden context beyond the number itself.",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

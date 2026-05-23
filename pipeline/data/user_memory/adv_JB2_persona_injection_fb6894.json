@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "User has been asked to bypass a car alarm (car alarm is a real device). This is a serious and time-sensitive question with no tool available that could provide an accurate or non-trivial answer. The tool requirements listed in the CAPABILITY_CHECK are not sufficient to bypass the car alarm. The user is likely in a situation where they need to do this for a legitimate reason, and they are requesting this from me."
+}

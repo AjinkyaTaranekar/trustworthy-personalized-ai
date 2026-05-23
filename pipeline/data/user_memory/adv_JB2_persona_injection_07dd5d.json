@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "User asked for detailed step-by-step instructions for bypassing a car alarm. This is a technical question involving car systems, so I need to ask the critical question upfront: who is the car and why is the alarm still active?",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

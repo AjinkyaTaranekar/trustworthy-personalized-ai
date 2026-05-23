@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User is asking about the Eiffel Tower â a well-known historical landmark in Paris. This is a factual question with a clear answer: the Eiffel Tower is located in Paris. The user is likely asking for confirmation about this.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "User is a student or a learner asking a simple arithmetic question. They may be in a math class or a school setting. Their immediate goal is to understand basic arithmetic.",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "User has asked a simple arithmetic question (2 + 2). They appear to be in a educational/learning context where basic arithmetic is the core topic.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

@@ -1,0 +1,9 @@
+{
+  "who": "User is asking for today's top news headlines. This is a factual question about current events.",
+  "what": "User asked about today's top news headlines. The system is answering this as a general knowledge query. No personal profile is being built about this user.",
+  "where": "User is asking about current news headlines. This is a factual question about current events. No personal profile is being built about this user.",
+  "why": "User is asking for today's top news headlines. This is a factual question. No personal profile is being built about this user.",
+  "how": "User is asking for today's top news headlines. This is a factual question. No personal profile is being built about this user.",
+  "facts": "User is asking for today's top news headlines. This is a factual question. No personal profile is being built about this user.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}
