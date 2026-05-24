@@ -582,6 +582,96 @@ _ANSWER_BLOCK_RE = re.compile(r"<answer>.*?</answer>", re.DOTALL | re.IGNORECASE
 _TOOL_XML_RE = re.compile(r"<tool>.*?</tool>", re.DOTALL | re.IGNORECASE)
 _TOOL_NATIVE_RE = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL | re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# Self-Critique Judge (Self-Refine pattern — Madaan et al. 2023)
+#
+# After the main tool loop the judge checks two things:
+#   1. RELEVANCE  — does the <answer> actually address the user's question?
+#   2. FORMAT     — is an <answer> block present at all?
+#
+# If either fails the model is given the critique and asked to revise exactly
+# once (no loop). The same model acts as judge; no separate judge model needed.
+# Controlled per-request via CompletionRequest.self_critique.
+# ---------------------------------------------------------------------------
+
+_CRITIQUE_SYSTEM = (
+    "You are a response quality checker. Read the user's question and the AI's answer, "
+    "then judge the answer on two criteria.\n\n"
+    "Reply in EXACTLY this format — no other text:\n"
+    "VERDICT: pass|fail\n"
+    "ISSUE: <one concise sentence describing the problem, or 'none'>"
+)
+
+_CRITIQUE_VERDICT_RE = re.compile(r"VERDICT:\s*(pass|fail)", re.IGNORECASE)
+_CRITIQUE_ISSUE_RE   = re.compile(r"ISSUE:\s*(.+)", re.IGNORECASE)
+
+
+def _self_critique_and_revise(
+    final: str,
+    user_turn: str,
+    conv: list,
+    max_new_tokens: int,
+    temperature: float,
+    greedy: bool,
+) -> tuple:
+    """Judge the response and revise once if an issue is found.
+
+    Returns (revised_or_original, issue_string_or_None, critique_applied_bool).
+
+    The judge uses greedy decoding for a deterministic verdict.
+    The revision uses the caller's temperature so it stays in line with the
+    rest of the generation.
+    """
+    answer_m = _ANSWER_BLOCK_RE.search(final)
+    answer_text = answer_m.group(0) if answer_m else ""
+
+    if not answer_text:
+        issue = "Response is missing an <answer> block — the model did not produce a final answer."
+    else:
+        # Ask the same model to judge relevance
+        critique_conv = [
+            {"role": "system", "content": _CRITIQUE_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"User's question: {user_turn}\n\n"
+                    f"AI's answer block:\n{answer_text}\n\n"
+                    "Criteria:\n"
+                    "1. Does the answer directly address what was asked? "
+                    "(fail if it answers a different question, is evasive, or is a bare refusal "
+                    "for a legitimate request)\n"
+                    "2. Is the answer substantive and complete enough to be useful?"
+                ),
+            },
+        ]
+        try:
+            raw_critique, _, _, _ = _generate(
+                critique_conv, max_new_tokens=128, temperature=0.0, greedy=True
+            )
+            v_m = _CRITIQUE_VERDICT_RE.search(raw_critique)
+            i_m = _CRITIQUE_ISSUE_RE.search(raw_critique)
+            verdict = v_m.group(1).lower() if v_m else "pass"
+            issue_text = i_m.group(1).strip() if i_m else "none"
+            if verdict == "pass" or issue_text.lower() == "none":
+                return final, None, False
+            issue = issue_text
+        except Exception:
+            return final, None, False
+
+    # Issue found — inject critique and ask for one revision
+    revision_conv = list(conv) + [{
+        "role": "user",
+        "content": (
+            f"[SELF_CRITIQUE] Your previous response has an issue:\n{issue}\n\n"
+            f"Please revise your response so it directly and completely answers: {user_turn}"
+        ),
+    }]
+    try:
+        revised, _, _, _ = _generate(revision_conv, max_new_tokens, temperature, greedy)
+        return revised, issue, True
+    except Exception:
+        return final, issue, False
+
 
 def _strip_answer_block(text: str, use_native: bool) -> str:
     """Remove <answer> wrappers when a tool call is present, preserving the tool call if it lives inside."""
@@ -771,6 +861,11 @@ class CompletionRequest(BaseModel):
     # Override cfg.ENABLE_HARNESS for this single request.
     # None → use server default. True → always run harness. False → skip harness.
     # Used by 4_benchmark.py --with_harness to toggle per probe without server restart.
+    self_critique: bool = False
+    # When True: after the main tool loop, run one self-critique cycle (Self-Refine pattern).
+    # The same model judges its own answer for relevance + completeness; if an issue is
+    # found the model revises once. Adds ~1 generation round-trip of latency.
+    # Returned in response as self_critique_applied / self_critique_issue.
 
 
 class ToolRegistration(BaseModel):
@@ -997,6 +1092,26 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
         final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
         METRICS.record(latency, total_tokens, tools_used, ok=True)
 
+        # ── Self-Critique Judge (Self-Refine, one revision max) ────────────
+        self_critique_applied = False
+        self_critique_issue: Optional[str] = None
+        if req.self_critique:
+            t_sc = time.perf_counter()
+            final, self_critique_issue, self_critique_applied = _self_critique_and_revise(
+                final=final,
+                user_turn=user_turn,
+                conv=conv,
+                max_new_tokens=req.max_new_tokens,
+                temperature=req.temperature,
+                greedy=req.greedy,
+            )
+            sc_ms = round((time.perf_counter() - t_sc) * 1000)
+            if self_critique_applied:
+                logging.info("[CRITIQUE] revision applied in %dms — issue: %s", sc_ms, self_critique_issue)
+                conv.append({"role": "assistant", "content": final})
+            else:
+                logging.info("[CRITIQUE] no revision needed (%dms)", sc_ms)
+
         # ── Dependency monitoring (OWASP LLM09 / Blocker 4) ───────────────
         dep_disclosure = _DEPENDENCY_MONITOR.record(req.session_id)
         if dep_disclosure:
@@ -1078,8 +1193,10 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             "user_modelling":  memory_meta,
             "appraisal":       appraisal_ctx.to_dict() if (appraisal_ctx and appraisal_ctx.present) else None,
             "ontology_score":  onto_score.to_dict() if onto_score else None,
-            "harness_violations": harness_violations,
-            "harness_retries":    harness_retries,
+            "harness_violations":    harness_violations,
+            "harness_retries":       harness_retries,
+            "self_critique_applied": self_critique_applied,
+            "self_critique_issue":   self_critique_issue,
         }
 
     except Exception as e:

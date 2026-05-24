@@ -107,13 +107,13 @@ Question: {question}
 Write your response in EXACTLY this format:
 
 <think>
-CAPABILITY_CHECK: python_execute is available. This is a {question_type} problem.
-1. Understanding: [one sentence — what is the question asking for]
-2. Approach: [which formula or method applies, and why]
-3. Steps:
-   - [step 1 — what needs to be computed first]
-   - [step 2 — next computation]
-   - [continue as needed — be specific, not vague]
+This is a {question_type} problem — I need to extract the mathematical relationships and use python_execute for precise computation.
+Understanding: [one sentence — what is the question asking for]
+Approach: [which formula or method applies, and why]
+Steps:
+  [step 1 — what needs to be computed first]
+  [step 2 — next computation]
+  [continue as needed — be specific, not vague]
 </think>
 <tool>python_execute(code=\"\"\"
 # [One-line description of what this block computes]
@@ -134,7 +134,7 @@ Rules (strictly enforced — violating any will cause this example to be discard
 - Only allowed imports: math, statistics, decimal, fractions, cmath — nothing else
 - Code must print exactly ONE number on its last line
 - <answer> must contain only that number — no units, no text, no explanation
-- <think> must start with CAPABILITY_CHECK and show genuine step-by-step reasoning
+- <think> must show genuine step-by-step reasoning starting with the dispatch sentence above
 - Variable names must be descriptive (not x, y, a, b)"""
 
 # ---------------------------------------------------------------------------
