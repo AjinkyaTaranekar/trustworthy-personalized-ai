@@ -403,6 +403,7 @@ _TOKENIZER = None
 _MODEL_LABEL = "not_loaded"
 _USE_GGUF = False
 _GGUF_MODEL = None   # llama_cpp.Llama instance — populated when --gguf is passed
+_HF_USERNAME = "AjinkyaTaranekar"  # overridden by --hf_username at startup
 
 
 def _resolve_gguf_path(gguf_arg: str) -> str:
@@ -1344,7 +1345,16 @@ def swap_model(req: ModelSwapRequest) -> Dict[str, Any]:
     else:
         from unsloth import FastModel  # noqa: PLC0415
         model_path = Path(req.model_dir)
-        source = str(model_path) if model_path.exists() else req.base_model
+        if model_path.exists():
+            source = str(model_path)
+        else:
+            ckpt_name = model_path.name
+            if ckpt_name.startswith("checkpoint_"):
+                suffix = ckpt_name.replace("checkpoint_", "").replace("_", "-")
+                source = f"{_HF_USERNAME}/trustworthy-ai-{suffix}"
+                print(f"[SWAP] Model dir not found; downloading from HF: {source}")
+            else:
+                source = req.base_model
         print(f"[SWAP] Loading model: {source}  (max_seq_length={req.max_seq_length})")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
@@ -1380,7 +1390,9 @@ def main() -> None:
     parser.add_argument("--model_dir", default="./models/checkpoint_sft",
                         help="Path to fine-tuned LoRA checkpoint")
     parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
-                        help="HuggingFace model ID used when --model_dir does not exist")
+                        help="HuggingFace model ID used when --model_dir does not exist and name does not match checkpoint_ convention")
+    parser.add_argument("--hf_username", default="AjinkyaTaranekar",
+                        help="HuggingFace username for auto-downloading checkpoints by name")
     parser.add_argument("--gguf", default=None,
                         help="Load a GGUF model instead of LoRA. Accepts a local .gguf file "
                              "path or a HuggingFace repo ID (downloads q4_k_m variant).")
@@ -1391,7 +1403,8 @@ def main() -> None:
                         help="Path to a YAML config file (overrides PIPELINE_* env vars)")
     args = parser.parse_args()
 
-    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL, _HARNESS
+    global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL, _HARNESS, _HF_USERNAME
+    _HF_USERNAME = args.hf_username
 
     # Load YAML config if provided (overrides env-var defaults)
     if args.config:
@@ -1429,8 +1442,14 @@ def main() -> None:
             source = str(model_path)
             print(f"Loading LoRA checkpoint: {source}")
         else:
-            source = args.base_model
-            print(f"Model dir not found ({model_path}); using base model: {source}")
+            ckpt_name = model_path.name
+            if ckpt_name.startswith("checkpoint_"):
+                suffix = ckpt_name.replace("checkpoint_", "").replace("_", "-")
+                source = f"{_HF_USERNAME}/trustworthy-ai-{suffix}"
+                print(f"Model dir not found ({model_path}); downloading from HF: {source}")
+            else:
+                source = args.base_model
+                print(f"Model dir not found ({model_path}); using base model: {source}")
         print(f"  max_seq_length={args.max_seq_length}  load_in_4bit=True")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
