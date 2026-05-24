@@ -1200,7 +1200,7 @@ class ModelTrainer:
         dataset_path = self.data_dir / "train_sft_v3.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
-    def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
+    def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 1024) -> str:
         """Greedy-decode one prompt using the in-memory model (inference mode assumed).
 
         Used only during publish() — model must already be switched to inference mode

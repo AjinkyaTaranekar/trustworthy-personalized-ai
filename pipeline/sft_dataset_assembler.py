@@ -12,8 +12,7 @@ Replaces four separate scripts:
   sft_add_robustness_variants.py
 
 Outputs:
-  data/train_sft_v3.jsonl  — training set (final)
-  data/eval_sft_v3.jsonl          — eval set (v3 format, no variants)
+  data/train_sft_v3.jsonl  — full training set (eval split handled by 2_model_trainer.py internally)
   data/sft_stats.json             — dataset statistics
 
 Usage:
@@ -173,7 +172,7 @@ def balance_categories(examples: list[dict], max_per: int = MAX_PER_CATEGORY) ->
         kept = items[:max_per]
         result.extend(kept)
         if len(items) > max_per:
-            print(f"  Capped {cat}: {len(items)} → {max_per}")
+            print(f"  Capped {cat}: {len(items)} -> {max_per}")
     return result
 
 
@@ -602,7 +601,6 @@ def run(
     part_a:         str,
     part_b:         str,
     output_dir:     str,
-    eval_frac:      float = 0.10,
     max_per_cat:    int   = MAX_PER_CATEGORY,
     seed:           int   = 42,
     no_transform:   bool  = False,
@@ -649,16 +647,13 @@ def run(
     balanced = balance_categories(deduped, max_per_cat)
     print(f"  After balancing   : {len(balanced)}")
 
-    # ── Train / eval split (before any augmentation) ─────────────────────────
     rng.shuffle(balanced)
-    n_eval  = max(1, int(len(balanced) * eval_frac))
-    eval_v2 = balanced[:n_eval]
-    train   = balanced[n_eval:]
-    print(f"  Split             : {len(train)} train / {n_eval} eval")
+    train = balanced
+    print(f"  Train examples    : {len(train)}")
 
     # ── Transform v2 → v3 (applied to both train and eval) ──────────────────
     if not no_transform:
-        print("\n[Stage 4] Transforming v2 → v3 (multi-turn tool calls)...")
+        print("\n[Stage 4] Transforming v2 -> v3 (multi-turn tool calls)...")
         t_counts: dict[str, int] = {}
         train_v3 = []
         for ex in train:
@@ -666,16 +661,9 @@ def run(
             t_counts[status] = t_counts.get(status, 0) + 1
             if status not in ("dropped_no_answer", "dropped_too_many"):
                 train_v3.append(out_ex)
-        eval_v3 = []
-        for ex in eval_v2:
-            out_ex, status = transform_to_v3(ex)
-            if status not in ("dropped_no_answer", "dropped_too_many"):
-                eval_v3.append(out_ex)
         print(f"  Transform results : {t_counts}")
-        print(f"  Train after xform : {len(train_v3)}  |  Eval: {len(eval_v3)}")
-        train, eval_set = train_v3, eval_v3
-    else:
-        eval_set = eval_v2
+        print(f"  Train after xform : {len(train_v3)}")
+        train = train_v3
 
     # ── Native tool examples (train only) ────────────────────────────────────
     if not no_native:
@@ -694,34 +682,28 @@ def run(
 
     # ── Final shuffle + write ────────────────────────────────────────────────
     rng.shuffle(train)
-    rng.shuffle(eval_set)
 
     train_path = out / "train_sft_v3.jsonl"
-    eval_path  = out / "eval_sft_v3.jsonl"
     stats_path = out / "sft_stats.json"
 
     with open(train_path, "w", encoding="utf-8") as f:
         for ex in train:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-    with open(eval_path, "w", encoding="utf-8") as f:
-        for ex in eval_set:
-            f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 
-    stats = {"train": compute_stats(train), "eval": compute_stats(eval_set)}
+    stats = {"train": compute_stats(train)}
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2)
 
     # ── Summary ──────────────────────────────────────────────────────────────
     print(f"\n{'='*58}")
-    print(f"Train : {len(train):>5} examples  → {train_path}")
-    print(f"Eval  : {len(eval_set):>5} examples  → {eval_path}")
+    print(f"Train : {len(train):>5} examples  -> {train_path}")
     print(f"Stats : {stats_path}")
     print(f"\nCategory distribution (train):")
     for cat, count in stats["train"]["by_category"].items():
         print(f"  {cat:<38} {count:>5}  ({100*count/max(len(train),1):.1f}%)")
     print(f"\nTool-turn examples : {stats['train']['tool_turn_examples']}")
     print(f"Native examples    : {stats['train']['native_tool_examples']}")
-    print(f"\nNext step → train:")
+    print(f"\nNext step -> train:")
     print(f"  python 2_model_trainer.py --mode sft --data_dir {output_dir}")
 
 
@@ -736,7 +718,6 @@ def main() -> None:
     parser.add_argument("--part_a",      default="data/train_partA_v3.jsonl")
     parser.add_argument("--part_b",      default="data/train_partB_v3.jsonl")
     parser.add_argument("--output_dir",  default="data")
-    parser.add_argument("--eval_frac",   type=float, default=0.10)
     parser.add_argument("--max_per_category", type=int, default=MAX_PER_CATEGORY)
     parser.add_argument("--seed",        type=int,   default=42)
     # Transform flags
@@ -770,7 +751,6 @@ def main() -> None:
         part_a=args.part_a,
         part_b=args.part_b,
         output_dir=args.output_dir,
-        eval_frac=args.eval_frac,
         max_per_cat=args.max_per_category,
         seed=args.seed,
         no_transform=args.no_transform,
