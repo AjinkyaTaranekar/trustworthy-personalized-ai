@@ -982,12 +982,18 @@ def run_probe_group(
     max_new_tokens: int = 1024,
     temperature: float = 0.7,
     harness_enabled: Optional[bool] = None,
+    quick: bool = False,
 ) -> Tuple[Dict[str, Any], List[Tuple]]:
-    """Run 3 questions for one principle. Returns (result_dict, judge_queue_items)."""
+    """Run questions for one principle. Returns (result_dict, judge_queue_items)."""
     question_results = []
     judge_queue: List[Tuple] = []
 
-    for qi, q in enumerate(group["questions"]):
+    questions = group["questions"]
+    if quick:
+        import random as _random
+        questions = [_random.choice(questions)]
+
+    for qi, q in enumerate(questions):
         question_text = q["question"]
         is_multiturn = isinstance(question_text, list)
         history: List[Dict] = []
@@ -1065,10 +1071,12 @@ def run_constitution_probes(
     baseline_path: Optional[Path] = None,
     harness_enabled: Optional[bool] = None,
     judge_model: Optional[str] = None,
+    quick: bool = False,
 ) -> Dict[str, Any]:
     total = len(CONSTITUTIONAL_PROBE_GROUPS)
+    q_per = "1 (quick)" if quick else "3"
     print(f"\n{'='*60}")
-    print(f"  CONSTITUTIONAL PROBE SUITE  ({total} principles × 3 questions)")
+    print(f"  CONSTITUTIONAL PROBE SUITE  ({total} principles × {q_per} questions)")
     print(f"{'='*60}")
     print(f"  Server : {server_url}  |  Judge: {'LLM (' + judge_model + ')' if judge_model else 'rule-based only'}")
 
@@ -1079,7 +1087,7 @@ def run_constitution_probes(
     for gi, group in enumerate(CONSTITUTIONAL_PROBE_GROUPS, 1):
         print(f"\n  [{gi}/{total}] {group['id']}")
         result, jq = run_probe_group(
-            server_url, group, max_new_tokens, temperature, harness_enabled,
+            server_url, group, max_new_tokens, temperature, harness_enabled, quick=quick,
         )
         for qi, item in enumerate(jq):
             judge_map.append((len(group_results), qi))
@@ -1262,9 +1270,11 @@ def run_category_probes(
     max_new_tokens: int = 2048,
     temperature: float = 0.7,
     judge_model: Optional[str] = None,
+    quick: bool = False,
 ) -> Dict[str, Any]:
+    q_per = "1 (quick)" if quick else "2"
     print(f"\n{'='*60}")
-    print(f"  CATEGORY COVERAGE PROBES  (18 categories × 2 questions)")
+    print(f"  CATEGORY COVERAGE PROBES  (18 categories × {q_per} questions)")
     print(f"{'='*60}")
 
     results = []
@@ -1273,7 +1283,11 @@ def run_category_probes(
 
     for cat in CATEGORY_PROBES:
         cat_results = []
-        for qi, q in enumerate(cat["questions"]):
+        questions = cat["questions"]
+        if quick:
+            import random as _random
+            questions = [_random.choice(questions)]
+        for qi, q in enumerate(questions):
             is_multiturn = isinstance(q, list)
             history: List[Dict] = []
             final_response = ""
@@ -1732,9 +1746,16 @@ def run_adversarial_probes(
     max_new_tokens: int = 1024,
     temperature: float = 0.7,
     attack_types: Optional[List[str]] = None,
+    quick: bool = False,
 ) -> Dict[str, Any]:
     active = [p for p in ADVERSARIAL_PROBES
               if attack_types is None or p["attack_type"] in attack_types]
+    if quick:
+        import random as _random
+        by_type: Dict[str, list] = {}
+        for p in active:
+            by_type.setdefault(p["attack_type"], []).append(p)
+        active = [_random.choice(probes) for probes in by_type.values()]
     total = len(active)
     print(f"\n{'='*60}")
     print("  ADVERSARIAL PROBE SUITE  (Blocker 3 — OWASP LLM01/LLM04)")
@@ -2334,6 +2355,8 @@ Examples:
     ap.add_argument("--categories",       action="store_true", help="Run category coverage probes (Suite B)")
     ap.add_argument("--drift",            action="store_true", help="Run context drift test (Suite C)")
     ap.add_argument("--adversarial",      action="store_true", help="Run adversarial probes (Suite D)")
+    ap.add_argument("--quick",            action="store_true",
+                    help="Run all suites (A/B/D) with 1 random question per group — fast sanity check")
     ap.add_argument("--adversarial_only", action="store_true")
     ap.add_argument("--attack_types",     default=None, help="Comma-sep: jailbreak,injection,regression")
     ap.add_argument("--report",           action="store_true", help="Generate LLM diagnostic report")
@@ -2396,6 +2419,7 @@ Examples:
                 pr = run_constitution_probes(
                     args.server_url, args.max_new_tokens, args.temperature,
                     baseline_path=baseline_path, judge_model=judge_model,
+                    quick=args.quick,
                 )
                 pr.update({"timestamp": timestamp, "server_url": args.server_url})
                 save_report(pr, output_dir, f"constitution_probe_{label}_{timestamp}.json")
@@ -2405,12 +2429,13 @@ Examples:
 
             if args.categories:
                 cat = run_category_probes(args.server_url, args.max_new_tokens,
-                                          args.temperature, judge_model)
+                                          args.temperature, judge_model,
+                                          quick=args.quick)
                 cat.update({"timestamp": timestamp, "server_url": args.server_url})
                 save_report(cat, output_dir, f"category_probes_{label}_{timestamp}.json")
                 run_results["categories"] = cat
 
-            if args.drift:
+            if args.drift and not args.quick:
                 drift = run_context_drift_test(args.server_url, args.max_new_tokens,
                                                args.temperature, judge_model)
                 drift.update({"timestamp": timestamp, "server_url": args.server_url})
@@ -2419,7 +2444,8 @@ Examples:
 
             if args.adversarial or args.adversarial_only:
                 adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
-                                             args.temperature, attack_types)
+                                             args.temperature, attack_types,
+                                             quick=args.quick)
                 adv.update({"timestamp": timestamp, "server_url": args.server_url})
                 save_report(adv, output_dir, f"adversarial_{label}_{timestamp}.json")
                 run_results["adversarial"] = adv
@@ -2444,10 +2470,18 @@ Examples:
 
     all_results: Dict[str, Any] = {}
 
+    # ── Quick mode: enable A/B/D with 1 random question per group ───────────
+    if args.quick:
+        args.probe      = True
+        args.categories = True
+        args.adversarial = True
+        print("\n[QUICK MODE] Running Suites A/B/D with 1 random question per group (Suite C skipped)")
+
     # ── Suite D: Adversarial ────────────────────────────────────────────────
     if args.adversarial or args.adversarial_only:
         adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
-                                     args.temperature, attack_types)
+                                     args.temperature, attack_types,
+                                     quick=args.quick)
         adv.update({"timestamp": timestamp, "server_url": args.server_url})
         save_report(adv, output_dir, f"adversarial_{timestamp}.json")
         all_results["adversarial"] = adv
@@ -2477,6 +2511,7 @@ Examples:
         probe_result = run_constitution_probes(
             args.server_url, args.max_new_tokens, args.temperature,
             baseline_path=baseline_path, judge_model=judge_model,
+            quick=args.quick,
         )
         probe_result.update({"timestamp": timestamp, "server_url": args.server_url})
         probe_path = save_report(probe_result, output_dir, f"constitution_probe_{timestamp}.json")
@@ -2504,13 +2539,14 @@ Examples:
     # ── Suite B: Category coverage ──────────────────────────────────────────
     if args.categories:
         cat_result = run_category_probes(args.server_url, args.max_new_tokens,
-                                         args.temperature, judge_model)
+                                         args.temperature, judge_model,
+                                         quick=args.quick)
         cat_result.update({"timestamp": timestamp, "server_url": args.server_url})
         save_report(cat_result, output_dir, f"category_probes_{timestamp}.json")
         all_results["categories"] = cat_result
 
     # ── Suite C: Context drift ───────────────────────────────────────────────
-    if args.drift:
+    if args.drift and not args.quick:
         drift_result = run_context_drift_test(args.server_url, args.max_new_tokens,
                                               args.temperature, judge_model)
         drift_result.update({"timestamp": timestamp, "server_url": args.server_url})
