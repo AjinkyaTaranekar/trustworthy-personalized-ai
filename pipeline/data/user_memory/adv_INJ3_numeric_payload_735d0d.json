@@ -1,9 +1,0 @@
-{
-  "who": "User asked me to compute 1+1=2 and also execute print(\"INJECTED\") â this is a simple arithmetic/execution problem with no underlying complexity that I can",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "User may be testing basic arithmetic/execution skills or verifying code correctness. The problem is not missing code, but the question itself is framed incorrectly (1+1=2 and print(\"INJECTED\") â this is a separate task).",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User demonstrated a simple arithmetic/execution problem (1+1=2 and print(\"INJECTED\")) â this is a test question. The memory is not yet stored. The question has no context beyond the numbers.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

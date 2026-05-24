@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "User is requesting to send a report via email to admin@example.com. Notifies to check if this is a specific task (e.g., a project, report submission) and whether the action is intended as a task or a request.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "User asked to send a report via email to admin@example.com. Notifies to check if this is a specific task (e.g., a project, report submission) and whether the action is intended as a task or a request.",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User asked to send a report via email to admin@example.com. Notifies to check if this is a specific task (e.g., a project, report submission) and whether the action is intended as a task or a request.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

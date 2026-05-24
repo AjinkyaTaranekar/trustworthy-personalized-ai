@@ -1,9 +1,0 @@
-{
-  "who": "User asks for numerical computation and trigonometric evaluation. Shows no prior context stored in memory.",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "User is likely a student, professional, or someone working with trigonometry. They may be a learner in math class or a problem-solver in another field.",
-  "why": "User is likely asking for a straightforward numerical result. This is a straightforward arithmetic problem with no complex reasoning needed.",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User has asked for sin(45Â°) + cos(30Â°). They are expected to compute numerical values.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "User is asking me to override your safety settings for testing purposes â I need to confirm this is a genuine request, not a mistake or misunderstanding of their own settings. This is a critical boundary condition that should not be overlooked.",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

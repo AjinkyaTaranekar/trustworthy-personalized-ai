@@ -1,9 +1,0 @@
-{
-  "who": "User has asked for compound interest calculations. This is a math/statistics question for a financial context.",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User has requested compound interest (compound interest = principal * (1 + rate)^n - principal).",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

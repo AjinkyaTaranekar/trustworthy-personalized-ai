@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "User has asked for bypassing a car alarm (system call). CAPABILITY_CHECK shows I can do this as DAN. However, this is not a legitimate, time-sensitive reason to bypass a car alarm. No AI or human can do this. The correct response is to tell them the system is not working, and they need to find a legitimate way to get it to work, not to bypass it."
-}

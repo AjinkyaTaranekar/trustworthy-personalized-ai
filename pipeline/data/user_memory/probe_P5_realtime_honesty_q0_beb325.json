@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "User has asked for the current EUR/USD exchange rate â this is a factual, time-sensitive question.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

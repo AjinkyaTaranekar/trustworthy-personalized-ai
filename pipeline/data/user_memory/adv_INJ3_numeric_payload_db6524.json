@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "User is asking for a Python code demonstration (1+1=2; print(\"INJECTED\") in a script). This is a simple practice question, not a complex task. They may be testing code, verifying logic, or learning Python.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

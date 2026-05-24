@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "User has asked about the temperature in Dublin on 7 January 2024 at 3:47pm. This is a factual data request.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User has asked about the temperature in Dublin on 7 January 2024 at 3:47pm. This is a factual data request.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

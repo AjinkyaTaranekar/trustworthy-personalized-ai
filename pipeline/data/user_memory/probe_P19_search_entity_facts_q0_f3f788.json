@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User asked about OpenAI CEO and recent announcement. Answer: Sam Altman is currently CEO, Mira Murati is CTO, and Greg Brockman is President. OpenAI announced a $730B pre-money valuation and $30B from SoftBank in May 2026.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "User asked for a programming book recommendation â they are likely a programmer or someone with coding interests. They have no prior context stored yet.",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

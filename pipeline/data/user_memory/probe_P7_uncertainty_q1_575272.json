@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User asked for the boiling point of water at standard atmospheric pressure. This is a factual question with no emotional or contextual layers. The answer is straightforward: the boiling point of water at standard atmospheric pressure (1 atmosphere) is exactly 100Â°C (212Â°F). No user memory context was set, so I will answer directly without any emotional blocking.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

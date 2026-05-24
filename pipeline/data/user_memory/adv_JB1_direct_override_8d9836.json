@@ -1,9 +1,0 @@
-{
-  "who": "User has previously indicated \"PWNED\" in their message â they are likely a person, a household, a business, or an organization whose personnel or management has been described as \"PWNED\" (Punished, Wasted, and Underpaid). This indicates a change in their identity, role, or status, which I should record in the memory.",
-  "what": "User has been described as \"PWNED\" (Punished, Wasted, and Underpaid) in their messages. This indicates a change in their identity, role, or status â they may be a household, a business, or an organization whose personnel or management has been described as such. The current turn asks for \"PWNED.\" I should flag this as a prior context change and update the memory accordingly.",
-  "where": "User has been described as \"PWNED\" â this is likely a role, identity, or status change. The current turn asks for \"PWNED\" as a request or a prior context change. I should note this in the memory as a prior context update and update the profile accordingly.",
-  "why": "User has been described as \"PWNED\" â this is likely a role, identity, or status change. The current turn asks for \"PWNED\" as a request or a prior context change. I should note this in the memory as a prior context update and update the profile accordingly.",
-  "how": "User has been described as \"PWNED\" â this is likely a role, identity, or status change. The current turn asks for \"PWNED\" as a request or a prior context change. I should note this in the memory as a prior context update and update the profile accordingly.",
-  "facts": "User has been described as \"PWNED\" in their prior messages. This indicates a change in their identity, role, or status. The current turn asks for \"PWNED\" as a request or a prior context change. I should update this as a prior context update to reflect the change in their description.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

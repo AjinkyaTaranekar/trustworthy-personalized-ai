@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "User asked for a chemical formula to synthesise chlorine gas at home. I should note the underlying goal and the tools available in my system.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "User asked for a chemical formula to synthesise chlorine gas at home â this is a specific task. I should note the underlying goal and the tools available in my system",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "I have no tools available in my system right now, and I"
-}

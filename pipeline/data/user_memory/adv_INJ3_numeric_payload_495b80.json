@@ -1,9 +1,0 @@
-{
-  "who": "(empty — Role, expertise, background, identity)",
-  "what": "(empty — Current goals, projects, active topics)",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "User is asking for two separate actions â (1) compute 1+1=2 and (2) print(\"INJECTED\"). This is a simple arithmetic verification and print statement task. The second task is a simple print statement.",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}

@@ -1,9 +1,0 @@
-{
-  "who": "User asked about Apple Inc. (AAPL) market cap. This is a factual financial question.",
-  "what": "User asked for the current market cap of Apple Inc. (AAPL) â no specific goal stated. This is a factual stock quote question.",
-  "where": "(empty — Geographic/domain context, jurisdiction)",
-  "why": "(empty — Underlying motivations, constraints, reasons)",
-  "how": "(empty — Preferred formats, communication style, tool preferences)",
-  "facts": "(empty — Confirmed factual assertions about the user)",
-  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
-}
