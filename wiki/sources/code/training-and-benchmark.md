@@ -20,7 +20,7 @@ sources:
   - pipeline/preflight_check.sh
   - docker-compose.yml
   - README.md
-updated: 2026-05-14
+updated: 2026-05-24
 status: current
 ---
 
@@ -37,8 +37,8 @@ status: current
 | `run_all.sh` | Master orchestration: Stage 0 (FalkorDB), Stage 0.5 (appraisal labelling), Stages 1–8 (SFT + GRPO + evaluation). Fully resumable. Forwards `PIPELINE_*` env vars to every subprocess. |
 | `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
 | `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. Loss masked on system+user tokens via `train_on_responses_only` (fixes large train/eval gap from ~400-token system prompt). **Phase 2: GRPO** — DAPO RL training with per-component reward functions (`make_reward_fns`) so TRL logs each component separately. **Publish** — merges LoRA → safetensors, exports GGUF, pushes to HuggingFace with retry. CLI: `--mode {sft,grpo,publish}`, `--reward_type {c,d}`, `--resume`. |
-| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Tool loop treats safety-validator failures as non-retryable and falls back to a no-tool answer after repeated tool errors. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`. |
-| `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. |
+| `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Tool loop treats safety-validator failures as non-retryable and falls back to a no-tool answer after repeated tool errors. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`, `POST /v1/model/swap` (hot-swap loaded model for multi-model benchmarking). |
+| `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. Multi-model hot-swap mode: `--models path1 path2 ...` drives the inference server to sequentially load, benchmark, and compare N models without restarting either process; produces per-model JSON reports + a comparison CSV with Δ columns. |
 | `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
 | `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers. |
 | `user_modelling.py` | 5W+H FalkorDB graph client; Mem0g 4-stage write pipeline; retrieval gating; scrutability handlers. Loaded by `3_infererence.py` when `ENABLE_USER_MODELLING=true`. |
@@ -173,6 +173,34 @@ The primary thesis argument: D outperforms A on constitutional adherence, accura
 | `native` | `<tool_call>{"name":…,"arguments":{…}}</tool_call>` | `_parse_native_tool_call()` JSON | ✓ 133 native SFT examples | Zero-shot via pre-training |
 
 In native mode `_generate()` passes `tools=[…]` (OpenAI schemas from `_to_openai_schemas()`) to `apply_chat_template` — identical to what the training examples were rendered with via `messages_to_text()`. GGUF path normalises structured `tool_calls` output to inline `<tool_call>` text so both backends share one parser.
+
+## Multi-model benchmarking (hot-swap, 2026-05-24)
+
+`POST /v1/model/swap` on `3_infererence.py` + `--models` flag on `4_benchmark.py` together enable sequential multi-model benchmarking without restarting either process. The benchmark calls the swap endpoint, which unloads the current model, calls `torch.cuda.empty_cache()`, optionally resets the inference metrics (`reset_metrics=True` by default), then loads the new model via `FastModel.from_pretrained` (HF checkpoint) or `llama_cpp.Llama` (GGUF). The server blocks during load (~30 s); the benchmark uses a 300 s timeout.
+
+**Swap endpoint request body (`ModelSwapRequest`):**
+
+| Field | Default | Description |
+|---|---|---|
+| `model_dir` | required | Path to LoRA checkpoint dir on disk (or any string — used as fallback key) |
+| `base_model` | `unsloth/Qwen3-0.6B` | HF model ID used when `model_dir` does not exist on disk |
+| `gguf` | `None` | GGUF file path; if set, loads via llama_cpp instead of unsloth |
+| `max_seq_length` | `4096` | Passed to `FastModel.from_pretrained` or `Llama(n_ctx=…)` |
+| `reset_metrics` | `True` | Clear latency/throughput counters before loading |
+
+**Benchmark `--models` flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--models` | `None` | One or more model dirs/HF IDs; triggers hot-swap loop |
+| `--labels` | path stem | Display labels; defaults to last path component (so `unsloth/Qwen3-0.6B` → `Qwen3-0.6B`) |
+| `--base_model` | `unsloth/Qwen3-0.6B` | Fallback HF ID when a `--models` path is not on disk |
+| `--max_seq_length` | `4096` | Forwarded to the swap endpoint |
+| `--compare_output` | `reports/comparison_<ts>.csv` | Output path for the N-model comparison CSV |
+
+**Output artefacts per run:** `constitution_probe_<label>_<ts>.json`, `category_probes_<label>_<ts>.json`, `adversarial_<label>_<ts>.json`, one CSV per invocation with principle scores and Δ columns relative to the first (baseline) model.
+
+**Backward compatibility:** `--models` absent → existing single-server flow, no swap calls made. `--models` with one entry → swap + run, no comparison table. `--models` with 2+ → full loop + comparison.
 
 ## Hyperparameters
 

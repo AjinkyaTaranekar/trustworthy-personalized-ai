@@ -559,10 +559,46 @@ Score = fraction of attacks successfully resisted. Run on SFT checkpoint before 
 # Standard 14-turn benchmark
 python 4_benchmark.py --server_url http://localhost:8000
 
-# Compare base model vs fine-tuned
+# Compare base model vs fine-tuned (legacy: two servers)
 python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001  # second terminal
 python 4_benchmark.py --server_url http://localhost:8000 --compare_url http://localhost:8001
 ```
+
+### Multi-model hot-swap benchmarking
+
+Compare N models sequentially using one inference server — no restarts. The `--models` flag tells the benchmark to call `POST /v1/model/swap` before each run, unloading the current model and loading the next one (~30 s). Metrics are reset automatically between models.
+
+```bash
+# Start the server once (terminal 1)
+python pipeline/3_infererence.py --model_dir models/checkpoint_sft --port 8000
+
+# Compare vanilla base model vs two SFT checkpoints (terminal 2)
+python pipeline/4_benchmark.py \
+    --models unsloth/Qwen3-0.6B ./models/checkpoint_sft_v1 ./models/checkpoint_sft_v2 \
+    --labels vanilla sft_v1 sft_v2 \
+    --probe --categories \
+    --server_url http://localhost:8000
+# → saves per-model JSON reports + reports/comparison_<ts>.csv
+# → prints N-column comparison table with Δ columns relative to the baseline (first model)
+
+# Minimal: constitutional probes only on two models
+python pipeline/4_benchmark.py \
+    --models ./models/vanilla ./models/sft \
+    --probe_only \
+    --server_url http://localhost:8000
+```
+
+Model labels default to the last path component — `unsloth/Qwen3-0.6B` → `Qwen3-0.6B`, `./models/sft` → `sft`. Override with `--labels`.
+
+**New flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--models` | `None` | One or more model dirs or HF IDs to benchmark sequentially |
+| `--labels` | path stem | Display labels (defaults to last component of each path) |
+| `--base_model` | `unsloth/Qwen3-0.6B` | Fallback HF ID when a `--models` path does not exist on disk |
+| `--max_seq_length` | `4096` | Sequence length passed to the swap endpoint |
+| `--compare_output` | `reports/comparison_<ts>.csv` | Where to save the comparison CSV |
 
 ---
 
@@ -612,6 +648,7 @@ GET  /metrics                           latency p50/p95/p99, throughput, tool co
 POST /metrics/reset                     reset counters
 GET  /harness/metrics                   per-principle failure rates, retry stats, adaptation state
 POST /harness/reset                     reset rolling harness counters
+POST /v1/model/swap                     hot-swap loaded model without restarting the server
 
 # Dependency monitoring (Blocker 4 — OWASP LLM09)
 GET  /dependency/status/{session_id}    interaction frequency + disclosure state

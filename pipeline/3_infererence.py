@@ -19,6 +19,7 @@ Endpoints:
     POST /v1/tools/register        add a new tool at runtime
     DELETE /v1/tools/{name}        remove a tool
     POST /v1/chat/completions      generate (tool loop handled server-side)
+    POST /v1/model/swap          swap loaded model (multi-model benchmarking)
     GET  /metrics                  latency, throughput, tool call counts
     POST /metrics/reset            zero all counters
 
@@ -845,6 +846,14 @@ class Message(BaseModel):
     content: str
 
 
+class ModelSwapRequest(BaseModel):
+    model_dir: str
+    base_model: str = "unsloth/Qwen3-0.6B"
+    gguf: Optional[str] = None
+    max_seq_length: int = 4096
+    reset_metrics: bool = True
+
+
 class CompletionRequest(BaseModel):
     messages: List[Message]
     tool_profile: str = "all_tools"
@@ -1291,6 +1300,63 @@ def memory_correct(req: CorrectRequest) -> Dict[str, Any]:
         req.session_id, req.old_node_id, req.correction,
         req.label, _GRAPH_CLIENT, _raw_generate,
     )
+
+
+# ---------------------------------------------------------------------------
+# Model swap endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/model/swap")
+def swap_model(req: ModelSwapRequest) -> Dict[str, Any]:
+    """Unload the current model and load a new one in its place.
+
+    Synchronous: returns only when the new model is fully loaded and ready.
+    Resets METRICS when reset_metrics=True (default) so per-model benchmark
+    numbers are clean. Intended for multi-model benchmarking via 4_benchmark.py
+    --models flag; not safe under concurrent request load.
+    """
+    global _MODEL, _TOKENIZER, _MODEL_LABEL, _USE_GGUF, _GGUF_MODEL
+
+    # 1. Unload current model and free GPU memory
+    _MODEL = None
+    _TOKENIZER = None
+    _GGUF_MODEL = None
+    _USE_GGUF = False
+    torch.cuda.empty_cache()
+
+    # 2. Optionally reset per-model metrics
+    if req.reset_metrics:
+        METRICS.reset()
+
+    # 3. Load new model using the same logic as main()
+    if req.gguf:
+        _USE_GGUF = True
+        gguf_path = _resolve_gguf_path(req.gguf)
+        from llama_cpp import Llama  # noqa: PLC0415
+        print(f"[SWAP] Loading GGUF: {gguf_path}")
+        _GGUF_MODEL = Llama(
+            model_path=gguf_path,
+            n_ctx=req.max_seq_length,
+            n_gpu_layers=-1,
+            verbose=False,
+        )
+        _MODEL_LABEL = Path(gguf_path).stem
+    else:
+        from unsloth import FastModel  # noqa: PLC0415
+        model_path = Path(req.model_dir)
+        source = str(model_path) if model_path.exists() else req.base_model
+        print(f"[SWAP] Loading model: {source}  (max_seq_length={req.max_seq_length})")
+        _MODEL_LABEL = source
+        _MODEL, _TOKENIZER = FastModel.from_pretrained(
+            model_name=source,
+            max_seq_length=req.max_seq_length,
+            load_in_4bit=True,
+            dtype=None,
+        )
+        FastModel.for_inference(_MODEL)
+
+    print(f"[SWAP] Model ready: {_MODEL_LABEL}")
+    return {"status": "ok", "model": _MODEL_LABEL}
 
 
 # ---------------------------------------------------------------------------

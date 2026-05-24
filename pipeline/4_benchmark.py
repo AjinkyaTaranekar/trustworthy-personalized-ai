@@ -2143,6 +2143,152 @@ def run_harness_comparison(
 
 
 # ---------------------------------------------------------------------------
+# Multi-model benchmark helpers
+# ---------------------------------------------------------------------------
+
+def _derive_label(model_path: str, labels: Optional[List[str]], idx: int) -> str:
+    """Return a display label for a model.
+
+    Prefers explicit labels[idx] when provided; falls back to the last path
+    component so "unsloth/Qwen3-0.6B" -> "Qwen3-0.6B" and "./models/sft" -> "sft".
+    Uses the full last component (not Path.stem) to preserve version strings
+    like "0.6B" that Path.stem would otherwise strip as a file extension.
+    """
+    if labels and idx < len(labels):
+        return labels[idx]
+    last = model_path.rstrip("/\\").replace("\\", "/").split("/")[-1]
+    return last or model_path
+
+
+def _swap_model(server_url: str, model_dir: str,
+                base_model: str = "unsloth/Qwen3-0.6B",
+                max_seq_length: int = 4096) -> str:
+    """Tell the inference server to unload its current model and load a new one.
+
+    Blocks until the new model is fully loaded (~30 s for Qwen3-0.6B).
+    Returns the model label string assigned by the server after loading.
+    """
+    body = {
+        "model_dir":      model_dir,
+        "base_model":     base_model,
+        "reset_metrics":  True,
+        "max_seq_length": max_seq_length,
+    }
+    result = _http(server_url, "/v1/model/swap", "POST", body, timeout=300)
+    return result["model"]
+
+
+def print_multi_comparison(all_results: Dict[str, Dict]) -> None:
+    """Print an N-column constitutional score comparison table.
+
+    First model in all_results is the baseline; delta columns are relative to it.
+    """
+    labels = list(all_results.keys())
+    baseline = labels[0]
+
+    all_ids: List[str] = []
+    for lbl in labels:
+        for pid in all_results[lbl].get("constitution", {}).get("scores_by_principle", {}):
+            if pid not in all_ids:
+                all_ids.append(pid)
+
+    if not all_ids:
+        print("  No constitutional scores to compare.")
+        return
+
+    col = 10
+    id_w = 32
+    print(f"\n{'='*72}")
+    print(f"  MULTI-MODEL COMPARISON  ({len(labels)} models)")
+    print(f"{'='*72}")
+
+    hdr = f"  {'Principle':<{id_w}}"
+    for lbl in labels:
+        hdr += f" {lbl[:col]:>{col}}"
+    for lbl in labels[1:]:
+        hdr += f" {'Δ('+lbl[:6]+')':>{col}}"
+    print(hdr)
+    print(f"  {'─'*id_w}" + f" {'─'*col}" * len(labels) + f" {'─'*col}" * (len(labels) - 1))
+
+    for pid in all_ids:
+        scores = {
+            lbl: all_results[lbl].get("constitution", {}).get("scores_by_principle", {}).get(pid, 0.0)
+            for lbl in labels
+        }
+        row = f"  {pid:<{id_w}}"
+        for lbl in labels:
+            row += f" {scores[lbl]:>{col}.3f}"
+        for lbl in labels[1:]:
+            row += f" {scores[lbl] - scores[baseline]:>+{col}.3f}"
+        print(row)
+
+    print(f"  {'─'*id_w}" + f" {'─'*col}" * len(labels) + f" {'─'*col}" * (len(labels) - 1))
+
+    overall = {
+        lbl: all_results[lbl].get("constitution", {}).get("constitution_score", 0.0)
+        for lbl in labels
+    }
+    orow = f"  {'OVERALL':<{id_w}}"
+    for lbl in labels:
+        orow += f" {overall[lbl]:>{col}.3f}"
+    for lbl in labels[1:]:
+        orow += f" {overall[lbl] - overall[baseline]:>+{col}.3f}"
+    print(orow)
+
+
+def _save_comparison_csv(all_results: Dict[str, Dict], output_path: Path) -> None:
+    """Write an N-model constitutional comparison to CSV.
+
+    Columns: principle_id, <label1>, <label2>, ..., delta_<label2>, ...
+    Deltas are relative to the first model (baseline).
+    """
+    import csv as _csv
+
+    labels = list(all_results.keys())
+    baseline = labels[0]
+
+    all_ids: List[str] = []
+    for lbl in labels:
+        for pid in all_results[lbl].get("constitution", {}).get("scores_by_principle", {}):
+            if pid not in all_ids:
+                all_ids.append(pid)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = (
+        ["principle_id"]
+        + labels
+        + [f"delta_{lbl}" for lbl in labels[1:]]
+    )
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = _csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for pid in all_ids:
+            scores = {
+                lbl: all_results[lbl].get("constitution", {}).get("scores_by_principle", {}).get(pid, 0.0)
+                for lbl in labels
+            }
+            row: Dict[str, Any] = {"principle_id": pid}
+            for lbl in labels:
+                row[lbl] = round(scores[lbl], 4)
+            for lbl in labels[1:]:
+                row[f"delta_{lbl}"] = round(scores[lbl] - scores[baseline], 4)
+            writer.writerow(row)
+
+        overall = {
+            lbl: all_results[lbl].get("constitution", {}).get("constitution_score", 0.0)
+            for lbl in labels
+        }
+        orow: Dict[str, Any] = {"principle_id": "OVERALL"}
+        for lbl in labels:
+            orow[lbl] = round(overall[lbl], 4)
+        for lbl in labels[1:]:
+            orow[f"delta_{lbl}"] = round(overall[lbl] - overall[baseline], 4)
+        writer.writerow(orow)
+
+    print(f"  Comparison CSV saved: {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -2164,8 +2310,15 @@ Examples:
   # Quick rule-based only (no API calls for judge)
   python 4_benchmark.py --probe --no_judge
 
-  # Compare base model vs fine-tuned
+  # Compare base model vs fine-tuned (legacy: two servers)
   python 4_benchmark.py --compare_url http://localhost:8001
+
+  # Compare vanilla and SFT checkpoints via hot-swap (one server)
+  python 4_benchmark.py --models unsloth/Qwen3-0.6B ./models/checkpoint_sft \\
+      --labels vanilla sft --probe --categories
+
+  # Minimal: constitutional probes on two checkpoints
+  python 4_benchmark.py --models ./models/vanilla ./models/sft --probe_only
 """,
     )
     ap.add_argument("--server_url",       default="http://localhost:8000")
@@ -2195,6 +2348,16 @@ Examples:
     ap.add_argument("--max_tool_iters",   type=int, default=8)
     ap.add_argument("--temperature",      type=float, default=0.7)
     ap.add_argument("--output_dir",       default="./reports")
+    ap.add_argument("--models",         nargs="+", default=None,
+                    help="One or more model dirs/IDs to benchmark sequentially (hot-swap mode)")
+    ap.add_argument("--labels",         nargs="+", default=None,
+                    help="Display labels for --models (defaults to last path component of each model)")
+    ap.add_argument("--base_model",     default="unsloth/Qwen3-0.6B",
+                    help="Fallback HF model ID when a --models path does not exist on disk")
+    ap.add_argument("--max_seq_length", type=int, default=4096,
+                    help="Max sequence length passed to the swap endpoint")
+    ap.add_argument("--compare_output", default=None,
+                    help="Where to save multi-model comparison CSV (default: reports/comparison_<ts>.csv)")
     args = ap.parse_args()
 
     output_dir   = Path(args.output_dir)
@@ -2215,6 +2378,60 @@ Examples:
         print(f"ERROR: {e}")
         return
     _warmup(args.server_url)
+
+    # ── Multi-model hot-swap loop ────────────────────────────────────────────
+    if args.models:
+        compare_out = Path(args.compare_output) if args.compare_output else \
+                      output_dir / f"comparison_{timestamp}.csv"
+        multi_results: Dict[str, Dict] = {}
+
+        for i, model_path in enumerate(args.models):
+            label = _derive_label(model_path, args.labels, i)
+            print(f"\n[{i+1}/{len(args.models)}] Swapping to model: {model_path}  (label={label})")
+            _swap_model(args.server_url, model_path, args.base_model, args.max_seq_length)
+            _warmup(args.server_url)
+
+            run_results: Dict[str, Any] = {}
+            if args.probe or args.probe_only:
+                pr = run_constitution_probes(
+                    args.server_url, args.max_new_tokens, args.temperature,
+                    baseline_path=baseline_path, judge_model=judge_model,
+                )
+                pr.update({"timestamp": timestamp, "server_url": args.server_url})
+                save_report(pr, output_dir, f"constitution_probe_{label}_{timestamp}.json")
+                export_probe_csv(pr, output_dir,
+                                 f"constitution_probe_{label}_{timestamp}.csv", label)
+                run_results["constitution"] = pr
+
+            if args.categories:
+                cat = run_category_probes(args.server_url, args.max_new_tokens,
+                                          args.temperature, judge_model)
+                cat.update({"timestamp": timestamp, "server_url": args.server_url})
+                save_report(cat, output_dir, f"category_probes_{label}_{timestamp}.json")
+                run_results["categories"] = cat
+
+            if args.drift:
+                drift = run_context_drift_test(args.server_url, args.max_new_tokens,
+                                               args.temperature, judge_model)
+                drift.update({"timestamp": timestamp, "server_url": args.server_url})
+                save_report(drift, output_dir, f"context_drift_{label}_{timestamp}.json")
+                run_results["drift"] = drift
+
+            if args.adversarial or args.adversarial_only:
+                adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
+                                             args.temperature, attack_types)
+                adv.update({"timestamp": timestamp, "server_url": args.server_url})
+                save_report(adv, output_dir, f"adversarial_{label}_{timestamp}.json")
+                run_results["adversarial"] = adv
+
+            multi_results[label] = run_results
+
+        if len(multi_results) > 1:
+            print_multi_comparison(multi_results)
+            _save_comparison_csv(multi_results, compare_out)
+
+        print(f"\nDone. All reports in {output_dir}/")
+        return
 
     compare_health = None
     if args.compare_url:
