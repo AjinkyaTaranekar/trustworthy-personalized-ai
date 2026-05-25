@@ -30,11 +30,18 @@ import argparse
 import ast
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
 import time
 import traceback
+
+# torch.compile's inductor backend requires a triton version that is not
+# available on Windows. Disable it before any torch import to avoid the
+# "cannot import name 'triton_key'" ImportError at first inference call.
+if sys.platform == "win32":
+    os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
