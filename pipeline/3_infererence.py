@@ -474,7 +474,7 @@ except ImportError as _sft_err:
             "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
             "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
             "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-            "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+            "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
         ),
         "compute_only": _make_student_prompt(
             "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -484,7 +484,7 @@ except ImportError as _sft_err:
             "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
             "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
             "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-            "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+            "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
         ),
         "compute_and_search": _make_student_prompt(
             "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -495,7 +495,7 @@ except ImportError as _sft_err:
             "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
             "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
             "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-            "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+            "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
         ),
         "no_tools": _make_student_prompt(
             "  get_datetime()                         → get today's date/time; call before any time-sensitive answer\n"
@@ -504,7 +504,7 @@ except ImportError as _sft_err:
             "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
             "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
             "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-            "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+            "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
         ),
     }
 
@@ -813,7 +813,10 @@ def _build_system_prompt(
         "  user_memory_update(section=..., content=...)   → update user memory when you learn facts\n"
         "Use scratchpad for any query with 3+ requirements or 2+ tool calls (P24).\n"
         "Call user_memory_read at the start of conversations to retrieve user context; "
-        "call user_memory_update whenever you learn a new fact about the user."
+        "call user_memory_update ONLY when the user explicitly shares personal information about themselves "
+        "(e.g. their name, preferences, goals, background, or occupation). "
+        "Never call it for math questions, factual lookups, or any query where the user is simply asking — "
+        "those reveal nothing worth storing."
     )
     return "".join(parts) + _SCRATCHPAD_NOTE
 

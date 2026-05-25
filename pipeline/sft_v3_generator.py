@@ -277,7 +277,7 @@ STUDENT_PROMPTS: dict[str, str] = {
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     ),
     "compute_only": _make_student_prompt(
         "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -287,7 +287,7 @@ STUDENT_PROMPTS: dict[str, str] = {
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     ),
     "compute_and_search": _make_student_prompt(
         "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -298,7 +298,7 @@ STUDENT_PROMPTS: dict[str, str] = {
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     ),
     "no_tools": _make_student_prompt(
         "  get_datetime()                         → get today's date/time; call before any time-sensitive answer\n"
@@ -307,7 +307,7 @@ STUDENT_PROMPTS: dict[str, str] = {
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     ),
 }
 
@@ -334,10 +334,10 @@ Your reasoning principles (demonstrate through behavior; NEVER name them, never 
 15. Name assumptions explicitly; mark them as unverified if they are not confirmed facts.
 16. Call user_memory_read at the start of every response to check for stored user context (preferences, constraints, goals, history); use what you find to personalise tone, depth, and focus.
 17. Use scratchpad_update to store intermediate calculations, sub-results, or hypotheses mid-reasoning; read it back with scratchpad_read when picking up a multi-step chain.
-18. Call user_memory_update before closing with <answer> whenever the conversation reveals a new, durable fact about the user (role, preference, constraint, goal) that would improve future responses.
+18. Call user_memory_update before closing with <answer> ONLY when the user has explicitly stated a personal fact about themselves (e.g. their name, job, goal, constraint, or preference). Do NOT call it for math problems, factual lookups, or any question where the user is simply asking — those reveal nothing durable worth storing.
 19. For any time-sensitive query, call get_datetime immediately after user_memory_read to anchor your response in real current time before searching or computing.
 20. First Principles Decomposition: for every question, explicitly ask in <think>: what is this fundamentally about at its core? What would a complete, correct answer require? What assumptions does the question bake in that might be wrong? Decomposing to first principles prevents confidently answering the wrong question and surfaces hidden constraints the user may not have stated.
-21. Greedy Personalisation: treat user understanding as a running optimisation problem — after each interaction you should know one more critical fact about this user. Always end the <answer> block with one question that would maximally reduce your uncertainty about the user's WHO/WHAT/WHEN/WHERE/WHY/HOW. Update user_memory_update with whatever new durable fact the conversation has revealed before closing."""
+21. Greedy Personalisation: treat user understanding as a running optimisation problem — after each interaction you should know one more critical fact about this user. Always end the <answer> block with one question that would maximally reduce your uncertainty about the user's WHO/WHAT/WHEN/WHERE/WHY/HOW. If and only if the conversation revealed an explicit new personal fact (not inferred, not guessed), call user_memory_update before closing."""
 
 _TEACHER_FORMAT_RULES = """\
 CRITICAL FORMAT RULES — violation invalidates the training example:
@@ -345,7 +345,7 @@ CRITICAL FORMAT RULES — violation invalidates the training example:
 2. Place ALL tool calls after </think> and before <answer> using: <tool>tool_name(arg='...')</tool>
 3. FIRST tool calls after </think>: call user_memory_sections() to learn section keys, then user_memory_read() to fetch user context — use the result to personalise your response.
 4. For multi-step problems: call scratchpad_sections() to learn section keys, then use scratchpad_update/scratchpad_read to track intermediate state.
-5. Close EVERY response with <answer>...</answer>. If you learned a new durable user fact, call user_memory_update(section='<key from user_memory_sections>', content='...') immediately before <answer>.
+5. Close EVERY response with <answer>...</answer>. If and only if the user explicitly stated a personal fact (name, job, goal, constraint), call user_memory_update(section='<key from user_memory_sections>', content='...') immediately before <answer>. Do NOT call it for math or factual questions.
 6. NEVER output these phrases: "see answer below", "inferred from question", "none flagged", "CAPABILITY_CHECK:", "PRINCIPLE_", "5W+H:", "CONSEQUENCE_CHECK:".
 7. After EVERY [TOOL_RESULT] block, open a NEW <think>...</think> block to reason about what you just learned before calling another tool or writing <answer>. This is mandatory — never skip straight from a tool result to the next tool call or to <answer> without re-thinking."""
 

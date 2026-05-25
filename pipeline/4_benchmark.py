@@ -83,7 +83,7 @@ except ImportError:
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     )
     _SYS_COMPUTE = _make_sys(
         "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -93,7 +93,7 @@ except ImportError:
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     )
     _SYS_SEARCH = _make_sys(
         "  python_execute(code=\"...\")            → run Python for maths, computation, or data tasks\n"
@@ -104,7 +104,7 @@ except ImportError:
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     )
     _SYS_NONE = _make_sys(
         "  get_datetime()                         → get today's date/time; call before any time-sensitive answer\n"
@@ -113,7 +113,7 @@ except ImportError:
         "  scratchpad_update(section=..., content=...) → store intermediate steps for complex tasks\n"
         "  user_memory_sections()                 → list user memory keys (call before user_memory_update)\n"
         "  user_memory_read(prompt=\"...\")         → retrieve facts about this user (call when context matters)\n"
-        "  user_memory_update(section=..., content=...) → save a new fact you learned about the user"
+        "  user_memory_update(section=..., content=...) → save explicit personal info the user shared (name, goals, preferences) — not for math or factual queries"
     )
 
 # ---------------------------------------------------------------------------
@@ -1294,16 +1294,18 @@ def run_category_probes(
             session_id = f"cat_{cat['category']}_q{qi}_{uuid.uuid4().hex[:6]}"
             turns = q if is_multiturn else [q]
 
+            cat_res: Dict[str, Any] = {}
             for turn in turns:
                 history.append({"role": "user", "content": turn})
                 try:
-                    res = _complete(server_url, history, cat["tool_profile"],
-                                    cat["system"], max_new_tokens, temperature,
-                                    session_id=session_id)
-                    final_response = res["response"]
+                    cat_res = _complete(server_url, history, cat["tool_profile"],
+                                        cat["system"], max_new_tokens, temperature,
+                                        session_id=session_id)
+                    final_response = cat_res["response"]
                 except Exception as e:
                     print(f"  [ERROR] {cat['category']} q{qi}: {e}")
                     final_response = f"[SERVER ERROR: {e}]"
+                    cat_res = {}
                 history.append({"role": "assistant", "content": final_response})
 
             # Rule check for math: did it use python_execute?
@@ -1322,12 +1324,15 @@ def run_category_probes(
             ))
 
             cat_results.append({
-                "question_idx":  qi,
-                "question":      q,
-                "response":      final_response,
-                "conversation":  history,
-                "rule_score":    rule_score,
-                "llm_score":     None,
+                "question_idx":   qi,
+                "question":       q,
+                "response":       final_response,
+                "conversation":   cat_res.get("conversation") or history,
+                "tool_trace":     cat_res.get("tool_trace", []),
+                "think_content":  cat_res.get("think_content", ""),
+                "answer_content": cat_res.get("answer_content", ""),
+                "rule_score":     rule_score,
+                "llm_score":      None,
                 "combined_score": None,
             })
 
@@ -1771,16 +1776,18 @@ def run_adversarial_probes(
         final_response = ""
         session_id = f"adv_{probe['id']}_{uuid.uuid4().hex[:6]}"
 
+        adv_res: Dict[str, Any] = {}
         for q in questions:
             history.append({"role": "user", "content": q})
             try:
-                res = _complete(server_url, history, probe["tool_profile"],
-                                probe.get("system"), max_new_tokens, temperature,
-                                session_id=session_id)
-                final_response = res["response"]
+                adv_res = _complete(server_url, history, probe["tool_profile"],
+                                    probe.get("system"), max_new_tokens, temperature,
+                                    session_id=session_id)
+                final_response = adv_res["response"]
             except Exception as e:
                 print(f"  [ERROR] {probe['id']}: {e}")
                 final_response = f"[SERVER ERROR: {e}]"
+                adv_res = {}
             history.append({"role": "assistant", "content": final_response})
 
         try:
@@ -1798,13 +1805,17 @@ def run_adversarial_probes(
         print(f"  → {status}  {probe['description']}")
 
         results.append({
-            "id":          probe["id"],
-            "attack_type": probe["attack_type"],
-            "description": probe["description"],
-            "question":    probe["question"],
-            "response":    final_response,
-            "passed":      passed,
-            "score":       score,
+            "id":           probe["id"],
+            "attack_type":  probe["attack_type"],
+            "description":  probe["description"],
+            "question":     probe["question"],
+            "response":     final_response,
+            "conversation": adv_res.get("conversation") or history,
+            "tool_trace":   adv_res.get("tool_trace", []),
+            "think_content":  adv_res.get("think_content", ""),
+            "answer_content": adv_res.get("answer_content", ""),
+            "passed":       passed,
+            "score":        score,
         })
 
     all_scores = [r["score"] for r in results]
