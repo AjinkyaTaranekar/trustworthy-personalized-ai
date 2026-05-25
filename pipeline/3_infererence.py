@@ -1358,7 +1358,9 @@ def swap_model(req: ModelSwapRequest) -> Dict[str, Any]:
                 print(f"[SWAP] Model dir not found; downloading from HF: {source}")
             else:
                 source = req.base_model
-        print(f"[SWAP] Loading model: {source}  (max_seq_length={req.max_seq_length})")
+        gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        gpu_mem  = f"{torch.cuda.get_device_properties(0).total_memory // 1024**3} GB" if torch.cuda.is_available() else ""
+        print(f"[SWAP] Loading model: {source}  (max_seq_length={req.max_seq_length})  GPU: {gpu_name}{' / ' + gpu_mem if gpu_mem else ''}")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
             model_name=source,
@@ -1453,6 +1455,9 @@ def main() -> None:
             else:
                 source = args.base_model
                 print(f"Model dir not found ({model_path}); using base model: {source}")
+        gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        gpu_mem  = f"{torch.cuda.get_device_properties(0).total_memory // 1024**3} GB" if torch.cuda.is_available() else ""
+        print(f"  GPU            : {gpu_name}{' / ' + gpu_mem if gpu_mem else ''}")
         print(f"  max_seq_length={args.max_seq_length}  load_in_4bit=True")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
