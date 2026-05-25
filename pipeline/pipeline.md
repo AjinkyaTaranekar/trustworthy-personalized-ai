@@ -324,6 +324,23 @@ Use `--no_judge` for fast rule-only runs during iteration.
 
 ---
 
+## 8a. Auto-push results to GitHub (`--push`)
+
+Add `--push` to any benchmark run to git-commit and push the saved report files to origin after each suite completes. Useful for long multi-suite runs on a remote GPU where you want results available as they arrive:
+
+```bash
+python 4_benchmark.py --probe --categories --adversarial --push
+# Each suite (A, B, D) commits and pushes its JSON/CSV to origin immediately after saving.
+
+python 4_benchmark.py --models unsloth/Qwen3-0.6B ./models/checkpoint_sft \
+    --labels vanilla sft --probe --categories --push
+# Hot-swap: each model × suite combo is pushed as it completes.
+```
+
+The commit message format is: `benchmark: <suite_name> results YYYY-MM-DD HH:MM [label]`. Failures (no remote, nothing-to-commit) are printed as warnings and do not abort the run.
+
+---
+
 ## 9. Inference Server Reference
 
 ```bash

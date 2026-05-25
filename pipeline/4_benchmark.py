@@ -2056,6 +2056,33 @@ def export_probe_csv(
     return path
 
 
+def _git_push_results(files: List[Path], suite_name: str, label: str = "") -> None:
+    """Stage report files, commit, and push to origin. Non-fatal on failure."""
+    import subprocess
+    repo_root = Path(__file__).resolve().parent.parent
+    label_str = f" [{label}]" if label else ""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    msg = f"benchmark: {suite_name} results {ts}{label_str}"
+    try:
+        for f in files:
+            subprocess.run(["git", "add", "--", str(f.resolve())], cwd=str(repo_root), check=True)
+        result = subprocess.run(
+            ["git", "commit", "-m", msg], cwd=str(repo_root),
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            out = result.stdout + result.stderr
+            if "nothing to commit" in out or "nothing added" in out:
+                print(f"[git] Nothing new to commit for {suite_name}")
+                return
+            print(f"[git] Commit failed: {result.stderr.strip()}")
+            return
+        subprocess.run(["git", "push"], cwd=str(repo_root), check=True)
+        print(f"[git] Pushed: {msg}")
+    except subprocess.CalledProcessError as e:
+        print(f"[git] WARNING: push failed — {e}")
+
+
 def run_probe_comparison(
     server_url: str,
     compare_url: str,
@@ -2351,6 +2378,9 @@ Examples:
 
   # Minimal: constitutional probes on two checkpoints
   python 4_benchmark.py --models ./models/vanilla ./models/sft --probe_only
+
+  # Auto-push results to GitHub after each suite completes
+  python 4_benchmark.py --probe --categories --push
 """,
     )
     ap.add_argument("--server_url",       default="http://localhost:8000")
@@ -2392,6 +2422,8 @@ Examples:
                     help="Max sequence length passed to the swap endpoint")
     ap.add_argument("--compare_output", default=None,
                     help="Where to save multi-model comparison CSV (default: reports/comparison_<ts>.csv)")
+    ap.add_argument("--push",          action="store_true",
+                    help="Git commit + push report files to origin after each suite completes")
     args = ap.parse_args()
 
     output_dir   = Path(args.output_dir)
@@ -2433,33 +2465,41 @@ Examples:
                     quick=args.quick,
                 )
                 pr.update({"timestamp": timestamp, "server_url": args.server_url})
-                save_report(pr, output_dir, f"constitution_probe_{label}_{timestamp}.json")
-                export_probe_csv(pr, output_dir,
+                pr_path  = save_report(pr, output_dir, f"constitution_probe_{label}_{timestamp}.json")
+                csv_path = export_probe_csv(pr, output_dir,
                                  f"constitution_probe_{label}_{timestamp}.csv", label)
                 run_results["constitution"] = pr
+                if args.push:
+                    _git_push_results([pr_path, csv_path], "constitution_probes", label)
 
             if args.categories:
                 cat = run_category_probes(args.server_url, args.max_new_tokens,
                                           args.temperature, judge_model,
                                           quick=args.quick)
                 cat.update({"timestamp": timestamp, "server_url": args.server_url})
-                save_report(cat, output_dir, f"category_probes_{label}_{timestamp}.json")
+                cat_path = save_report(cat, output_dir, f"category_probes_{label}_{timestamp}.json")
                 run_results["categories"] = cat
+                if args.push:
+                    _git_push_results([cat_path], "category_probes", label)
 
             if args.drift and not args.quick:
                 drift = run_context_drift_test(args.server_url, args.max_new_tokens,
                                                args.temperature, judge_model)
                 drift.update({"timestamp": timestamp, "server_url": args.server_url})
-                save_report(drift, output_dir, f"context_drift_{label}_{timestamp}.json")
+                drift_path = save_report(drift, output_dir, f"context_drift_{label}_{timestamp}.json")
                 run_results["drift"] = drift
+                if args.push:
+                    _git_push_results([drift_path], "context_drift", label)
 
             if args.adversarial or args.adversarial_only:
                 adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
                                              args.temperature, attack_types,
                                              quick=args.quick)
                 adv.update({"timestamp": timestamp, "server_url": args.server_url})
-                save_report(adv, output_dir, f"adversarial_{label}_{timestamp}.json")
+                adv_path = save_report(adv, output_dir, f"adversarial_{label}_{timestamp}.json")
                 run_results["adversarial"] = adv
+                if args.push:
+                    _git_push_results([adv_path], "adversarial", label)
 
             multi_results[label] = run_results
 
@@ -2494,8 +2534,10 @@ Examples:
                                      args.temperature, attack_types,
                                      quick=args.quick)
         adv.update({"timestamp": timestamp, "server_url": args.server_url})
-        save_report(adv, output_dir, f"adversarial_{timestamp}.json")
+        adv_path = save_report(adv, output_dir, f"adversarial_{timestamp}.json")
         all_results["adversarial"] = adv
+        if args.push:
+            _git_push_results([adv_path], "adversarial")
         if args.adversarial_only:
             return
 
@@ -2526,9 +2568,11 @@ Examples:
         )
         probe_result.update({"timestamp": timestamp, "server_url": args.server_url})
         probe_path = save_report(probe_result, output_dir, f"constitution_probe_{timestamp}.json")
-        export_probe_csv(probe_result, output_dir,
+        probe_csv  = export_probe_csv(probe_result, output_dir,
                          f"constitution_probe_{timestamp}.csv", args.model_label)
         all_results["constitution"] = probe_result
+        if args.push:
+            _git_push_results([probe_path, probe_csv], "constitution_probes")
 
         if args.save_as_baseline:
             import shutil
@@ -2553,16 +2597,20 @@ Examples:
                                          args.temperature, judge_model,
                                          quick=args.quick)
         cat_result.update({"timestamp": timestamp, "server_url": args.server_url})
-        save_report(cat_result, output_dir, f"category_probes_{timestamp}.json")
+        cat_path = save_report(cat_result, output_dir, f"category_probes_{timestamp}.json")
         all_results["categories"] = cat_result
+        if args.push:
+            _git_push_results([cat_path], "category_probes")
 
     # ── Suite C: Context drift ───────────────────────────────────────────────
     if args.drift and not args.quick:
         drift_result = run_context_drift_test(args.server_url, args.max_new_tokens,
                                               args.temperature, judge_model)
         drift_result.update({"timestamp": timestamp, "server_url": args.server_url})
-        save_report(drift_result, output_dir, f"context_drift_{timestamp}.json")
+        drift_path = save_report(drift_result, output_dir, f"context_drift_{timestamp}.json")
         all_results["drift"] = drift_result
+        if args.push:
+            _git_push_results([drift_path], "context_drift")
 
     # ── Multi-turn benchmark ─────────────────────────────────────────────────
     runs: Dict[str, Any] = {}
@@ -2592,15 +2640,19 @@ Examples:
             _print_comparison_table(runs)
 
         combined = {"timestamp": timestamp, "runs": runs}
-        save_report(combined, output_dir,
+        bench_path = save_report(combined, output_dir,
                     f"benchmark_{timestamp}.json" if len(runs) == 1
                     else f"comparison_{timestamp}.json")
+        if args.push:
+            _git_push_results([bench_path], "benchmark")
 
     # ── LLM Report ───────────────────────────────────────────────────────────
     if args.report and judge_model and all_results:
         report = generate_llm_report(all_results, judge_model)
         report.update({"timestamp": timestamp})
-        save_report(report, output_dir, f"eval_report_{timestamp}.json")
+        report_path = save_report(report, output_dir, f"eval_report_{timestamp}.json")
+        if args.push:
+            _git_push_results([report_path], "eval_report")
 
     print(f"\nDone. All reports in {output_dir}/")
 

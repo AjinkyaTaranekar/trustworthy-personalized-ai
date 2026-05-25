@@ -565,3 +565,10 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - Updated `README.md` step 2 usage block to show nohup invocation with `--watch_commit`.
 - Updated `wiki/sources/code/sft-v3-pipeline.md` with a "Background Watch-Commit" section.
 - No cross-file API contracts affected (additive flag only).
+
+## [2026-05-25] refactor | Added --push flag to 4_benchmark.py for auto-commit of results
+- Added `_git_push_results(files, suite_name, label)` helper to `pipeline/4_benchmark.py`: stages specific report files, commits with message `benchmark: <suite> results YYYY-MM-DD HH:MM [label]`, and pushes to origin.
+- Added `--push` CLI flag (action=store_true); non-fatal on git failure.
+- Push fires after each suite (A/B/C/D) saves its files, in both single-server and multi-model hot-swap paths.
+- Updated argparse epilog with usage example.
+- Documented in `pipeline/pipeline.md` §8a; no README change needed (examples already cover --probe --categories).
