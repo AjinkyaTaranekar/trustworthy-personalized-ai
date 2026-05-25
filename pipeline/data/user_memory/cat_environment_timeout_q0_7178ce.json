@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "User is a data analyst or database administrator who is struggling with query timeouts in a SQL or Python database. They need efficient or accurate data retrieval. They are likely working on a system where queries are taking longer than expected.",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "User has identified a time-critical task â a query timeout â and is working on a database system. This is a performance or system-level problem, not a data integrity or access issue.",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

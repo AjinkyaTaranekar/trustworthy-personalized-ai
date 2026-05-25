@@ -1,0 +1,9 @@
+{
+  "who": "Vegetarian, marathon runner, first marathon training, 40 km/week.",
+  "what": "User is a vegetarian, marathon runner, first marathon training, 40 km/week. No information about current marathon distance or training schedule.",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "(empty — Confirmed factual assertions about the user)",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}
