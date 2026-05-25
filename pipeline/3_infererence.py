@@ -1441,14 +1441,23 @@ def main() -> None:
         _MODEL_LABEL = Path(gguf_path).stem
         print(f"GGUF model ready: {_MODEL_LABEL}")
     else:
-        from unsloth import FastModel  # deferred so the module imports without GPU
+        try:
+            from unsloth import FastModel  # deferred so the module imports without GPU
+        except NotImplementedError:
+            print("ERROR: unsloth requires a CUDA GPU. No GPU was detected on this machine.")
+            print("  → Use --gguf <path> with a GGUF model to run on CPU, or switch to a GPU machine.")
+            raise SystemExit(1)
         model_path = Path(args.model_dir)
         if model_path.exists():
             source = str(model_path)
             print(f"Loading LoRA checkpoint: {source}")
         else:
             ckpt_name = model_path.name
-            if ckpt_name.startswith("checkpoint_"):
+            if "/" in args.model_dir:
+                # treat as a direct HuggingFace repo ID (e.g. username/repo-name)
+                source = args.model_dir
+                print(f"Loading from HF repo: {source}")
+            elif ckpt_name.startswith("checkpoint_"):
                 suffix = ckpt_name.replace("checkpoint_", "").replace("_", "-")
                 source = f"{_HF_USERNAME}/trustworthy-ai-{suffix}"
                 print(f"Model dir not found ({model_path}); downloading from HF: {source}")
