@@ -328,6 +328,12 @@ python 2_model_trainer.py \
 # Step 3: Save SFT constitutional baseline (run BEFORE any GRPO)
 python 3_infererence.py --model_dir models/checkpoint_sft --port 8000 &
 python 4_benchmark.py --probe_only --save_as_baseline
+
+# Vanilla/base-model baseline — use --tool_mode native so the pre-trained
+# Hermes <tool_call> format is activated (the base model doesn't know the
+# SFT-trained <tool> XML format, so tool-using probes would score 0 without this)
+python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8001 &
+python 4_benchmark.py --server_url http://localhost:8001 --probe_only --tool_mode native --save_as_baseline
 ```
 
 ### SFT v3 — Asymmetric Distillation (recommended for sub-1B models)

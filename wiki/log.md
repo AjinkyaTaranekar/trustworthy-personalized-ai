@@ -6,6 +6,14 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-28] refactor | 4_benchmark.py — thread tool_mode through all suite runners
+- Root cause: `_complete()` never sent `tool_mode` to the inference server; all requests used the default `xml` mode, so the vanilla Qwen3-0.6B (which only knows the Hermes `<tool_call>` format) never called any tools — P4/P10/P19 scored 0.0 in vanilla runs.
+- Added `tool_mode: str = "xml"` parameter to `_complete()`, `run_probe_group()`, `run_constitution_probes()`, `run_category_probes()`, `run_context_drift_test()`, `run_adversarial_probes()`, `run_benchmark()`, `run_probe_comparison()` (with separate `tool_mode_a`/`tool_mode_b`), and `run_harness_comparison()`.
+- Added `--tool_mode {xml,native}` and `--compare_tool_mode` CLI flags.
+- Updated README.md with vanilla baseline example using `--tool_mode native`.
+- Updated `wiki/sources/code/training-and-benchmark.md` with new section.
+- Files changed: `pipeline/4_benchmark.py`, `README.md`, `wiki/sources/code/training-and-benchmark.md`.
+
 ## [2026-05-26] ingest | Beyond ReAct (arXiv:2511.10037) — planner-centric DAG framework
 - Created `wiki/sources/papers/beyond-react.md`: Wei et al. (2025), Qwen3-0.6B through 8B tested as Planner + GPT-4o Executor
 - Key finding 1: GRPO training unstable at Qwen3-0.6B — empirically confirms RL risk in Experiment 3 timeline, upgraded to High in §9

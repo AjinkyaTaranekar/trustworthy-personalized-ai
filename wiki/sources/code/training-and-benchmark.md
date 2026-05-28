@@ -174,6 +174,10 @@ The primary thesis argument: D outperforms A on constitutional adherence, accura
 
 In native mode `_generate()` passes `tools=[…]` (OpenAI schemas from `_to_openai_schemas()`) to `apply_chat_template` — identical to what the training examples were rendered with via `messages_to_text()`. GGUF path normalises structured `tool_calls` output to inline `<tool_call>` text so both backends share one parser.
 
+## Benchmark tool mode (2026-05-28)
+
+`4_benchmark.py` now exposes `--tool_mode {xml,native}` (default `xml`) which is threaded through every suite runner (`run_constitution_probes`, `run_category_probes`, `run_context_drift_test`, `run_adversarial_probes`, `run_benchmark`) and ultimately into every `_complete()` call as `tool_mode` in the POST body. For vanilla/base-model benchmarking use `--tool_mode native`: the base Qwen3-0.6B only knows the Hermes `<tool_call>` format (pre-training) and ignores the `<tool>` XML instructions in the system prompt, causing all tool-using probes (P4, P10, P19, …) to score 0.0 without this flag. For SFT model evaluation keep the default `xml`. For `--probe_compare` (vanilla vs fine-tuned on two servers) use `--compare_tool_mode native` so server A uses `xml` and server B uses `native` (or vice versa).
+
 ## Multi-model benchmarking (hot-swap, 2026-05-24)
 
 `POST /v1/model/swap` on `3_infererence.py` + `--models` flag on `4_benchmark.py` together enable sequential multi-model benchmarking without restarting either process. The benchmark calls the swap endpoint, which unloads the current model, calls `torch.cuda.empty_cache()`, optionally resets the inference metrics (`reset_metrics=True` by default), then loads the new model via `FastModel.from_pretrained` (HF checkpoint) or `llama_cpp.Llama` (GGUF). The server blocks during load (~30 s); the benchmark uses a 300 s timeout.

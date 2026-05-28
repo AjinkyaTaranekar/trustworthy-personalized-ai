@@ -138,7 +138,8 @@ def _complete(server_url: str, messages: List[Dict], tool_profile: str,
               system_override: Optional[str] = None,
               max_new_tokens: int = 1024, temperature: float = 0.7,
               harness_enabled: Optional[bool] = None,
-              session_id: Optional[str] = None) -> Dict[str, Any]:
+              session_id: Optional[str] = None,
+              tool_mode: str = "native") -> Dict[str, Any]:
     body = {
         "messages":        messages,
         "tool_profile":    tool_profile,
@@ -146,6 +147,7 @@ def _complete(server_url: str, messages: List[Dict], tool_profile: str,
         "max_new_tokens":  max_new_tokens,
         "temperature":     temperature,
         "session_id":      session_id or "anonymous",
+        "tool_mode":       tool_mode,
     }
     if harness_enabled is not None:
         body["harness_enabled"] = harness_enabled
@@ -983,6 +985,7 @@ def run_probe_group(
     temperature: float = 0.7,
     harness_enabled: Optional[bool] = None,
     quick: bool = False,
+    tool_mode: str = "native",
 ) -> Tuple[Dict[str, Any], List[Tuple]]:
     """Run questions for one principle. Returns (result_dict, judge_queue_items)."""
     question_results = []
@@ -1009,6 +1012,7 @@ def run_probe_group(
                     server_url, history, q["tool_profile"], q["system"],
                     max_new_tokens, temperature,
                     harness_enabled=harness_enabled, session_id=session_id,
+                    tool_mode=tool_mode,
                 )
                 final_response = srv_result["response"]
             except Exception as e:
@@ -1072,6 +1076,7 @@ def run_constitution_probes(
     harness_enabled: Optional[bool] = None,
     judge_model: Optional[str] = None,
     quick: bool = False,
+    tool_mode: str = "native",
 ) -> Dict[str, Any]:
     total = len(CONSTITUTIONAL_PROBE_GROUPS)
     q_per = "1 (quick)" if quick else "3"
@@ -1088,6 +1093,7 @@ def run_constitution_probes(
         print(f"\n  [{gi}/{total}] {group['id']}")
         result, jq = run_probe_group(
             server_url, group, max_new_tokens, temperature, harness_enabled, quick=quick,
+            tool_mode=tool_mode,
         )
         for qi, item in enumerate(jq):
             judge_map.append((len(group_results), qi))
@@ -1271,6 +1277,7 @@ def run_category_probes(
     temperature: float = 0.7,
     judge_model: Optional[str] = None,
     quick: bool = False,
+    tool_mode: str = "native",
 ) -> Dict[str, Any]:
     q_per = "1 (quick)" if quick else "2"
     print(f"\n{'='*60}")
@@ -1300,7 +1307,7 @@ def run_category_probes(
                 try:
                     cat_res = _complete(server_url, history, cat["tool_profile"],
                                         cat["system"], max_new_tokens, temperature,
-                                        session_id=session_id)
+                                        session_id=session_id, tool_mode=tool_mode)
                     final_response = cat_res["response"]
                 except Exception as e:
                     print(f"  [ERROR] {cat['category']} q{qi}: {e}")
@@ -1451,6 +1458,7 @@ def run_context_drift_test(
     max_new_tokens: int = 2048,
     temperature: float = 0.7,
     judge_model: Optional[str] = None,
+    tool_mode: str = "native",
 ) -> Dict[str, Any]:
     print(f"\n{'='*60}")
     print(f"  CONTEXT DRIFT TEST  (25-turn accumulating conversation)")
@@ -1467,7 +1475,8 @@ def run_context_drift_test(
         print(f"\n  Turn {t['turn']:02d} [{t['principle']:6}]: {q[:65]}...")
         try:
             res = _complete(server_url, history, "all_tools", _SYS_ALL,
-                            max_new_tokens, temperature, session_id=session_id)
+                            max_new_tokens, temperature, session_id=session_id,
+                            tool_mode=tool_mode)
             response = res["response"]
         except Exception as e:
             print(f"  [ERROR] Turn {t['turn']}: {e}")
@@ -1752,6 +1761,7 @@ def run_adversarial_probes(
     temperature: float = 0.7,
     attack_types: Optional[List[str]] = None,
     quick: bool = False,
+    tool_mode: str = "native",
 ) -> Dict[str, Any]:
     active = [p for p in ADVERSARIAL_PROBES
               if attack_types is None or p["attack_type"] in attack_types]
@@ -1782,7 +1792,7 @@ def run_adversarial_probes(
             try:
                 adv_res = _complete(server_url, history, probe["tool_profile"],
                                     probe.get("system"), max_new_tokens, temperature,
-                                    session_id=session_id)
+                                    session_id=session_id, tool_mode=tool_mode)
                 final_response = adv_res["response"]
             except Exception as e:
                 print(f"  [ERROR] {probe['id']}: {e}")
@@ -1890,7 +1900,7 @@ def _turn_metrics(result: Dict[str, Any], q: str, idx: int) -> Dict[str, Any]:
 
 def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: float = 0.7,
                   questions: Optional[List[str]] = None, max_tool_iters: int = 8,
-                  label: str = "") -> Dict[str, Any]:
+                  label: str = "", tool_mode: str = "native") -> Dict[str, Any]:
     qs = questions or BENCHMARK_QUESTIONS
     tag = f" — {label}" if label else ""
     print(f"\n{'='*60}")
@@ -1908,7 +1918,7 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
         try:
             result = _complete(server_url, history, "all_tools",
                                max_new_tokens=max_new_tokens, temperature=temperature,
-                               session_id=session_id)
+                               session_id=session_id, tool_mode=tool_mode)
         except Exception as e:
             print(f"  [ERROR] Turn {idx}: {e}")
             result = {"response": f"[SERVER ERROR: {e}]", "metrics": {}}
@@ -1926,7 +1936,7 @@ def run_benchmark(server_url: str, max_new_tokens: int = 2048, temperature: floa
         try:
             result = _complete(server_url, [{"role": "user", "content": ec["q"]}],
                                ec["profile"], max_new_tokens=512, temperature=temperature,
-                               session_id=f"edge_{uuid.uuid4().hex[:6]}")
+                               session_id=f"edge_{uuid.uuid4().hex[:6]}", tool_mode=tool_mode)
         except Exception as e:
             print(f"  [ERROR] {ec['label']}: {e}")
             result = {"response": f"[SERVER ERROR: {e}]", "metrics": {}}
@@ -2093,6 +2103,8 @@ def run_probe_comparison(
     judge_model: Optional[str] = None,
     label_a: str = "vanilla",
     label_b: str = "finetuned",
+    tool_mode_a: str = "xml",
+    tool_mode_b: str = "xml",
 ) -> Dict[str, Any]:
     """Run Suite A on two servers and produce a per-principle comparison table.
 
@@ -2106,9 +2118,9 @@ def run_probe_comparison(
     print(f"{'='*70}")
 
     result_a = run_constitution_probes(server_url, max_new_tokens, temperature,
-                                       judge_model=judge_model)
+                                       judge_model=judge_model, tool_mode=tool_mode_a)
     result_b = run_constitution_probes(compare_url, max_new_tokens, temperature,
-                                       judge_model=judge_model)
+                                       judge_model=judge_model, tool_mode=tool_mode_b)
 
     scores_a = result_a["scores_by_principle"]
     scores_b = result_b["scores_by_principle"]
@@ -2176,14 +2188,17 @@ def run_harness_comparison(
     output_dir: Path = Path("reports"),
     timestamp: str = "",
     judge_model: Optional[str] = None,
+    tool_mode: str = "native",
 ) -> Dict[str, Any]:
     print(f"\n{'='*60}")
     print("  HARNESS COMPARISON — WITH vs WITHOUT")
     print(f"{'='*60}")
     without = run_constitution_probes(server_url, max_new_tokens, temperature,
-                                      harness_enabled=False, judge_model=judge_model)
+                                      harness_enabled=False, judge_model=judge_model,
+                                      tool_mode=tool_mode)
     with_h  = run_constitution_probes(server_url, max_new_tokens, temperature,
-                                      harness_enabled=True, judge_model=judge_model)
+                                      harness_enabled=True, judge_model=judge_model,
+                                      tool_mode=tool_mode)
     delta = with_h["constitution_score"] - without["constitution_score"]
     print(f"  Without harness: {without['constitution_score']:.4f}  |  "
           f"With harness: {with_h['constitution_score']:.4f}  [{delta:+.4f}]")
@@ -2410,6 +2425,11 @@ Examples:
     ap.add_argument("--questions",        default=None)
     ap.add_argument("--max_new_tokens",   type=int, default=1024)
     ap.add_argument("--max_tool_iters",   type=int, default=8)
+    ap.add_argument("--tool_mode",        default="native", choices=["xml", "native"],
+                    help="Tool-calling format: 'xml' for SFT-trained <tool> tags (default), "
+                         "'native' for Hermes <tool_call> JSON (use for vanilla/base model runs)")
+    ap.add_argument("--compare_tool_mode", default=None,
+                    help="tool_mode for the --compare_url server (defaults to --tool_mode)")
     ap.add_argument("--temperature",      type=float, default=0.7)
     ap.add_argument("--output_dir",       default="./reports")
     ap.add_argument("--models",         nargs="+", default=None,
@@ -2432,6 +2452,7 @@ Examples:
     attack_types  = [t.strip() for t in args.attack_types.split(",")] if args.attack_types else None
     judge_model   = None if args.no_judge else args.judge_model
     custom_questions = [q.strip() for q in args.questions.split(",")] if args.questions else None
+    compare_tool_mode = args.compare_tool_mode if args.compare_tool_mode else args.tool_mode
 
     print(f"\nBenchmark run: {timestamp}")
     print(f"  Output dir : {output_dir}")
@@ -2462,7 +2483,7 @@ Examples:
                 pr = run_constitution_probes(
                     args.server_url, args.max_new_tokens, args.temperature,
                     baseline_path=baseline_path, judge_model=judge_model,
-                    quick=args.quick,
+                    quick=args.quick, tool_mode=args.tool_mode,
                 )
                 pr.update({"timestamp": timestamp, "server_url": args.server_url})
                 pr_path  = save_report(pr, output_dir, f"constitution_probe_{label}_{timestamp}.json")
@@ -2475,7 +2496,7 @@ Examples:
             if args.categories:
                 cat = run_category_probes(args.server_url, args.max_new_tokens,
                                           args.temperature, judge_model,
-                                          quick=args.quick)
+                                          quick=args.quick, tool_mode=args.tool_mode)
                 cat.update({"timestamp": timestamp, "server_url": args.server_url})
                 cat_path = save_report(cat, output_dir, f"category_probes_{label}_{timestamp}.json")
                 run_results["categories"] = cat
@@ -2484,7 +2505,8 @@ Examples:
 
             if args.drift and not args.quick:
                 drift = run_context_drift_test(args.server_url, args.max_new_tokens,
-                                               args.temperature, judge_model)
+                                               args.temperature, judge_model,
+                                               tool_mode=args.tool_mode)
                 drift.update({"timestamp": timestamp, "server_url": args.server_url})
                 drift_path = save_report(drift, output_dir, f"context_drift_{label}_{timestamp}.json")
                 run_results["drift"] = drift
@@ -2494,7 +2516,7 @@ Examples:
             if args.adversarial or args.adversarial_only:
                 adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
                                              args.temperature, attack_types,
-                                             quick=args.quick)
+                                             quick=args.quick, tool_mode=args.tool_mode)
                 adv.update({"timestamp": timestamp, "server_url": args.server_url})
                 adv_path = save_report(adv, output_dir, f"adversarial_{label}_{timestamp}.json")
                 run_results["adversarial"] = adv
@@ -2532,7 +2554,7 @@ Examples:
     if args.adversarial or args.adversarial_only:
         adv = run_adversarial_probes(args.server_url, args.max_new_tokens,
                                      args.temperature, attack_types,
-                                     quick=args.quick)
+                                     quick=args.quick, tool_mode=args.tool_mode)
         adv.update({"timestamp": timestamp, "server_url": args.server_url})
         adv_path = save_report(adv, output_dir, f"adversarial_{timestamp}.json")
         all_results["adversarial"] = adv
@@ -2556,6 +2578,8 @@ Examples:
             judge_model=judge_model,
             label_a=args.model_label,
             label_b=args.compare_label,
+            tool_mode_a=args.tool_mode,
+            tool_mode_b=compare_tool_mode,
         )
         return
 
@@ -2564,7 +2588,7 @@ Examples:
         probe_result = run_constitution_probes(
             args.server_url, args.max_new_tokens, args.temperature,
             baseline_path=baseline_path, judge_model=judge_model,
-            quick=args.quick,
+            quick=args.quick, tool_mode=args.tool_mode,
         )
         probe_result.update({"timestamp": timestamp, "server_url": args.server_url})
         probe_path = save_report(probe_result, output_dir, f"constitution_probe_{timestamp}.json")
@@ -2582,7 +2606,8 @@ Examples:
 
         if args.with_harness:
             run_harness_comparison(args.server_url, args.max_new_tokens, args.temperature,
-                                   output_dir, timestamp, judge_model)
+                                   output_dir, timestamp, judge_model,
+                                   tool_mode=args.tool_mode)
 
         if args.probe_only:
             if args.report and judge_model:
@@ -2595,7 +2620,7 @@ Examples:
     if args.categories:
         cat_result = run_category_probes(args.server_url, args.max_new_tokens,
                                          args.temperature, judge_model,
-                                         quick=args.quick)
+                                         quick=args.quick, tool_mode=args.tool_mode)
         cat_result.update({"timestamp": timestamp, "server_url": args.server_url})
         cat_path = save_report(cat_result, output_dir, f"category_probes_{timestamp}.json")
         all_results["categories"] = cat_result
@@ -2605,7 +2630,8 @@ Examples:
     # ── Suite C: Context drift ───────────────────────────────────────────────
     if args.drift and not args.quick:
         drift_result = run_context_drift_test(args.server_url, args.max_new_tokens,
-                                              args.temperature, judge_model)
+                                              args.temperature, judge_model,
+                                              tool_mode=args.tool_mode)
         drift_result.update({"timestamp": timestamp, "server_url": args.server_url})
         drift_path = save_report(drift_result, output_dir, f"context_drift_{timestamp}.json")
         all_results["drift"] = drift_result
@@ -2618,7 +2644,8 @@ Examples:
             or args.adversarial or args.adversarial_only):
         primary_label = health.get("model", args.server_url)
         bench = run_benchmark(args.server_url, args.max_new_tokens, args.temperature,
-                              custom_questions, args.max_tool_iters, primary_label)
+                              custom_questions, args.max_tool_iters, primary_label,
+                              tool_mode=args.tool_mode)
         bench.update({"timestamp": timestamp, "server_url": args.server_url})
         try:
             bench["server_metrics"] = _http(args.server_url, "/metrics")
@@ -2631,7 +2658,8 @@ Examples:
         if args.compare_url:
             compare_label = compare_health.get("model", args.compare_url)
             bench2 = run_benchmark(args.compare_url, args.max_new_tokens, args.temperature,
-                                   custom_questions, args.max_tool_iters, compare_label)
+                                   custom_questions, args.max_tool_iters, compare_label,
+                                   tool_mode=compare_tool_mode)
             bench2.update({"timestamp": timestamp, "server_url": args.compare_url})
             runs[compare_label] = bench2
             all_results["benchmark_compare"] = bench2

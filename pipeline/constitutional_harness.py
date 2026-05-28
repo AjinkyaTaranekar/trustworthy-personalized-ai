@@ -3,7 +3,7 @@ Constitutional Harness
 ======================
 Inference-time validation and correction loop for constitutional principle compliance.
 
-Checks P1 (CAPABILITY_CHECK), P3 (TOOL DISCIPLINE), P4 (MATH=CODE), P18 (ANSWER PRESENT)
+Checks P1 (First Principles decomposition), P3 (TOOL DISCIPLINE), P4 (MATH=CODE), P18 (ANSWER PRESENT)
 on every model response. On violation, injects a corrective prompt and retries generation.
 Tracks per-principle failure rates and adaptively reinforces weak principles.
 
@@ -311,7 +311,7 @@ class HarnessMetrics:
         if not weak:
             return ""
         reminders = {
-            "P1":  "**CRITICAL: Every response MUST open with <think>CAPABILITY_CHECK...</think>. This is non-negotiable.**",
+            "P1":  "**CRITICAL: Every response MUST open with <think> containing First Principles decomposition + 5W+H scan, then close </think> before any tool calls or <answer>. This is non-negotiable.**",
             "P3":  "**CRITICAL: Only call tools explicitly listed as ✓ in the session profile. Never invent tool names.**",
             "P4":  "**CRITICAL: Any question requiring numeric computation MUST use python_execute. MATH = CODE.**",
             "P18": "**CRITICAL: Every response MUST end with <answer>...</answer>. Never omit the answer block.**",

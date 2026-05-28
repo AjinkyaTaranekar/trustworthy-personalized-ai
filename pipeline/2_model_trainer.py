@@ -313,15 +313,52 @@ def _safe_execute(code: str, timeout: int = 10) -> tuple:
         return False, str(e)
 
 
+def _extract_tool_calls(response: str) -> list[dict]:
+    """Extract all tool calls from a response — handles both XML and native formats.
+
+    Returns list of {"name": str, "kwargs": dict}.
+    """
+    results = []
+    # Native format: <tool_call>{"name": ..., "arguments": {...}}</tool_call>
+    for m in re.finditer(r"<tool_call>(.*?)</tool_call>", response, re.DOTALL):
+        try:
+            obj = json.loads(m.group(1).strip())
+            results.append({
+                "name":   obj.get("name", ""),
+                "kwargs": obj.get("arguments", {}),
+            })
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # XML format (legacy): <tool>name(args)</tool> — kept for backwards compat
+    for m in re.finditer(r"<tool>(\w+)\(", response):
+        name = m.group(1)
+        if not any(r["name"] == name for r in results):
+            # Only add XML-format calls not already captured by native parser
+            results.append({"name": name, "kwargs": {}})
+    return results
+
+
 def _extract_code_from_response(response: str) -> list[str]:
     blocks = []
-    p1 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*["\']+(.*?)["\']+\s*\)\s*</tool>'
-    for m in re.finditer(p1, response, re.DOTALL):
-        code = m.group(1).replace("\\n", "\n").replace('\\"', '"')
-        blocks.append(code)
-    p2 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)\s*</tool>'
-    for m in re.finditer(p2, response, re.DOTALL):
-        blocks.append(m.group(1).strip())
+    # Native format: <tool_call>{"name": "python_execute", "arguments": {"code": "..."}}</tool_call>
+    for m in re.finditer(r"<tool_call>(.*?)</tool_call>", response, re.DOTALL):
+        try:
+            obj = json.loads(m.group(1).strip())
+            if obj.get("name") == "python_execute":
+                code = obj.get("arguments", {}).get("code", "")
+                if code:
+                    blocks.append(code)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # XML format (legacy)
+    if not blocks:
+        p1 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*["\']+(.*?)["\']+\s*\)\s*</tool>'
+        for m in re.finditer(p1, response, re.DOTALL):
+            code = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+            blocks.append(code)
+        p2 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)\s*</tool>'
+        for m in re.finditer(p2, response, re.DOTALL):
+            blocks.append(m.group(1).strip())
     return blocks
 
 
@@ -463,10 +500,8 @@ def _tool_integrity_reward(response: str, active_tools: set) -> float:
     """P3: no calls to completely unknown tools.
     Always-on tools (user_memory_*, scratchpad_*) are never hallucinated."""
     response = _coerce_text(response)
-    called = set(re.findall(r"<tool>(\w+)\(", response))
-    # A tool is hallucinated only if it is not in the global known set
+    called = {tc["name"] for tc in _extract_tool_calls(response)}
     hallucinated = called - _ALL_KNOWN_TOOLS
-    # Profile-restricted tools: only penalise if called AND not available AND not always-on
     profile_restricted = {"python_execute", "web_search", "read_url", "get_datetime"}
     unavailable = (called & profile_restricted) - active_tools
     return 0.0 if (hallucinated or unavailable) else 1.0
@@ -482,20 +517,14 @@ def _tool_quality_reward(response: str, question_type: str, active_tools: set) -
       math categories      → python_execute must have non-empty, non-trivial code
     """
     response = _coerce_text(response)
-    called = set(re.findall(r"<tool>(\w+)\(", response))
-    tool_calls_raw = re.findall(r"<tool>(.*?)</tool>", response, re.DOTALL)
+    tool_calls = _extract_tool_calls(response)
+    called = {tc["name"] for tc in tool_calls}
 
     # ── Hard failure: empty python_execute code ───────────────────────────────
-    for call in tool_calls_raw:
-        if "python_execute" not in call:
+    for tc in tool_calls:
+        if tc["name"] != "python_execute":
             continue
-        code_triple = re.search(r'code\s*=\s*"""(.*?)"""', call, re.DOTALL)
-        code_single = re.search(r'code\s*=\s*["\']([^"\']*)["\']', call)
-        code_text = ""
-        if code_triple:
-            code_text = code_triple.group(1).strip()
-        elif code_single:
-            code_text = code_single.group(1).strip()
+        code_text = tc["kwargs"].get("code", "").strip()
         if len(code_text) < 5:
             return 0.0  # called python_execute but left code empty
 
@@ -1555,6 +1584,12 @@ def main():
         "--v3_format", action="store_true",
         help="Use v3 format rewards (no CAPABILITY_CHECK requirement) for GRPO on v3-trained models",
     )
+    parser.add_argument(
+        "--dataset", default=None,
+        help="Path to SFT training JSONL (default: <data_dir>/train_sft_v3.jsonl). "
+             "Use this to pass the native-format dataset: "
+             "pipeline/data/train_sft_v3_native.jsonl",
+    )
 
     args = parser.parse_args()
 
@@ -1603,7 +1638,7 @@ def main():
         else:
             trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
+        dataset_path = Path(args.dataset) if args.dataset else Path(args.data_dir) / "train_sft_v3.jsonl"
         _effective_dataset_path = str(dataset_path)
         if args.curriculum_stage:
             all_examples = []
@@ -1641,7 +1676,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
+        dataset_path = Path(args.dataset) if args.dataset else Path(args.data_dir) / "train_sft_v3.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),
