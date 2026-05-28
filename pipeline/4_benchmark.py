@@ -2103,8 +2103,8 @@ def run_probe_comparison(
     judge_model: Optional[str] = None,
     label_a: str = "vanilla",
     label_b: str = "finetuned",
-    tool_mode_a: str = "xml",
-    tool_mode_b: str = "xml",
+    tool_mode_a: str = "native",
+    tool_mode_b: str = "native",
 ) -> Dict[str, Any]:
     """Run Suite A on two servers and produce a per-principle comparison table.
 
