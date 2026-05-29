@@ -732,19 +732,16 @@ def _brief_prompt(profile: str) -> str:
 
 
 def _no_principles_prompt(profile: str) -> str:
-    """Minimal tool-syntax reminder without any teacher-side constitution structure."""
-    ctx  = _TOOL_CONTEXTS.get(profile, "python_execute ✓")
-    note = _TOOL_NOTES.get(profile, "")
-    has  = {t: f"{t} ✓" in ctx for t in ("python_execute", "web_search", "read_url", "get_datetime")}
-    call_lines = []
-    if has["python_execute"]: call_lines.append("  <tool>python_execute(code='...')</tool>")
-    if has["web_search"]:     call_lines.append("  <tool>web_search(query='...')</tool>")
-    if has["read_url"]:       call_lines.append("  <tool>read_url(url='...', prompt='what to extract')</tool>")
-    if has["get_datetime"]:   call_lines.append("  <tool>get_datetime()</tool>")
-    calls = "\n".join(call_lines) if call_lines else "  (no tools available this session)"
+    """Minimal prompt with no constitution structure — robustness variant. Native tool calling
+    (no XML syntax): tool schemas are supplied at runtime, so the prompt only names availability."""
+    ctx   = _TOOL_CONTEXTS.get(profile, "")
+    note  = _TOOL_NOTES.get(profile, "")
+    avail = [t for t in ("python_execute", "web_search", "read_url", "get_datetime") if f"{t} ✓" in ctx]
+    tools_line = ", ".join(avail) if avail else "none"
     return (
         f"You are a trustworthy AI assistant. {note}\n\n"
-        f"Tool call syntax:\n{calls}"
+        f"Tools available this session: {tools_line} (plus scratchpad and user_memory). "
+        f"Call them via your native function-calling interface — not as text."
         + _SECURITY_RULES
     )
 
@@ -981,6 +978,10 @@ def main() -> None:
                         help="(dual-format path only) Skip adding native JSON tool examples")
     parser.add_argument("--native_fraction", type=float, default=0.20,
                         help="(dual-format path only) Fraction of tool examples to also emit as native")
+    parser.add_argument("--no_restamp_prompt", action="store_true",
+                        help="Do not overwrite system messages with the canonical native student prompt "
+                             "(sft_v3_generator.STUDENT_PROMPTS). By default the prompt is re-stamped so "
+                             "training data matches the inference server exactly.")
     # Robustness flags
     parser.add_argument("--no_robustness",   action="store_true", help="Skip robustness variants")
     parser.add_argument("--minimal",         type=float, default=0.15)
@@ -1014,6 +1015,7 @@ def main() -> None:
         no_native=args.no_native,
         native_fraction=args.native_fraction,
         full_native=_full_native,
+        restamp_prompt=not args.no_restamp_prompt,
         no_robustness=args.no_robustness,
         minimal_frac=args.minimal,
         brief_frac=args.brief,

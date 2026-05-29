@@ -91,7 +91,10 @@ The assembler is the single quality gate (folded in from the old `validate_sft_d
 - rejects leaked teacher scaffolding (`CAPABILITY_CHECK`, `PRINCIPLE_`, …) and banned placeholders,
 - requires an `<answer>` tag and a valid system prompt (no teacher-constitution leak),
 - converts everything to **native `<tool_call>` JSON (full native)** and drops any legacy-XML residue,
+- **re-stamps the canonical student system prompt** (`sft_v3_generator.STUDENT_PROMPTS`, keyed by tool profile) onto every example so the training data matches the inference server byte-for-byte — no XML/native ambiguity. The prompt itself is native (tools are called via the function-calling interface, not `<tool>` text). Robustness variants intentionally swap in their own minimal prompts.
 - balances categories, dedupes, and adds robustness variants.
+
+The student prompt is defined once in `sft_v3_generator.py` (`_make_student_prompt` / `STUDENT_PROMPTS`); `3_infererence.py` imports it. Change it there and re-run the assembler to propagate it into the training data.
 
 It prints how many examples each gate dropped. Source parts are regenerated with
 `sft_question_generator.py` → `sft_v3_generator.py` (see §13) — only needed when changing the

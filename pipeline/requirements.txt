@@ -17,3 +17,4 @@ requests
 huggingface_hub
 exa-py
 pytest
+botocore

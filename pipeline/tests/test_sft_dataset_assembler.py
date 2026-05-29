@@ -116,6 +116,29 @@ def test_too_few_messages_fails():
 
 # ── helper-level checks ───────────────────────────────────────────────────────
 
+def test_restamp_student_prompt_matches_inference_source():
+    # After re-stamping, the system message must equal the canonical STUDENT_PROMPTS entry for
+    # the example's tool_profile (train == inference, single source of truth).
+    from sft_v3_generator import STUDENT_PROMPTS
+    ex = {"messages": [
+        {"role": "system", "content": "stale old prompt with <tool>python_execute(code='...')</tool>"},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "<answer>hello</answer>"},
+    ], "metadata": {"tool_profile": "compute_only"}}
+    out, n = a.restamp_student_prompt([ex])
+    assert n == 1
+    sys_msg = next(m["content"] for m in out[0]["messages"] if m["role"] == "system")
+    assert sys_msg == STUDENT_PROMPTS["compute_only"]
+    assert "<tool>" not in sys_msg          # native prompt carries no XML tool syntax
+    assert "native tool-call format" in sys_msg.lower()  # instructs native function calling
+
+
+def test_no_principles_variant_has_no_xml_tool_syntax():
+    sys_msg = a._no_principles_prompt("all_tools")
+    assert "<tool>" not in sys_msg and "</tool>" not in sys_msg
+    assert "native function-calling" in sys_msg.lower()
+
+
 def test_first_think_text_and_banned_helpers():
     msgs = _make_row()["messages"]
     assert a._first_think_text(msgs).startswith("I need to compute")
