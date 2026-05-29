@@ -162,9 +162,9 @@ pipeline/
 │
 │   ─── Data generation ───
 ├── sft_question_generator.py       SFT step 1a — 13 categories incl. appraisal_empathy + interleaved_tool_reasoning
-├── sft_gold_response_generator.py  SFT step 1b — teacher generates + critiques (23 principles)
+├── sft_v3_generator.py             SFT step 1b — asymmetric distillation: teacher (full constitution) → student prompt swap, live tool intercept, native <tool_call> output
 ├── sft_math_pipeline.py            SFT step 2  — math/code questions (7 types) + rejection sampling
-├── sft_dataset_assembler.py        SFT step 3  — merge, filter, v2→v3 multi-turn transform, native JSON tools, robustness variants, train/eval split
+├── sft_dataset_assembler.py        SFT step 3  — merge, quality-gate (think≥150, teacher-leak, banned phrases), full-native conversion, robustness variants → train_sft_v3.jsonl
 ├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
@@ -294,28 +294,18 @@ python sft_question_generator.py \
   --model  nvidia_nim/moonshotai/kimi-k2.6 \
   --output data/questions_partA.jsonl
 
-python sft_gold_response_generator.py \
-  --questions   data/questions_partA.jsonl \
-  --output      data/train_partA.jsonl \
-  --model       nvidia_nim/moonshotai/kimi-k2.6 \
-  --critic_model nvidia_nim/minimaxai/minimax-m2.7   # different model family = genuine independence
+# Asymmetric distillation: teacher uses the full constitution; only a short student
+# prompt is saved. Tool calls are intercepted and executed live; output is native <tool_call>.
+python sft_v3_generator.py \
+  --questions data/questions_partA.jsonl \
+  --output    data/train_partA_v3.jsonl \
+  --model     nvidia_nim/minimaxai/minimax-m2.7
 
-# Alternative (also free): Groq
-# python sft_question_generator.py --model groq/llama-3.3-70b-versatile --output data/questions_partA.jsonl
-# python sft_gold_response_generator.py --questions data/questions_partA.jsonl \
-#   --model groq/llama-3.3-70b-versatile --critic_model groq/gemma2-9b-it --output data/train_partA.jsonl
+python sft_math_pipeline.py --output data/train_partB_v3.jsonl
 
-# Alternative (paid ~$10–15): Anthropic
-# python sft_gold_response_generator.py --questions data/questions_partA.jsonl \
-#   --model claude-sonnet-4-6 --critic_model claude-opus-4-7 --output data/train_partA.jsonl
-
-python sft_math_pipeline.py --output data/train_partB.jsonl
-
-python sft_dataset_assembler.py \
-  --part_a    data/train_partA.jsonl \
-  --part_b    data/train_partB.jsonl \
-  --output_dir data
-# Produces data/train_sft_v3_robust.jsonl (1,983 examples — multi-turn, native JSON tools, robustness variants)
+python sft_dataset_assembler.py        # part_a/part_b default to the *_v3.jsonl files
+# Quality-gates (think≥150, no teacher leak, no banned phrases), converts to full-native,
+# and writes data/train_sft_v3.jsonl (the trainer's input).
 
 # Step 2: Train (requires GPU — ~50 min on A4000 / 2–4h on A100)
 python 2_model_trainer.py \
@@ -359,20 +349,18 @@ The v3 pipeline eliminates context-window starvation in 0.6B models by keeping t
         --type inventory_constraint \
         --output pipeline/data/train_v3_negative.jsonl
 
-    # 3. Pre-flight validation (fails if >5% of rows are malformed)
-    python pipeline/validate_sft_data.py --input pipeline/data/train_v3.jsonl
-
-    # 4. Assemble dataset (same assembler as v2)
+    # 3. Assemble + quality-gate + full-native → data/train_sft_v3.jsonl
+    #    (the assembler IS the quality gate: think≥150, teacher-leak, banned phrases, answer tag)
     python pipeline/sft_dataset_assembler.py \
         --part_a pipeline/data/train_v3.jsonl \
         --output_dir pipeline/data/
 
-    # 5. Curriculum training — 3 stages
-    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 1 --output_name checkpoint_sft_s1
-    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 2 --from_checkpoint models/checkpoint_sft_s1 --output_name checkpoint_sft_s2
-    python pipeline/2_model_trainer.py --mode sft --curriculum_stage 3 --from_checkpoint models/checkpoint_sft_s2 --output_name checkpoint_sft
+    # 4. Train — the 3-stage curriculum (format → complexity → replay) runs by default
+    python pipeline/2_model_trainer.py --mode sft --output_name checkpoint_sft
+    #    (add --no_curriculum to train once on the full set; manual per-stage control via
+    #     --curriculum_stage 1|2|3 + --from_checkpoint is still available)
 
-    # 6. GRPO (add --v3_format flag when base is a v3-trained model)
+    # 5. GRPO (add --v3_format flag when base is a v3-trained model)
     python pipeline/2_model_trainer.py --mode grpo --sft_checkpoint models/checkpoint_sft --v3_format
 
 ### Phase 2 — GRPO Reinforcement Learning
@@ -461,7 +449,7 @@ bash pipeline/run_all.sh --stages 3,4,5
 |---|---|---|---|
 | 0 | Infrastructure setup (FalkorDB) | `ENABLE_USER_MODELLING=true` | FalkorDB running on port 6379 |
 | 0.5 | Appraisal labelling | `ENABLE_EMPATHY=true` | `data/appraisal_labels.jsonl` |
-| 1 | SFT data check | always | `data/train_sft_v2.jsonl` (existence check; `train_sft_v3_robust.jsonl` consumed at training time) |
+| 1 | SFT data assembly | always | `data/train_sft_v3.jsonl` (produced by `sft_dataset_assembler.py` from the `*_v3` source parts) |
 | 2 | SFT training | always | `models/checkpoint_sft/` |
 | 3 | SFT constitutional baseline | always | `reports/constitution_baseline.json` |
 | 4 | Experiment 0 (reasoning comparison) | always | `reports/experiment0_*.json` |
@@ -785,8 +773,8 @@ Four pre-GRPO security blockers are implemented and verified by `preflight_check
 | 1a — code sandbox | `3_infererence.py` | AST-validates LLM-generated code before `subprocess.run`; blocks `os`, `sys`, `socket`, dangerous builtins |
 | 1b — injection sanitiser | `3_infererence.py` | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context |
 | 1c/1d — sampler sandbox | `sft_math_pipeline.py` | Same AST validation for verification code (math question generation + rejection sampling merged into one script) |
-| 2a — rule verifier | `sft_gold_response_generator.py` | `rule_check_response()`: deterministic P1/P3/P4/P14/P18 checks before LLM critique |
-| 2b — violation merge | `sft_gold_response_generator.py` | `_merge_violations()`: rule violations survive even if LLM critic says NO_VIOLATIONS |
+| 2a — distillation format gate | `sft_v3_generator.py` | Intercept loop enforces think→tool→answer structure; banned-placeholder + think-length checks on generated rows |
+| 2b — training data quality gate | `sft_dataset_assembler.py` | `passes_quality_filter()`: rejects short `<think>`, teacher-constitution leak, banned phrases, missing `<answer>` before any row enters training |
 | 3a/3b — adversarial suite | `4_benchmark.py` | 14 probes across jailbreak/injection/regression; run before GRPO |
 | 4a/4b — dependency monitor | `3_infererence.py` | `DependencyMonitor`: tracks per-session frequency + burst patterns; appends wellbeing disclosure |
 

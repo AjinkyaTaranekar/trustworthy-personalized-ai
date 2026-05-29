@@ -80,9 +80,11 @@ try:
     from unsloth import FastModel
     from trl import SFTTrainer, SFTConfig, GRPOTrainer, GRPOConfig
     from datasets import load_dataset, Dataset
+    from transformers import TrainerCallback
     HAS_LIBS = True
 except ImportError:
     HAS_LIBS = False
+    TrainerCallback = object  # fallback base so the monitor class still defines
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +120,11 @@ SFT_CONFIG = {
     # epoch; 3 epochs gives ~729 gradient updates on 1944 examples (eff. batch 8),
     # matching the gradient-step budget where the previous run's best checkpoint fell.
     "num_train_epochs":            3,
-    "learning_rate":               2e-4,
+    # 1e-4 (was 2e-4): the 2026-05-25 benchmark showed SFT collapsing the base model's
+    # reasoning (think_empty 0%→95%, P1/P15/P20 1.0→0.0) — capacity displacement from too
+    # aggressive an update on 0.6B. Halving the LR preserves more of the base thinking
+    # pathway while still learning the constitutional behaviour. Re-benchmark on GPU to confirm.
+    "learning_rate":               1e-4,
     "warmup_steps":                50,
     "logging_steps":               10,
     "save_steps":                  25,
@@ -214,6 +220,16 @@ def _split_curriculum_stages(
     replay = _random.sample(stage1, replay_n) if stage1 else []
     stage3 = stage2 + replay
     return stage1, stage2, stage3
+
+
+def _write_temp_jsonl(examples: list[dict]) -> str:
+    """Write examples to a temp .jsonl and return its path (caller-owned)."""
+    import tempfile as _tempfile
+    tmp = _tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8")
+    for ex in examples:
+        tmp.write(json.dumps(ex, ensure_ascii=False) + "\n")
+    tmp.close()
+    return tmp.name
 
 
 # ---------------------------------------------------------------------------
@@ -635,22 +651,20 @@ def _greedy_followup_reward(response: str, category: str) -> float:
 
 def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
-    """Broader rule check using rule_check_response.
-    Falls back to a subset check if import fails."""
+    """Structural constitution reward (GRPO).
+
+    Scores presence of a substantive <think> block and an <answer> tag. The previous
+    implementation imported rule_check_response from sft_gold_response_generator, which
+    was removed when sft_v3_generator.py replaced that script — the import always fell
+    through to this format check, so it is now inlined directly (no dead import)."""
     response = _coerce_text(response)
-    try:
-        from sft_gold_response_generator import rule_check_response
-        violations = rule_check_response(response, question, category, tool_profile)
-        n = len(violations)
-        return max(0.0, (5 - n) / 5)  # 5 = max checkable principles
-    except ImportError:
-        has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
-        has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
-        if _V3_FORMAT_MODE:
-            return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
-        has_cap = "CAPABILITY_CHECK" in response
-        n_ok = sum([has_think, has_cap, has_ans])
-        return n_ok / 3.0
+    has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
+    has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+    if _V3_FORMAT_MODE:
+        return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
+    has_cap = "CAPABILITY_CHECK" in response
+    n_ok = sum([has_think, has_cap, has_ans])
+    return n_ok / 3.0
 
 
 def _profile_to_set(label: str) -> set:
@@ -880,13 +894,70 @@ def messages_to_text(example, tokenizer):
             tokenize=False,
             add_generation_prompt=False,
             tools=native_tools,
-            # enable_thinking=False here: training data already contains explicit
-            # <think>...</think> blocks in assistant content. Passing True causes
-            # Qwen3's template to inject a second <think> tag, producing a double
-            # open-tag that trains the model to output empty thinking blocks.
+            # enable_thinking is a no-op for training renders: with add_generation_prompt=False
+            # the Qwen3-0.6B template emits identical text for True and False (verified
+            # empirically 2026-05-29), because the assistant turn already contains explicit
+            # <think>...</think> blocks. It only matters at inference (add_generation_prompt=True),
+            # where True lets the model emit its own <think> (matching this data) and False would
+            # inject an empty <think></think> forcing non-thinking mode. Inference uses True.
             enable_thinking=False,
         )
     }
+
+
+# ---------------------------------------------------------------------------
+# In-training collapse monitor
+# ---------------------------------------------------------------------------
+
+class CollapseMonitorCallback(TrainerCallback):
+    """Generate on a few held-out prompts at each eval and report think-empty rate +
+    mean tool-call count.
+
+    This surfaces the think-collapse failure mode (reasoning displaced by tool-calls)
+    *during* training instead of only after a full multi-hour run + benchmark. Fully
+    guarded — any generation error is swallowed so it can never abort training.
+    """
+
+    def __init__(self, tokenizer, eval_raw, n: int = 5, max_new_tokens: int = 512):
+        self._tok = tokenizer
+        self._max_new = max_new_tokens
+        self._prompts: list[tuple[list, object]] = []
+        for ex in (eval_raw or [])[:n]:
+            msgs = [m for m in ex.get("messages", []) if m.get("role") in ("system", "user")]
+            if msgs:
+                self._prompts.append((msgs, ex.get("metadata", {}).get("native_tools")))
+
+    def on_evaluate(self, args, state, control, **kwargs):  # noqa: D401
+        model = kwargs.get("model")
+        if model is None or not self._prompts:
+            return
+        try:
+            import torch as _torch
+            empties = total_calls = n = 0
+            for msgs, native_tools in self._prompts:
+                text = self._tok.apply_chat_template(
+                    msgs, tokenize=False, add_generation_prompt=True,
+                    tools=native_tools, enable_thinking=True,
+                )
+                inputs = self._tok(text, return_tensors="pt").to(model.device)
+                with _torch.no_grad():
+                    out = model.generate(**inputs, max_new_tokens=self._max_new, do_sample=False)
+                gen = self._tok.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                tm = re.search(r"<think>(.*?)</think>", gen, re.DOTALL | re.IGNORECASE)
+                think = tm.group(1).strip() if tm else ""
+                if len(think) < 10:
+                    empties += 1
+                total_calls += len(re.findall(r"<tool_call>|<tool>", gen))
+                n += 1
+            if n:
+                print(
+                    f"  [collapse-monitor] step={state.global_step} "
+                    f"think_empty={empties}/{n} ({100 * empties / n:.0f}%) "
+                    f"mean_tool_calls={total_calls / n:.2f}",
+                    flush=True,
+                )
+        except Exception as e:  # never break training over a monitoring read
+            print(f"  [collapse-monitor] skipped ({type(e).__name__}: {e})", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1024,6 +1095,9 @@ class ModelTrainer:
             instruction_part="<|im_start|>user\n",
             response_part="<|im_start|>assistant\n",
         )
+
+        # Surface the think-collapse failure mode during training (not just after).
+        trainer.add_callback(CollapseMonitorCallback(self.tokenizer, self._eval_raw))
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
@@ -1578,7 +1652,13 @@ def main():
     )
     parser.add_argument(
         "--curriculum_stage", type=int, choices=[1, 2, 3], default=None,
-        help="Curriculum stage for SFT: 1=short format, 2=all examples, 3=anti-drift replay mix",
+        help="Train a SINGLE curriculum stage for SFT: 1=short format, 2=all examples, "
+             "3=anti-drift replay mix. For manual stage-by-stage control / checkpoint chaining.",
+    )
+    parser.add_argument(
+        "--no_curriculum", action="store_true",
+        help="Disable the default 3-stage SFT curriculum (format -> complexity -> replay) "
+             "and train once on the full dataset. Ignored if --curriculum_stage is set.",
     )
     parser.add_argument(
         "--v3_format", action="store_true",
@@ -1586,9 +1666,8 @@ def main():
     )
     parser.add_argument(
         "--dataset", default=None,
-        help="Path to SFT training JSONL (default: <data_dir>/train_sft_v3.jsonl). "
-             "Use this to pass the native-format dataset: "
-             "pipeline/data/train_sft_v3_native.jsonl",
+        help="Path to SFT training JSONL (default: <data_dir>/train_sft_v3.jsonl, "
+             "produced by sft_dataset_assembler.py).",
     )
 
     args = parser.parse_args()
@@ -1639,30 +1718,55 @@ def main():
             trainer.load_base_model()
         trainer.apply_lora()
         dataset_path = Path(args.dataset) if args.dataset else Path(args.data_dir) / "train_sft_v3.jsonl"
-        _effective_dataset_path = str(dataset_path)
-        if args.curriculum_stage:
-            all_examples = []
-            with open(dataset_path, encoding="utf-8") as _f:
+
+        def _load_all(path):
+            rows = []
+            with open(path, encoding="utf-8") as _f:
                 for _line in _f:
                     try:
-                        all_examples.append(json.loads(_line))
+                        rows.append(json.loads(_line))
                     except json.JSONDecodeError:
                         pass
-            _s1, _s2, _s3 = _split_curriculum_stages(all_examples)
-            _stage_map = {1: _s1, 2: _s2, 3: _s3}
-            all_examples = _stage_map[args.curriculum_stage]
-            print(f"Curriculum stage {args.curriculum_stage}: {len(all_examples)} examples "
+            return rows
+
+        if args.curriculum_stage:
+            # Manual single-stage control (for checkpoint chaining via --from_checkpoint).
+            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            _stage = {1: _s1, 2: _s2, 3: _s3}[args.curriculum_stage]
+            print(f"Curriculum stage {args.curriculum_stage}: {len(_stage)} examples "
                   f"(S1={len(_s1)} S2={len(_s2)} S3={len(_s3)})")
-            import tempfile as _tempfile
-            _tmp = _tempfile.NamedTemporaryFile(
-                mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-            )
-            for _ex in all_examples:
-                _tmp.write(json.dumps(_ex) + "\n")
-            _tmp.close()
-            _effective_dataset_path = _tmp.name
-        trainer.train_sft(_effective_dataset_path, args.output_name,
-                          resume_from_checkpoint=args.resume)
+            trainer.train_sft(_write_temp_jsonl(_stage), args.output_name,
+                              resume_from_checkpoint=args.resume)
+        elif not args.no_curriculum:
+            # Default: 3-stage curriculum (format -> full complexity -> anti-drift replay),
+            # trained sequentially on the SAME in-memory model so each stage continues from
+            # the previous stage's best checkpoint. Per-stage epoch schedule keeps total
+            # training moderate (1+2+1 = 4 effective epochs) to avoid the over-training that
+            # contributed to the reasoning collapse. Tune on GPU; use --no_curriculum to skip.
+            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            if len(_s1) < 8 or len(_s2) < 8:
+                print(f"  [curriculum] degenerate split (S1={len(_s1)} S2={len(_s2)}) — "
+                      f"falling back to single full-dataset run.")
+                trainer.train_sft(str(dataset_path), args.output_name,
+                                  resume_from_checkpoint=args.resume)
+            else:
+                stages = [("1-format", _s1, 1), ("2-complexity", _s2, 2), ("3-replay", _s3, 1)]
+                print(f"  [curriculum] 3 stages: S1={len(_s1)} S2={len(_s2)} S3={len(_s3)}")
+                _orig_epochs = SFT_CONFIG["num_train_epochs"]
+                try:
+                    for _i, (_label, _stage, _epochs) in enumerate(stages, 1):
+                        SFT_CONFIG["num_train_epochs"] = _epochs
+                        print(f"\n--- SFT curriculum stage {_i}/3 ({_label}): "
+                              f"{len(_stage)} examples, {_epochs} epoch(s) ---")
+                        trainer.train_sft(
+                            _write_temp_jsonl(_stage), args.output_name,
+                            resume_from_checkpoint=(args.resume and _i == 1),
+                        )
+                finally:
+                    SFT_CONFIG["num_train_epochs"] = _orig_epochs
+        else:
+            trainer.train_sft(str(dataset_path), args.output_name,
+                              resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
         print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")

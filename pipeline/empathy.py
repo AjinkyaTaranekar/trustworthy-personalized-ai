@@ -105,7 +105,7 @@ def format_appraisal_block(
 ) -> str:
     """
     Build the canonical <appraisal> XML element for insertion into a <think> block.
-    Used by sft_gold_response_generator to construct training examples.
+    Used by the SFT data generators to construct training examples.
     """
     if not top3:
         return ""
@@ -124,7 +124,7 @@ def parse_appraisal_block(text: str) -> Optional[AppraisalContext]:
     """
     Extract and parse an <appraisal> block from a model response.
     Returns None if no block is found.
-    Used by the critic in sft_gold_response_generator to validate training examples.
+    Used by the critic in the SFT data generators to validate training examples.
     """
     match = re.search(
         r"<appraisal>(.*?)</appraisal>", text, re.DOTALL | re.IGNORECASE

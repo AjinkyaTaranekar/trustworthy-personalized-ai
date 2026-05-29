@@ -75,28 +75,27 @@ cd pipeline
 
 ---
 
-## 4. Data (already assembled — skip unless regenerating)
+## 4. Data — assemble the training set
 
-The training data is committed at `data/train_partA_v3.jsonl` (1944 examples).
-**No regeneration needed for the dissertation experiments.**
-
-If you ever need to re-validate the data:
-
-```bash
-python validate_sft_data.py --input data/train_partA_v3.jsonl
-# Checks: no leaked teacher constitution, think block ≥150 chars,
-#         no banned placeholders, tool sequence integrity, answer tag present
-# If >5% fail:
-python validate_sft_data.py --input data/train_partA_v3.jsonl --fix \
-    --output data/train_partA_v3_clean.jsonl
-```
-
-If you update student prompts in `sft_v3_generator.py`, patch existing JSONL:
+The trainer reads `data/train_sft_v3.jsonl`, which is **produced by the assembler** from the
+committed source parts `data/train_partA_v3.jsonl` (behavioural) and `data/train_partB_v3.jsonl`
+(maths). Always (re)generate it before training — the committed `train_sft_v3.jsonl` is an
+assembler artefact and may be stale or empty:
 
 ```bash
-python patch_student_prompts.py               # dry-run: shows counts
-python patch_student_prompts.py --apply       # writes changes
+python sft_dataset_assembler.py        # writes data/train_sft_v3.jsonl + data/sft_stats.json
 ```
+
+The assembler is the single quality gate (folded in from the old `validate_sft_data.py`). It:
+- requires a first-assistant `<think>` block ≥150 chars (the think-collapse gate),
+- rejects leaked teacher scaffolding (`CAPABILITY_CHECK`, `PRINCIPLE_`, …) and banned placeholders,
+- requires an `<answer>` tag and a valid system prompt (no teacher-constitution leak),
+- converts everything to **native `<tool_call>` JSON (full native)** and drops any legacy-XML residue,
+- balances categories, dedupes, and adds robustness variants.
+
+It prints how many examples each gate dropped. Source parts are regenerated with
+`sft_question_generator.py` → `sft_v3_generator.py` (see §13) — only needed when changing the
+question set or distillation prompts.
 
 ---
 
@@ -111,7 +110,7 @@ All commands from `pipeline/`. Current config (set in `2_model_trainer.py`):
 | `lora_r`            | `64`                     | 4× capacity vs previous r=16; matches benchmark that beat 120B teacher |
 | `lora_alpha`        | `16`                     | Standard α=r/4 ratio for complex multi-behaviour tasks |
 | `num_train_epochs`  | `3`                      | Eval loss plateaued at epoch 2.5-3.0 in previous run |
-| `learning_rate`     | `2e-4`                   | Standard for SFT                                  |
+| `learning_rate`     | `1e-4`                   | Halved from 2e-4 — 2e-4 overwrote the base model's reasoning on 0.6B (think-collapse) |
 | `lr_scheduler_type` | `cosine`                 | Better convergence than linear for behavioural SFT |
 | `load_best_model_at_end` | `True`              | Saves best eval-loss checkpoint, not the overfitted final one |
 | `packing`           | `False`                  | Disabled — packing splits multi-turn tool sequences |
@@ -128,6 +127,12 @@ python 2_model_trainer.py \
 
 Saves to `models/checkpoint_sft/`. The trainer automatically picks the best
 checkpoint (lowest eval loss) at the end.
+
+**Curriculum (default on):** SFT now runs a 3-stage curriculum on the same in-memory model —
+stage 1 short no-tool format (1 epoch) → stage 2 full set (2 epochs) → stage 3 anti-drift replay
+(1 epoch). Pass `--no_curriculum` to train once on the full set instead. A `[collapse-monitor]`
+line is printed at each eval reporting `think_empty%` and mean tool-calls — watch it: if
+`think_empty` climbs toward 100%, reasoning is collapsing (lower LR / fewer epochs).
 
 ### Monitor training
 
@@ -430,13 +435,12 @@ curl http://localhost:8000/health   # check server is up
 rm -rf models/checkpoint_sft_merged models/checkpoint_sft_gguf
 ```
 
-### Validation rejects all rows after student prompt update
+### Assembler drops many rows (`teacher_constitution_leaked` / `think_too_short` / `banned_think_phrase`)
 
-The validator now checks for leaked teacher constitution phrases, not word count.
-If rows fail with `teacher_constitution_leaked`, re-patch:
-```bash
-python patch_student_prompts.py --apply
-```
+The assembler is the quality gate. If it drops a lot of rows, the source parts
+(`train_partA_v3.jsonl` / `train_partB_v3.jsonl`) leaked teacher scaffolding or have
+short `<think>` blocks — regenerate them with `sft_v3_generator.py` rather than editing
+the assembled file. The per-reason drop counts are printed during assembly.
 
 ---
 
@@ -444,10 +448,11 @@ python patch_student_prompts.py --apply
 
 | Script                     | Role                                           | Step       |
 |----------------------------|------------------------------------------------|------------|
-| `sft_v3_generator.py`      | Teacher→student distillation + canonical prompts | data gen |
-| `validate_sft_data.py`     | Quality gate (5 invariants, checks teacher leak) | validation |
-| `patch_student_prompts.py` | Sync student prompts across all JSONL entries  | maintenance|
-| `2_model_trainer.py`       | SFT training (+ GRPO reward fns, unused)       | step 5     |
+| `sft_question_generator.py`| Generate diverse questions per category        | data gen   |
+| `sft_v3_generator.py`      | Teacher→student distillation + canonical prompts (Part A) | data gen |
+| `sft_math_pipeline.py`     | Maths question→gold-response pipeline (Part B)  | data gen   |
+| `sft_dataset_assembler.py` | Assemble + quality-gate + full-native → `train_sft_v3.jsonl` | step 4 |
+| `2_model_trainer.py`       | SFT training (3-stage curriculum default; + GRPO reward fns, unused) | step 5 |
 | `3_infererence.py`         | FastAPI inference server (loads prompts from sft_v3_generator) | step 9 |
 | `4_benchmark.py`           | Constitutional benchmark — 22 probe groups     | step 6     |
 | `compare_runs.py`          | Offline comparison: two JSON files → CSV table | step 6C    |
@@ -466,7 +471,9 @@ python patch_student_prompts.py --apply
 
 | File                                        | Producer              | Consumer                   |
 |---------------------------------------------|-----------------------|----------------------------|
-| `data/train_partA_v3.jsonl`                 | committed (1944 rows) | `2_model_trainer.py`       |
+| `data/train_partA_v3.jsonl`                 | `sft_v3_generator.py` (committed) | `sft_dataset_assembler.py` |
+| `data/train_partB_v3.jsonl`                 | `sft_math_pipeline.py` (committed) | `sft_dataset_assembler.py` |
+| `data/train_sft_v3.jsonl`                   | `sft_dataset_assembler.py` (regenerate) | `2_model_trainer.py`  |
 | `reports/constitution_baseline.json`        | `4_benchmark.py`      | `4_benchmark.py` (drift)   |
 | `reports/constitution_probe_<ts>.json`      | `4_benchmark.py`      | `compare_runs.py`          |
 | `reports/constitution_probe_<ts>.csv`       | `4_benchmark.py`      | dissertation tables        |

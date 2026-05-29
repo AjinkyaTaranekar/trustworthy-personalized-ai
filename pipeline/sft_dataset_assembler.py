@@ -48,6 +48,64 @@ MAX_PER_CATEGORY    = 400
 MAX_TOOL_TURNS      = 5       # examples with more tool calls are likely malformed
 MAX_RESULT_CHARS    = 3000    # mirror 3_infererence.py _MAX_TOOL_OUTPUT
 
+# Minimum characters required inside the first assistant <think> block.
+# This is the gate that prevents the think-collapse failure mode: examples whose
+# reasoning is too short (especially tool-calling examples that jump straight to a
+# tool call) teach a 0.6B model to skip thinking when tools are available, which
+# then displaces reasoning with tool-spam at inference. 150 matches the teacher
+# format rule in sft_v3_generator.py (_TEACHER_FORMAT_RULES, "minimum 150 characters").
+MIN_THINK_CHARS = 150
+
+# Teacher-side scaffolding that must never appear in student training data. These are
+# generation artefacts (leaked from the teacher prompt) — their presence means the
+# context-swap in sft_v3_generator did not fully strip the teacher format.
+_BANNED_THINK_PHRASES = (
+    "capability_check", "consequence_check", "principle_", "5w+h:",
+    "first_principles:", "none flagged", "see answer below", "inferred from question",
+)
+
+_THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+
+# Teacher-side prompt fragments that must NEVER appear in the student system message.
+# Their presence means the context-swap in sft_v3_generator failed and the teacher
+# identity/format leaked into student training data. (Folded in from the removed
+# validate_sft_data.py — its gate 1.)
+_TEACHER_LEAK_MARKERS = (
+    "you are a frontier ai assistant generating exemplary training data",
+    "mandatory output format — follow this exactly",
+    "critical format rules — violation invalidates the training example",
+    "your reasoning principles (demonstrate through behavior",
+)
+
+
+def _system_text(messages: list[dict]) -> str:
+    for m in messages:
+        if m.get("role") == "system":
+            return m.get("content") or ""
+    return ""
+
+
+def _first_think_text(messages: list[dict]) -> str | None:
+    """Return the stripped text of the first assistant <think> block, or None if absent."""
+    for m in messages:
+        if m.get("role") == "assistant":
+            content = m.get("content") or ""
+            mt = _THINK_BLOCK_RE.search(content)
+            return mt.group(1).strip() if mt else None
+    return None
+
+
+def _has_banned_think_phrase(messages: list[dict]) -> bool:
+    """True if any assistant <think> block contains leaked teacher scaffolding."""
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        for mt in _THINK_BLOCK_RE.finditer(m.get("content") or ""):
+            low = mt.group(1).lower()
+            if any(p in low for p in _BANNED_THINK_PHRASES):
+                return True
+    return False
+
 # ---------------------------------------------------------------------------
 # Code safety validator (shared by transform + native conversion stages)
 # ---------------------------------------------------------------------------
@@ -113,6 +171,11 @@ def passes_quality_filter(example: dict) -> tuple[bool, str]:
     if not any(m.get("role") == "system" for m in messages):
         return False, "no_system_message"
 
+    # Teacher-constitution leak: the student system prompt must not contain teacher scaffolding.
+    sys_low = _system_text(messages).lower()
+    if any(marker in sys_low for marker in _TEACHER_LEAK_MARKERS):
+        return False, "teacher_constitution_leaked"
+
     # Length + CAPABILITY_CHECK: first assistant message (has the think block in both formats)
     first = assistant_msgs[0].get("content", "")
     last  = assistant_msgs[-1].get("content", "")
@@ -122,6 +185,19 @@ def passes_quality_filter(example: dict) -> tuple[bool, str]:
 
     if "<answer>" not in last and "</answer>" not in last:
         return False, "missing_tag_answer"
+
+    # Think-block gate — prevents the think-collapse failure mode. Examples whose first
+    # assistant reasoning is missing or under MIN_THINK_CHARS teach the model to skip
+    # thinking (especially when tools are present), which displaces reasoning at inference.
+    think = _first_think_text(messages)
+    if think is None:
+        return False, "missing_think_block"
+    if len(think) < MIN_THINK_CHARS:
+        return False, f"think_too_short_{len(think)}"
+
+    # Reject leaked teacher scaffolding (CAPABILITY_CHECK, PRINCIPLE_, …) in any think block.
+    if _has_banned_think_phrase(messages):
+        return False, "banned_think_phrase"
 
     if CAPABILITY_REQUIRED:
         think_s = first.find("<think>")
@@ -347,33 +423,73 @@ TOOL_SCHEMAS: dict[str, dict] = {
     },
 }
 
-OPENAI_SCHEMAS = [{"type": "function", "function": s} for s in TOOL_SCHEMAS.values()]
+# Native tool schemas come from pipeline_tools.ToolRegistry — the single source of truth
+# for all 10 tools (3_infererence.py and sft_v3_generator.py use the same registry). The
+# hardcoded TOOL_SCHEMAS above is a 4-tool fallback only used if the import fails.
+_NATIVE_TOOL_NAMES = {
+    "python_execute", "web_search", "read_url", "get_datetime",
+    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
+    "user_memory_sections", "user_memory_read", "user_memory_update",
+}
+try:
+    from pipeline_tools import ToolRegistry as _ToolRegistry
+    OPENAI_SCHEMAS = _ToolRegistry().to_openai_schemas(_NATIVE_TOOL_NAMES)
+except Exception as _e:  # pragma: no cover - import fallback
+    print(f"  [assembler] WARN: could not load ToolRegistry schemas ({_e}); using 4-tool fallback")
+    OPENAI_SCHEMAS = [{"type": "function", "function": s} for s in TOOL_SCHEMAS.values()]
+
+# Argument extractors for every tool, mirroring ToolRegistry.execute() parsing so the
+# XML->native converter covers the full 10-tool registry (previously only 4 tools, which
+# silently dropped ~98% of examples that used scratchpad_* / user_memory_*).
+_SECTION_RE = re.compile(r"section\s*=\s*['\"](\w+)['\"]")
+_CONTENT_RE = re.compile(r'content\s*=\s*["\'](.+?)["\']', re.DOTALL)
+_PROMPT_RE  = re.compile(r"prompt\s*=\s*['\"](.+?)['\"]", re.DOTALL)
+
+
+def _arg_section_content(s: str) -> dict:
+    sm, cm = _SECTION_RE.search(s), _CONTENT_RE.search(s)
+    return {"section": sm.group(1) if sm else None, "content": cm.group(1) if cm else None}
+
 
 _TOOL_ARG_MAP = {
     "python_execute": lambda s: {"code": next(
         (m.group(1).replace("\\n", "\n").replace("\\t", "\t") for pat in (_PY_TRIPLE, _PY_SINGLE, _PY_DOUBLE)
          if (m := pat.search(s))), None
     )},
-    "web_search": lambda s: {"query": (m.group(1) if (m := _WEB_Q_RE.search(s)) else "")},
+    "web_search": lambda s: {"query": (m.group(1) if (m := _WEB_Q_RE.search(s)) else None)},
     "read_url":   lambda s: {
-        "url":    (m.group(1) if (m := _URL_RE.search(s)) else ""),
-        "prompt": (m.group(1) if (m := re.search(r"prompt\s*=\s*['\"](.+?)['\"]", s, re.DOTALL)) else ""),
+        "url": (m.group(1) if (m := _URL_RE.search(s)) else None),
+        **({"prompt": pm.group(1)} if (pm := _PROMPT_RE.search(s)) else {}),
     },
-    "get_datetime": lambda _: {},
+    "get_datetime":          lambda _s: {},
+    "scratchpad_sections":   lambda _s: {},
+    "scratchpad_read":       lambda _s: {},
+    "scratchpad_update":     _arg_section_content,
+    "user_memory_sections":  lambda _s: {},
+    # prompt is optional for user_memory_read (registry schema: required=[])
+    "user_memory_read":      lambda s: ({"prompt": pm.group(1)} if (pm := _PROMPT_RE.search(s)) else {}),
+    "user_memory_update":    _arg_section_content,
 }
 
 
-def _xml_tool_to_native(tool_inner: str) -> tuple[str, dict, str] | None:
-    """Parse XML tool call string → (tool_name, kwargs, result).  Returns None if unparseable."""
+def _xml_tool_to_native(tool_inner: str) -> tuple[str, dict] | None:
+    """Parse XML tool call string -> (tool_name, kwargs). Returns None if the tool is
+    unknown or a required argument failed to parse."""
     s = tool_inner.strip()
-    for name, extractor in _TOOL_ARG_MAP.items():
-        if s.startswith(name):
-            kwargs = extractor(s)
-            if None in (kwargs.values()):
-                return None   # code extraction failed
-            result = _tool_result(s)[1]
-            return name, kwargs, result
-    return None
+    name = s.split("(", 1)[0].strip()
+    extractor = _TOOL_ARG_MAP.get(name)
+    if extractor is None:
+        return None
+    kwargs = extractor(s)
+    if any(v is None for v in kwargs.values()):
+        return None
+    return name, kwargs
+
+
+def _unwrap_tool_result(content: str) -> str:
+    """Strip the [TOOL_RESULT: name] ... [/TOOL_RESULT] wrapper to recover the raw result."""
+    m = re.search(r"\[TOOL_RESULT:[^\]]*\]\s*(.*?)\s*\[/TOOL_RESULT\]", content, re.DOTALL)
+    return m.group(1).strip() if m else content.strip()
 
 
 def convert_to_native(messages: list[dict]) -> list[dict] | None:
@@ -382,33 +498,35 @@ def convert_to_native(messages: list[dict]) -> list[dict] | None:
     new_msgs: list[dict] = []
     has_tool = False
     i = 0
-    while i < len(messages):
+    n = len(messages)
+    while i < n:
         msg = messages[i]
-        if msg["role"] != "assistant":
-            if msg["role"] != "tool":   # drop old tool turns; rebuilt below
+        role = msg.get("role")
+        if role != "assistant":
+            # system/user pass through; original tool messages are consumed alongside
+            # the assistant tool-call that produced them (below), so skip standalone ones.
+            if role != "tool":
                 new_msgs.append(msg)
             i += 1
             continue
 
-        content = msg["content"] or ""
-        think_end = 0
+        content = msg.get("content") or ""
         tm = _THINK_END_RE.search(content)
-        if tm:
-            think_end = tm.end()
-
+        think_end = tm.end() if tm else 0
         post = content[think_end:]
         spans = list(_TOOL_RE.finditer(post))
         if not spans:
-            new_msgs.append(msg)
+            new_msgs.append(msg)   # e.g. the final <answer> turn
             i += 1
             continue
 
         think_prefix = content[:think_end].rstrip()
+        result_cursor = i + 1   # original tool-result messages follow this assistant turn
         for span_idx, span in enumerate(spans):
             parsed = _xml_tool_to_native(span.group(1))
             if parsed is None:
                 return None
-            tool_name, kwargs, result = parsed
+            tool_name, kwargs = parsed
             call_id = f"call_{uuid.uuid4().hex[:8]}"
             new_msgs.append({
                 "role":       "assistant",
@@ -419,23 +537,133 @@ def convert_to_native(messages: list[dict]) -> list[dict] | None:
                     "function": {"name": tool_name, "arguments": json.dumps(kwargs)},
                 }],
             })
+            # Preserve the ORIGINAL captured tool result; only re-simulate if absent.
+            result = None
+            if result_cursor < n and messages[result_cursor].get("role") == "tool":
+                result = _unwrap_tool_result(messages[result_cursor].get("content") or "")
+                result_cursor += 1
+            if result is None:
+                result = _tool_result(span.group(1))[1]
             new_msgs.append({"role": "tool", "content": result, "tool_call_id": call_id})
             has_tool = True
             think_prefix = ""
 
+        # v2-style answer embedded in the same message (v3 keeps it as a separate turn)
         answer_m = _ANSWER_RE.search(post, spans[-1].end())
         if answer_m:
             new_msgs.append({"role": "assistant", "content": answer_m.group(1).strip()})
-        elif i + 1 < len(messages) and messages[i + 1]["role"] == "assistant":
-            new_msgs.append(messages[i + 1])
-            i += 1
-        i += 1
+
+        i = max(i + 1, result_cursor)   # advance past consumed tool-result messages
 
     return new_msgs if has_tool else None
 
 
+def _is_already_native(messages: list[dict]) -> bool:
+    """True if any assistant turn already emits a native tool call — either as a
+    structured `tool_calls` field or as Qwen3 Hermes-style `<tool_call>{...}</tool_call>`
+    text in the content."""
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        if m.get("tool_calls"):
+            return True
+        if "<tool_call>" in (m.get("content") or ""):
+            return True
+    return False
+
+
+def _has_stray_xml_tool_call(messages: list[dict]) -> bool:
+    """True if an assistant turn contains a legacy `<tool>`/`</tool>` tag — either a real
+    XML tool call or a prose mention of the old format. Used to reject any non-native
+    residue so the assembled set is 100% single-format `<tool_call>`. (Safe: `<tool>` is
+    not a substring of the native `<tool_call>` tag.)"""
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        content = m.get("content") or ""
+        if "<tool>" in content or "</tool>" in content:
+            return True
+    return False
+
+
+def _ensure_native_meta(ex: dict) -> dict:
+    """Stamp tool_format=native and attach native_tools schemas if missing."""
+    meta = dict(ex.get("metadata", {}))
+    meta["tool_format"] = "native"
+    if not meta.get("native_tools"):
+        meta["native_tools"] = OPENAI_SCHEMAS
+    out = dict(ex)
+    out["metadata"] = meta
+    return out
+
+
+def convert_all_to_native(examples: list[dict]) -> tuple[list[dict], int, int, int]:
+    """Full-native: ensure EVERY tool example is in native <tool_call> JSON format.
+
+    The v3 generator already emits native tool calls, so most examples just pass through
+    (with native_tools metadata ensured). Only legacy XML `<tool>name(args)</tool>` examples
+    are converted via convert_to_native; the rare ones that fail to parse are dropped.
+    Non-tool examples pass through unchanged.
+
+    Returns (examples, n_dropped, n_converted_from_xml, n_already_native).
+    """
+    out, dropped, converted, already = [], 0, 0, 0
+    for ex in examples:
+        msgs = ex.get("messages", [])
+        if not any(m.get("role") == "tool" for m in msgs):
+            out.append(ex)
+            continue
+        if _is_already_native(msgs):
+            # Reject mixed-format examples (native + a stray legacy XML tool call).
+            if _has_stray_xml_tool_call(msgs):
+                dropped += 1
+                continue
+            out.append(_ensure_native_meta(ex))
+            already += 1
+            continue
+        # Legacy XML tool example — convert.
+        new_msgs = convert_to_native(msgs)
+        if new_msgs is None:
+            dropped += 1
+            continue
+        new_ex = _ensure_native_meta(ex)
+        new_ex["messages"] = new_msgs
+        out.append(new_ex)
+        converted += 1
+    return out, dropped, converted, already
+
+
+def restamp_student_prompt(examples: list[dict]) -> tuple[list[dict], int]:
+    """Overwrite each example's system message with the canonical native student prompt from
+    `sft_v3_generator.STUDENT_PROMPTS`, keyed by `metadata.tool_profile`.
+
+    This removes train/inference ambiguity: the inference server loads the same
+    STUDENT_PROMPTS, so after re-stamping the training data carries the *identical* system
+    prompt the model is served with (single source of truth). Run before robustness variants,
+    which then deliberately swap in their own prompts for a subset.
+    """
+    try:
+        from sft_v3_generator import STUDENT_PROMPTS as _SP
+    except Exception as e:  # pragma: no cover - import fallback
+        print(f"  [restamp] WARN: could not import STUDENT_PROMPTS ({e}); leaving system prompts unchanged")
+        return examples, 0
+    stamped = 0
+    for ex in examples:
+        profile = ex.get("metadata", {}).get("tool_profile", "all_tools")
+        prompt = _SP.get(profile) or _SP.get("all_tools")
+        if not prompt:
+            continue
+        for m in ex.get("messages", []):
+            if m.get("role") == "system":
+                if m.get("content") != prompt:
+                    m["content"] = prompt
+                    stamped += 1
+                break
+    return examples, stamped
+
+
 def make_native_examples(examples: list[dict], fraction: float, rng: random.Random) -> list[dict]:
-    """Convert `fraction` of tool examples to native JSON format."""
+    """Convert `fraction` of tool examples to native JSON format (legacy dual-format path)."""
     tool_exs = [ex for ex in examples if any(m["role"] == "tool" for m in ex.get("messages", []))]
     rng.shuffle(tool_exs)
     n = max(1, int(len(tool_exs) * fraction))
@@ -606,6 +834,8 @@ def run(
     no_transform:   bool  = False,
     no_native:      bool  = False,
     native_fraction: float = 0.20,
+    full_native:    bool  = True,
+    restamp_prompt: bool  = True,
     no_robustness:  bool  = False,
     minimal_frac:   float = 0.15,
     brief_frac:     float = 0.10,
@@ -665,12 +895,24 @@ def run(
         print(f"  Train after xform : {len(train_v3)}")
         train = train_v3
 
-    # ── Native tool examples (train only) ────────────────────────────────────
-    if not no_native:
+    # ── Native tool format (train only) ──────────────────────────────────────
+    if full_native:
+        print("\n[Stage 5] Ensuring ALL tool examples are native <tool_call> JSON (full native)...")
+        before = len(train)
+        train, dropped, converted, already = convert_all_to_native(train)
+        print(f"  Full native: {already} already native, {converted} converted from XML, "
+              f"{dropped} dropped (unparseable XML), {len(train)}/{before} kept")
+    elif not no_native:
         print(f"\n[Stage 5] Adding native JSON tool examples (fraction={native_fraction})...")
         native_exs = make_native_examples(train, native_fraction, rng)
         train = train + native_exs
         print(f"  Train after native: {len(train)}")
+
+    # ── Re-stamp canonical student prompt (train == inference) ───────────────
+    if restamp_prompt:
+        print("\n[Stage 5b] Re-stamping canonical native student prompt (sft_v3_generator.STUDENT_PROMPTS)...")
+        train, n_stamp = restamp_student_prompt(train)
+        print(f"  Re-stamped {n_stamp} system messages to match the inference server prompt")
 
     # ── Robustness variants (train only) ─────────────────────────────────────
     if not no_robustness:
@@ -679,6 +921,13 @@ def run(
         variants = make_robustness_variants(train, fracs, rng)
         train = train + variants
         print(f"  Train after robust: {len(train)}")
+
+    # ── Final coherence sweep: guarantee 0 legacy <tool> residue (full-native) ───
+    if full_native:
+        before = len(train)
+        train = [ex for ex in train if not _has_stray_xml_tool_call(ex.get("messages", []))]
+        if before - len(train):
+            print(f"  [coherence] dropped {before - len(train)} examples with legacy <tool> residue")
 
     # ── Final shuffle + write ────────────────────────────────────────────────
     rng.shuffle(train)
@@ -725,8 +974,13 @@ def main() -> None:
                         help="Enable CAPABILITY_CHECK filter (for legacy v2 data that uses structured think blocks)")
     parser.add_argument("--no_transform",    action="store_true", help="Skip v2→v3 tool format transform")
     # Native tool flags
-    parser.add_argument("--no_native",       action="store_true", help="Skip native JSON tool examples")
-    parser.add_argument("--native_fraction", type=float, default=0.20)
+    parser.add_argument("--no_full_native",  action="store_true",
+                        help="Disable full-native conversion (convert ALL tool examples to native "
+                             "<tool_call> JSON, dropping XML). Falls back to the dual-format path.")
+    parser.add_argument("--no_native",       action="store_true",
+                        help="(dual-format path only) Skip adding native JSON tool examples")
+    parser.add_argument("--native_fraction", type=float, default=0.20,
+                        help="(dual-format path only) Fraction of tool examples to also emit as native")
     # Robustness flags
     parser.add_argument("--no_robustness",   action="store_true", help="Skip robustness variants")
     parser.add_argument("--minimal",         type=float, default=0.15)
@@ -742,8 +996,11 @@ def main() -> None:
     print(f"  Part A : {args.part_a}")
     print(f"  Part B : {args.part_b}")
     print(f"  Output : {args.output_dir}")
+    _full_native = not args.no_full_native
+    _native_desc = ("full (all tool examples)" if _full_native
+                    else ('off' if args.no_native else f'dual {args.native_fraction:.0%}'))
     print(f"  Stages : transform={'off' if args.no_transform else 'on'}  "
-          f"native={'off' if args.no_native else f'on ({args.native_fraction:.0%})'}  "
+          f"native={_native_desc}  "
           f"robustness={'off' if args.no_robustness else 'on'}")
     print()
 
@@ -756,6 +1013,7 @@ def main() -> None:
         no_transform=args.no_transform,
         no_native=args.no_native,
         native_fraction=args.native_fraction,
+        full_native=_full_native,
         no_robustness=args.no_robustness,
         minimal_frac=args.minimal,
         brief_frac=args.brief,
