@@ -5,7 +5,7 @@ tags: [sft, reasoning, tool-use, small-model, architecture, agents, multi-agent,
 sources:
   - pipeline/4_benchmark.py
   - wiki/experiments/sft-benchmark-analysis-20260525.md
-updated: 2026-05-26
+updated: 2026-05-29
 status: draft
 ---
 
@@ -51,7 +51,7 @@ This observation is corroborated by the independent literature finding in [[sour
 
 **Wei et al. (2025) — "Beyond ReAct: A Planner-Centric Framework for Complex Tool-Augmented LLM Reasoning"** ([arXiv:2511.10037](https://arxiv.org/html/2511.10037v1)) is the most architecturally precise antecedent found. It explicitly decouples a fine-tuned Planner from an Executor (GPT-4o in their experiments), trains the Planner with SFT then GRPO with hierarchical rewards, and represents the plan as a DAG. Key results with Qwen3 models: the 8B Planner achieves 80.3% on Easy / 31.9% on Hard tasks; average 2.29 inference steps per task. Code and training data (ComplexTool-Plan: 3K SFT + 787 RL instances) are publicly released at [github.com/weixiaolong94-hub/Beyond-React](https://github.com/weixiaolong94-hub/Beyond-React).
 
-Two findings from this paper are directly load-bearing for the present experiment. First, they tested Qwen3-0.6B as a Planner and found SFT successful but **GRPO training unstable at 0.6B** — the RL phase had to be excluded for the smallest model. This elevates the June 15–25 RL pass from a medium risk to a confirmed empirical failure mode at this scale (see §9). Second, the DAG plan structure is adopted here in simplified form: rather than requiring a full graph with explicit dependency edges (which is beyond reliable generation at 0.6B), the `<stage>` grouping schema in §4.4 captures the same structural insight — steps within a stage are independent, stages are sequential — at a complexity the 0.6B Thinker can learn from SFT alone. The ComplexTool-Plan dataset is not used directly (it is calibrated for 8B and uses 4,535-API toolsets far larger than the project's 4-tool Executor set), but the generation scripts (`01_workflow.py`, `02_reverse.py`, `03_replan.py`) inform the synthesised Branch A data construction.
+Two findings from this paper are directly load-bearing for the present experiment. First, they tested Qwen3-0.6B as a Planner and found SFT successful but **GRPO training unstable at 0.6B** — the RL phase had to be excluded for the smallest model. This is one reason the optional RL pass is cut (see §8/§9). Second, their finding that upfront DAG planning is unreliable at small scale directly motivated abandoning the batch-`<delegation>` design in favour of the **step-by-step loop** (§4.4): rather than asking the 0.6B Thinker to emit a structured multi-step plan at all, it decides one natural-language `<act>` at a time and reacts to each result — no graph topology, no stage grouping, and no second structured output format competing with reasoning. The ComplexTool-Plan dataset is not used directly (it is calibrated for 8B and uses 4,535-API toolsets far larger than the project's 4-tool Executor set).
 
 ### 2.3 Catastrophic Forgetting in SFT
 
@@ -105,115 +105,71 @@ The ten tools registered in `pipeline_tools.py` divide cleanly between the two m
 
 `get_datetime` is shared because both models may need temporal grounding. The scratchpad and user_memory tools are entirely project-specific — no general dataset contains them. Training the Executor on these would waste capacity on tools it will never call, and risks leaking user-state concerns into the execution path.
 
+> **Protocol decision (2026-05-29): step-by-step, not batch.** An earlier draft had the Thinker emit a structured `<delegation>` plan (a `<stage>`/`<step>` DAG) for the Executor to run in one batch. That was abandoned for two reasons. (1) It reintroduced a *second structured output format* on the Thinker — the very thing (alongside JSON tool-calls) that displaced reasoning in the single model; the whole point of the split is that the Thinker has **one** output modality (prose). (2) Beyond ReAct ([arXiv:2511.10037](https://arxiv.org/html/2511.10037v1)) found upfront DAG planning unreliable at small scale. The confirmed design is a **step-by-step (ReAct-like) loop**: the Thinker emits prose only — a `<think>` block followed by exactly one of `<ask>` / `<act>` / `<answer>` — and decides the next single action after seeing each result. All tool-call syntax lives only in the Executor.
+
 ### 4.2 Thinker Model
 
-**Training objective:** SFT on constitutional reasoning traces and mixed-initiative planning decisions. The Thinker produces one of three output types per turn — not just delegation plans.
+**Training objective:** SFT on constitutional reasoning traces and mixed-initiative decisions. The Thinker's entire output is prose: a `<think>` block, then exactly one of three plain-language tags. There is no structured plan format — the Thinker never writes tool-call syntax.
 
-**The three-branch decision structure:**
+**The per-turn decision structure (step-by-step):**
 
 ```
-User message arrives
+User message (or a returned tool result) arrives
         │
-[Thinker reasons in <think> block]
+[Thinker reasons in <think>: first principles + 5W+H scan]
         │
-        ├─── Branch A — Enough information to act
-        │         → emit <delegation> → Executor acts
+        ├─── <ask>   one targeted question        → Human responds → (loop back to Thinker)
+        │            (when proceeding would force an assumption it shouldn't make)
         │
-        ├─── Branch B — Ambiguous or missing information
-        │         → emit <clarification_request> → Human responds → Thinker re-evaluates
+        ├─── <act>   one plain-language step       → Executor runs it → result returns → (loop back)
+        │            (e.g. "Search the web for today's EUR/INR rate")
         │
-        └─── Branch C — Executor returned result → Thinker reviews
-                  ├─ Satisfactory → emit <final_answer>
-                  └─ Insufficient/wrong → emit revised <delegation> → Executor retries
+        └─── <answer> final response to the user   → done
+             (the Thinker, holding all context, writes this itself; ends with one 5W+H follow-up)
 ```
+
+The old A/B/C branches map onto this cleanly: Branch A = an `<act>`; Branch B = an `<ask>`; Branch C = the Thinker reading a returned result and choosing the next `<act>` or the final `<answer>`. Re-planning is not a special output — it is just the loop continuing.
 
 **Expected competencies after training:**
-- Constitution principle application in `<think>` blocks (all 23 principles)
-- 5W+H user-state read/write via `user_memory_*` tools ([[entities/5w-h]])
-- Decompose-first behaviour (P1) in Branch A
-- Clarification generation (Branch B): detecting when user intent is genuinely ambiguous vs. when the model is just under-confident — a critical distinction (see [[topics/personalisation]] over-clarification failure mode)
-- Re-planning on executor feedback (Branch C): reading the Executor's result and deciding whether it satisfies the constitutional constraints before accepting it
-- Adversarial intent detection in `<think>` blocks before any delegation is emitted
+- Constitution principle application in `<think>` blocks (all 21 principles)
+- 5W+H user-state reasoning, including `user_memory_*` reads to personalise ([[entities/5w-h]])
+- First-principles decompose-first behaviour (P1, P20) feeding a single best next action
+- Clarification (`<ask>`): detecting when intent is genuinely ambiguous vs. when the model is merely under-confident — a critical distinction (see [[topics/personalisation]] over-clarification failure mode). The `<ask>` carries the single most critical 5W+H dimension, grounded by the `<think>` decomposition.
+- Self-contained step instructions (`<act>`): every concrete detail (URLs, numbers) is in the instruction, so the Executor needs nothing else — context stays with the Thinker
+- Result review: reading a returned tool result and deciding whether it satisfies the constitutional constraints before answering
+- Adversarial intent detection in `<think>` before any `<act>`/`<answer>` is emitted
 
-**System prompt at inference:** Full 23-principle constitution. Role: "You are a reasoning system. Read the user's request and the conversation history. Think through what is needed. Then either: (1) produce a structured delegation plan for the execution system, (2) ask the user a clarifying question, or (3) if you have just received execution results, decide if they are satisfactory or revise the plan. Never call execution tools yourself."
+**System prompt at inference:** the canonical `THINKER_STUDENT_PROMPT` in `sft_v3_generator.py` (single source of truth, re-stamped into training data). Role: reason in prose, then emit exactly one of `<ask>`/`<act>`/`<answer>`; never call tools or write tool-call syntax.
 
 ### 4.3 Executor Model
 
-**Training objective:** SFT on tool-call execution traces only. No `<think>` blocks. No constitution reasoning. No clarification logic — the Executor never decides whether to ask the human; that decision belongs entirely to the Thinker.
+**Training objective:** SFT on (instruction → one tool call) pairs only. No `<think>` blocks, no constitution reasoning, no clarification logic, no prose answers. The Executor's single job: turn one `<act>` instruction into one native tool call.
 
 **Executor tools:** `python_execute`, `web_search`, `read_url`, `get_datetime` only.
 
 **Expected competencies after training:**
-- Clean tool call emission against the exact project argument schemas (`python_execute(code='...')`, `web_search(query='...')`, `read_url(url='...', prompt='...')`)
-- Single-call-per-need discipline (no tool-call explosion)
-- Result integration and concise answer production
-- Graceful degradation on missing tool / timeout (negative trajectory categories: `inventory_constraint`, `environment_timeout`)
-- Faithfulness to the delegation spec — the Executor executes what the Thinker planned, and does not re-interpret or expand the scope
+- Map a plain-language instruction to the correct single native `<tool_call>` against the exact project schemas (`python_execute(code=…)`, `web_search(query=…)`, `read_url(url=…, prompt=…)`)
+- Single-call discipline — one instruction yields exactly one tool call, no explosion
+- Faithfulness to the instruction — execute what the Thinker asked, do not re-interpret or expand scope
+- Returns the raw tool result; it does **not** synthesise a prose answer (the Thinker does that)
 
-**System prompt at inference:** Minimal. Role: "You are an execution system. You receive a plan from a reasoning system. Execute it using the available tools: python_execute, web_search, read_url, get_datetime. Report results exactly. Do not reason about the plan. Do not ask clarifying questions."
+**System prompt at inference:** minimal. Role: "You are an execution system. You receive one plain-language instruction. Emit exactly one tool call to carry it out, using the available tools. Do not reason, do not answer, do not ask questions."
 
 ### 4.4 Communication Protocol
 
-The Thinker produces three possible output types. Two are passed to the Executor; one goes directly to the human.
+The Thinker emits prose only. Two of its three tags route to the human, one to the Executor; the Executor returns a raw result.
 
-**Branch A — Delegation spec** (Thinker → Executor, following [arXiv:2510.15244](https://arxiv.org/html/2510.15244v1)):
+**`<ask>`** (Thinker → Human): one targeted clarifying question. The `<think>` block does the first-principles + 5W+H decomposition and names the single most critical unknown dimension; the `<ask>` is that one question. Grounding lives in the reasoning, not in a rigid schema — keeping the Thinker single-modality (prose).
 
-The schema uses `<stage>` grouping to encode execution order without requiring full DAG reasoning. Steps within a `<stage>` are independent and the Executor may run them in parallel; stages are sequential and each stage may use results from the previous one. This captures the structural insight from Beyond ReAct ([arXiv:2511.10037](https://arxiv.org/html/2511.10037v1)) — that independent steps should not be forced to wait — at a complexity level a 0.6B model can reliably generate from SFT alone.
+**`<act>`** (Thinker → Executor): one self-contained, natural-language instruction for a single step, e.g. `Search the web for today's EUR/INR exchange rate` or `Compute 500 multiplied by 89.7`. It includes every concrete value the step needs (the Thinker holds context and injects URLs/numbers), so the Executor sees only this one line.
 
-```xml
-<delegation>
-  <intent>What the user actually needs (constitutional framing)</intent>
-  <constraints>Constitution principles that apply (e.g., P4: math=code, P10: correct tool)</constraints>
-  <stage>
-    <!-- Steps here are independent — Executor may run them in parallel -->
-    <step tool="web_search" reason="…">natural-language search query</step>
-    <step tool="get_datetime" reason="…"/>
-  </stage>
-  <stage>
-    <!-- Steps here depend on the previous stage's results -->
-    <step tool="read_url" reason="…" url="placeholder — fill from stage 1 result">what to extract</step>
-  </stage>
-  <stage>
-    <step tool="python_execute" reason="…">calculation using retrieved data</step>
-  </stage>
-  <fallback>What to say if all tools fail</fallback>
-</delegation>
-```
+**Executor reply** (Executor → Thinker, via the harness): the Executor turns the `<act>` into one native tool call; the harness runs it and appends the raw result to the conversation the Thinker holds. The Thinker then reasons again and emits the next `<act>` or the `<answer>`.
 
-**Stage grouping rules the Thinker must learn:**
-- `web_search` and `get_datetime` are always independent — put in the same stage
-- `read_url` almost always depends on a `web_search` result (needs the URL) — new stage after search
-- `python_execute` depends on whatever data it processes — new stage after retrieval
-- A single-step delegation is a single `<stage>` with one `<step>` — valid and common
+**`<answer>`** (Thinker → Human): the final response, composed by the Thinker from all accumulated results, ending with one targeted 5W+H follow-up question.
 
-The Thinker only needs to learn a binary decision per step: *does this step depend on any prior result?* If no, same stage. If yes, new stage. This is tractable at 0.6B after SFT on staged examples; it does not require graph topology reasoning.
+**Why natural language and not a schema:** a 0.6B Executor reliably learns "instruction → one tool call" (this is exactly what tool-use datasets teach), while a 0.6B Thinker reliably stays in prose. Neither model carries a second competing format, which is the structural fix for the capacity-displacement collapse (§1). The instruction can name the tool explicitly when helpful (e.g. "Use web_search to …") — this is derived for free when factoring existing trajectories, where the tool actually used is known.
 
-**Branch B — Clarification request** (Thinker → Human):
-
-```xml
-<clarification_request>
-  <ambiguity>What specific information is missing or unclear</ambiguity>
-  <question>The single most important clarifying question to ask</question>
-  <why_needed>Which constitution principle or delegation step cannot proceed without this</why_needed>
-</clarification_request>
-```
-
-**Branch C — Re-plan** (Thinker reviews Executor result, emits revised delegation or final answer):
-
-```xml
-<!-- If result is satisfactory -->
-<final_answer>…</final_answer>
-
-<!-- If result is insufficient -->
-<delegation>
-  <intent>Revised intent after reviewing executor output</intent>
-  <revision_reason>Why the previous result was insufficient</revision_reason>
-  <steps>…revised steps…</steps>
-  <fallback>…</fallback>
-</delegation>
-```
-
-**Ablation (E4 vs E5):** Full plan includes `<intent>` and `<constraints>`; minimal plan includes only `<steps>` and `<fallback>`. Addresses RQ2.
+**Ablation (E4 vs E5):** addresses RQ2 — does the Executor need any context beyond the single `<act>` instruction? E4 = instruction only (recommended); E5 = instruction plus a one-line rationale/context from the Thinker.
 
 ### 4.5 Inference Pipeline
 
@@ -221,26 +177,22 @@ The Thinker only needs to learn a binary decision per step: *does this step depe
 User message
       │
       ▼
-[Thinker: Qwen3-0.6B, SFT-Think]
-  Reads user_memory, updates scratchpad
-  Constitutional reasoning in <think> block
-      │
-      ├─ Branch B ──→ <clarification_request> ──→ Human responds ──→ (loop back to Thinker)
-      │
-      └─ Branch A ──→ <delegation>
-                           │
-                           ▼
-              [Executor: Qwen3-0.6B, SFT-Execute]
-                Calls python_execute / web_search / read_url
-                Returns tool results
-                           │
-                           ▼
-              [Thinker reviews result — Branch C]
-                  ├─ Satisfactory ──→ <final_answer> ──→ User
-                  └─ Insufficient ──→ revised <delegation> ──→ Executor (max 2 retries)
+┌───────────────────────────────────────────────────────────────┐
+│ LOOP (max 3 Thinker passes + 2 Executor calls per user turn)   │
+│                                                                 │
+│ [Thinker: Qwen3-0.6B] reads user_memory, reasons in <think>     │
+│      ├─ <ask>  one question ─────→ Human responds ──┐           │
+│      │                                              │ (loop)    │
+│      ├─ <act>  one NL step ──→ [Executor: Qwen3-0.6B]│          │
+│      │                          emits ONE tool_call  │          │
+│      │                          harness runs it      │          │
+│      │                          raw result ──────────┘ (loop)   │
+│      │                                                          │
+│      └─ <answer> final response ─────────────────────→ User (done)
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Both models run on the same single GPU sequentially. The Thinker's KV cache is not reused by the Executor (separate inference passes); the Executor's results are appended to the conversation context passed back to the Thinker for Branch C evaluation. Max loop depth: 3 Thinker passes + 2 Executor passes per user turn, to prevent runaway iteration. Total latency ≤ T_thinker×3 + T_executor×2 in the worst case; typical path is T_thinker + T_executor.
+Both models run on the same single GPU sequentially. Each is a separate inference pass; the Thinker holds the full conversation (including every returned result), the Executor sees only the latest `<act>`. Max loop depth: 3 Thinker passes + 2 Executor calls per user turn to prevent runaway iteration. Worst-case latency ≤ T_thinker×3 + T_executor×2; typical path is T_thinker + T_executor (single tool) or T_thinker alone (no tool / clarify). The extra round-trips versus a batch plan are the cost of step-by-step robustness — RQ3 measures whether this is acceptable on-device.
 
 ## 5. Experimental Conditions
 
@@ -250,8 +202,8 @@ Both models run on the same single GPU sequentially. The Thinker's KV cache is n
 | **E1** | Current SFT model (single, combined objective) | Baseline — the failure mode |
 | **E2** | Thinker only (no Executor, direct answer) | Isolates reasoning restoration |
 | **E3** | Executor only (no Thinker, no plan input) | Isolates tool execution quality |
-| **E4** | Thinker → Executor, full delegation plan | Main proposed architecture |
-| **E5** | Thinker → Executor, minimal delegation plan | Ablation: RQ2 communication protocol |
+| **E4** | Thinker → Executor, `<act>` instruction only | Main proposed architecture |
+| **E5** | Thinker → Executor, `<act>` + one-line rationale/context | Ablation: RQ2 communication protocol |
 
 ## 6. Evaluation
 
@@ -271,7 +223,80 @@ Both models run on the same single GPU sequentially. The Thinker's KV cache is n
 
 ## 7. Training Data
 
-### 7.1 Dataset Search Findings
+**Primary method: trajectory factoring.** The Thinker and Executor datasets are not sourced externally — they are *manufactured* by projecting the pipeline's existing v3 distillation trajectories onto two role-conditioned views. This sidesteps the dataset-acquisition problem entirely (the external search, recorded in §7.6, found no dataset covering the constitutional planning loop) and — more importantly — guarantees that the Thinker's plans and the Executor's actions are aligned, because both are derived from the *same* trajectory. Public datasets are retained only as an optional breadth top-up (§7.7), not as the primary source.
+
+> Constraint note (2026-05-29): the May 22 research-pivot decision was "no more data generation — the existing set is final". Trajectory factoring respects the spirit of this — it *re-uses* the 2,274 already-generated trajectories rather than generating new ones. The only component needing fresh generation is Branch B clarification (§7.5, ~500 examples). Confirm with supervisor before that run. The thinker–executor split is wholly SFT, consistent with the "SFT only, no GRPO" constraint; the optional RL pass in §8 stays cut unless reversed.
+
+### 7.1 The Source Material — v3 Trajectories Already Contain Both Streams
+
+The dataset search treated this as an acquisition problem. It is not. Every row produced by `sft_v3_generator.py` (and assembled into `data/train_partA_v3.jsonl`, 1,443 rows, and `data/train_partB_v3.jsonl`, 831 rows) is a **complete interleaved agentic trajectory** that already contains both the reasoning stream and the tool-execution stream, fully aligned, grounded in the 21-principle constitution, with a realistic user profile injected from `_SAMPLE_USER_PROFILES`:
+
+```
+system     (student prompt)
+user       (question)
+assistant  <think>…first-principles + 5W+H reasoning…</think>  +  native tool_call
+tool       result
+assistant  <think>…re-reasoning on the result…</think>          +  next tool_call
+tool       result
+…
+assistant  <answer>…best-effort answer + greedy 5W+H follow-up…</answer>
+```
+
+This is precisely the raw material a Thinker and an Executor need — it is merely *fused* into one model's output. The teacher already performed the reasoning, the planning, and the execution in a single pass; factoring separates those concerns post hoc into two supervised targets. The constitutional signal, the tool schemas (the project's exact 10-tool registry), and the native `<tool_call>` format are all already present and correct — none of the schema-normalisation or `<think>`-stripping work that external datasets demand is required.
+
+### 7.2 Thinker View Construction
+
+The Thinker target is the reasoning plus the next single action, turn by turn (step-by-step design, §4.4). Each source trajectory becomes a **multi-turn** Thinker example. For each assistant turn in the source that contained a `<think>` block and an Executor-owned tool call:
+
+- **Keep** the `<think>` block.
+- **Convert the tool call into an `<act>` instruction** — a self-contained natural-language version of that call, e.g. `web_search(query="EUR INR rate today")` → `Search the web for today's EUR/INR rate`. This is the load-bearing trick: because the call (and its concrete arguments) is already known, the `<act>` is a faithful natural-language rendering of a ground-truth action, not an invented plan — correct by construction. The instruction may name the tool when helpful, since the tool actually used is known.
+- **Keep** the returned tool result as the next turn (it comes back to the Thinker, which holds context).
+- The Thinker-owned preamble tools (`user_memory_*`, `scratchpad_*`, `get_datetime`) stay inside the Thinker's reasoning/context, not emitted as `<act>`s to the Executor.
+- The final `<answer>` (the Thinker composes it) is kept as the closing Thinker turn.
+
+Thinker training row shape (multi-turn): `system → user (question) → assistant (<think> + <act>) → tool (result) → assistant (<think> + <act>) → tool (result) → … → assistant (<think> + <answer>)`. No stage-grouping or DAG is needed — the interleaved structure already encodes order, which is exactly why step-by-step factors more naturally than a batch plan.
+
+### 7.3 Executor View Construction
+
+The Executor target is one tool call per instruction, with no deliberation and no prose answer (the Thinker writes the answer, §4.3). Each Executor-owned tool call in the source trajectory yields one small training pair:
+
+- **Input (user turn):** the `<act>` instruction produced for that call in §7.2 (after a minimal Executor system prompt).
+- **Target (assistant turn):** the native `<tool_call>` for that call, verbatim — `<think>` stripped, no answer.
+
+Executor training row shape: `system (Executor prompt) → user (<act> instruction) → assistant (one native tool_call)`. A multi-tool source trajectory thus yields several such pairs (one per Executor-owned call). The Executor never sees the running conversation — only the single instruction — which is what keeps it minimal and learnable at 0.6B.
+
+Because §7.2 and §7.3 read the *same* trajectory, the instruction the Thinker learns to emit and the tool call the Executor learns to produce are the same action — alignment is structural, not hoped-for. This is the single biggest advantage over stitching an external executor corpus to an external thinker corpus.
+
+### 7.4 Branch Coverage — Free vs Synthesised
+
+| Branch | Source | Cost |
+|---|---|---|
+| **A** (enough to act → delegate) | Every factored trajectory yields a Branch A Thinker example and the matching Executor example | Free — pure transformation of existing 2,274 trajectories |
+| **C** (review executor result → accept or replan) | Multi-round trajectories where a tool returned an error or partial result. The `environment_timeout` category already injects HTTP 503 on the first `web_search`, and natural `python_execute` syntax errors / empty extractions occur throughout. The Thinker-review turn is the existing post-result `<think>` block re-cast as an accept/replan decision. | Mostly free — derived from existing error-bearing trajectories; a thin synthesis pass only if accept/reject balance is poor |
+| **B** (ambiguous → clarify) | Cannot be factored — existing trajectories always act, never stop to ask | Synthesised, ~500 examples (§7.5) |
+
+This collapses the §7.6-era synthesis burden from ~1,000 examples (Branch B + C) to ~500 (Branch B alone), because Branch C falls out of the error trajectories the pipeline already produces.
+
+### 7.5 Synthesised Dataset — Branch B (`clarification_needed`)
+
+Branch B is the one component factoring cannot supply: existing trajectories always proceed to act, so none demonstrate the Thinker stopping to ask. **Implemented** in `sft_v3_generator.py` via `--branch_b` (no new question generation — it re-uses the ambiguous seed questions already in `data/questions_partA.jsonl`, categories `multi_step_clarification`, `ambiguous_underspecified`, `user_context_behavioral`, `verbose_context_behavioral`).
+
+**What it teaches:** The Thinker emits `<ask>` (one targeted question) instead of proceeding when the request is genuinely ambiguous about what the user needs — i.e., proceeding would force a constitutional assumption it should not make silently. The 5W+H/first-principles grounding lives in the preceding `<think>` block (which names the single most critical dimension and why guessing is unsafe), keeping the Thinker single-modality (prose).
+
+**Generation procedure (teacher decides per item):**
+1. Feed each ambiguous seed to the teacher under `_make_branch_b_teacher_prompt` (full constitution, cold-start: no user memory, so genuine ambiguity about the user cannot be silently resolved).
+2. Turn 1 — the teacher reasons (first principles + 5W+H, ≥150 chars) and decides:
+   - **Genuinely ambiguous → `<ask>`** (positive). Validated by `_validate_ask`: exactly one question, and the `<think>` names a 5W+H dimension. A second teacher call role-plays the user answering; turn 2 the teacher resolves with `<act>` or `<answer>`.
+   - **Specifiable → `<act>`/`<answer>`** (don't-ask negative). The teacher proceeds without asking — this *is* the negative example.
+3. Both outcomes are written, tagged `branch: "B"` or `"B_negative"` in metadata.
+
+**Output:** `data/train_sft_thinker_branch_b.jsonl`, Thinker format (consumed by the splitter at the curriculum-merge step, not the SFT assembler). Positive rows are 5-turn (`system → user → <think>+<ask> → human → <think>+<act|answer>`); negatives are 3-turn.
+
+**Target yield:** ~500 positives. The negatives fall out of the same run for free (specifiable seeds the teacher declines to clarify); supplement with factored Branch A examples (which acted without asking) at the curriculum-merge step. This directly addresses RQ4 and the over-clarification risk in §9.
+
+### 7.6 Why the External-Dataset Search Came Up Short
+
+The following is retained as the record of the dataset search; its conclusion is what motivated the factoring method above. The external datasets it identified now serve only as the optional top-up in §7.7.
 
 **Finding 1 — Architecture papers released no training data.** A targeted search across the key architectural papers (Reason-Plan-ReAct 2512.03560, Can Small Agents Collaborate 2601.11327, Planner–Executor 2510.15244) found no published datasets from any of them. All three are inference and evaluation papers. The experiment must be constructed from independently sourced datasets.
 
@@ -279,17 +304,21 @@ Both models run on the same single GPU sequentially. The Thinker's KV cache is n
 
 **[capitalone/T1](https://huggingface.co/datasets/capitalone/T1)** ([arXiv:2505.16986](https://arxiv.org/abs/2505.16986), Capital One, May 2025) — 13.5K multi-turn dialogues across nine domains (flights, hotels, restaurants, attractions, and five multi-domain combinations). The agent coordinates tool calls across turns, maintains short- and long-term memory, and supports dynamic re-planning when results come back unexpectedly. **Covers Branch A and partial Branch C.** What it lacks: it never asks a clarifying question — ambiguity is always resolved by calling more tools. Domain is also narrow (travel booking). Use for Thinker training on the iterate-with-executor (Branch C) pattern only.
 
-**Thinker: Training LLMs in Hierarchical Thinking for Deep Search via Multi-Turn Interaction** ([arXiv:2511.07943](https://arxiv.org/abs/2511.07943), Nov 2025) — Hierarchical thinking model that decomposes problems into sub-problems, checks its own knowledge boundary (can I answer directly, or do I need to search?), and routes accordingly. This is the closest published *approach* to the Branch A/B decision logic. **No public dataset was released.** The paper describes the training procedure but withholds the data. The knowledge-boundary checking taxonomy — know when to search vs. answer vs. ask — is valuable framing for the synthesised dataset (§7.6).
+**Thinker: Training LLMs in Hierarchical Thinking for Deep Search via Multi-Turn Interaction** ([arXiv:2511.07943](https://arxiv.org/abs/2511.07943), Nov 2025) — Hierarchical thinking model that decomposes problems into sub-problems, checks its own knowledge boundary (can I answer directly, or do I need to search?), and routes accordingly. This is the closest published *approach* to the Branch A/B decision logic. **No public dataset was released.** The paper describes the training procedure but withholds the data. The knowledge-boundary checking taxonomy — know when to search vs. answer vs. ask — is valuable framing for the synthesised dataset (§7.5).
 
 **RAGEN: Understanding Self-Evolution in LLM Agents via Multi-Turn RL** ([arXiv:2504.20073](https://arxiv.org/abs/2504.20073), 2025) — StarPO framework for multi-turn RL where an agent makes sequential decisions, maintains memory across turns, and adapts to stochastic feedback. Open source at [github.com/RAGEN-AI/RAGEN](https://github.com/RAGEN-AI/RAGEN). **Not a dataset — a training framework.** Relevant as the RL post-training mechanism (June 15–25 timeline slot) if SFT alone is insufficient to learn the clarification/replan decision.
 
-**Finding 3 — The clarification branch requires synthesis.** No existing dataset contains examples where a planning agent correctly decides to ask a clarifying question rather than delegate to tools. AGENT-CQ ([arXiv:2410.19692](https://arxiv.org/pdf/2410.19692)) generates clarifying questions for conversational search but in a retrieval context — not a planning-execution loop. The Branch B examples must be synthesised (see §7.6).
+**Finding 3 — The clarification branch requires synthesis.** No existing dataset contains examples where a planning agent correctly decides to ask a clarifying question rather than delegate to tools. AGENT-CQ ([arXiv:2410.19692](https://arxiv.org/pdf/2410.19692)) generates clarifying questions for conversational search but in a retrieval context — not a planning-execution loop. The Branch B examples must be synthesised (see §7.5).
 
 **Finding 4 — Tool ownership dictates dataset scope.** The pipeline's ten tools split cleanly between models (§4.1). External datasets never contain `user_memory_*` or `scratchpad_*` tools — those are project-specific. General tool-calling datasets (ToolMind, CoVe) are valid for the Executor because `python_execute`, `web_search`, and `read_url` are semantically equivalent to the tools those datasets train on, even if the argument schema differs slightly. Project-specific pipeline examples correct for the exact schema at the end of training.
 
 Seven public datasets were identified. They divide by role as follows.
 
-### 7.2 Thinker Training Data
+### 7.7 Optional External Top-Up (breadth only)
+
+The tables and sources below are the *original* externally-sourced plan, now **demoted**. With trajectory factoring (§7.1–7.4) supplying the aligned, constitution-grounded core for both models, these public datasets are no longer the primary source — they are an optional breadth top-up to be blended in only if held-out evaluation shows the factored set is too narrow in topic or reasoning style. Their target totals (~18K Thinker, ~44K Executor) are *ceilings*, not requirements, and adding them reintroduces the schema-normalisation and plan/execution alignment costs that factoring avoids. Treat anything below as a contingency, not the plan of record. (Historical note: references to `train_sft_v3_robust.jsonl` below mean the current `data/train_sft_v3.jsonl` / `train_partA_v3.jsonl`.)
+
+#### Thinker top-up — reasoning-format transfer
 
 The Thinker needs long constitutional `<think>` blocks with no tool calls. No external dataset provides constitutional content — the pipeline's own data is the sole source of that signal. External datasets contribute only **reasoning-format transfer**: they teach the model how to sustain long deliberative chains, which the constitution-only data is too narrow to provide on its own.
 
@@ -304,8 +333,8 @@ The Thinker needs long constitutional `<think>` blocks with no tool calls. No ex
 | Source | Size after filtering | Branch covered | Role |
 |---|---|---|---|
 | `train_sft_v3_robust.jsonl` (think-only filter) | ~800–1,200 | A | Constitutional signal — primary |
-| Synthesised `clarification_needed` (§7.6) | ~500 | B | Only source of Branch B examples |
-| Synthesised `executor_replan` (§7.6) | ~500 | C | Re-planning on executor feedback |
+| Synthesised `clarification_needed` (§7.5) | ~500 | B | Only source of Branch B examples |
+| Synthesised `executor_replan` (§7.5) | ~500 | C | Re-planning on executor feedback |
 | capitalone/T1 (adapted to delegation format) | ~3,000 | A + C partial | Multi-turn tool coordination and replan |
 | Sky-T1_data_17k (sample) | 5,000 | format only | Reasoning-format transfer |
 | Bespoke-Stratos-17k (sample) | 3,000 | format only | Reasoning style diversity |
@@ -313,7 +342,7 @@ The Thinker needs long constitutional `<think>` blocks with no tool calls. No ex
 
 Target total: ~18,000 examples. The synthesised Branch B and C examples are small in absolute terms (~1,000 combined, ~5.5% of total) but are the only data that teaches the Thinker to make the clarification/replan decision. Without them, the model will have seen only Branch A outputs and will default to always delegating. Curriculum ordering: one constitutional or synthesised example per 10–12 general-reasoning examples, maintained across all training steps.
 
-### 7.3 Executor Training Data
+#### Executor top-up — tool-call breadth
 
 The Executor needs clean tool-call traces with no `<think>` blocks. Three datasets provide this at scale. A fourth provides a quality-verification anchor.
 
@@ -337,7 +366,9 @@ The Executor needs clean tool-call traces with no `<think>` blocks. Three datase
 
 Target total: ~44,000 examples. The constitutional pipeline data is a very small fraction (~1.5%) but ensures the Executor has seen the tool signatures (`python_execute`, `exa_search`) and argument formats it will actually be called with at inference time.
 
-### 7.4 The Constitutional Gap — Key Finding
+### 7.8 The Constitutional Gap — Key Finding
+
+This finding is the deeper reason trajectory factoring is the right move: because no public dataset carries constitutional content, the only way to put constitutional signal into *both* a Thinker and an Executor is to derive both from the project's own constitution-grounded trajectories. Factoring does exactly that — unlike the external mixes above, which would leave the Executor with no constitutional grounding at all.
 
 The most important finding from the dataset search is what does not exist: **no public dataset provides constitutional reasoning traces for a trust-and-empathy AI system**. Every external dataset covers one of two regimes:
 
@@ -352,72 +383,52 @@ This gap has two practical consequences:
 
 2. **The constitutional gap is itself a dissertation contribution.** The absence of any public constitutional SFT dataset for small trust-focused models is a gap in the field. The `train_sft_v3_robust.jsonl` pipeline, and the filtering/curation methodology developed here, constitute an original data contribution — not just an experiment artefact.
 
-### 7.5 Preprocessing Pipeline
+### 7.9 Preprocessing and Validation Gates
 
-Four preprocessing steps are needed before any external data enters training:
+Trajectory factoring needs far less preprocessing than the external plan, because the source data is already in the project's format. The steps are:
 
-1. **Think-block stripping (Executor data):** Remove `<think>…</think>` from all assistant turns in ToolMind, zake7749, and WaltonFuture datasets. Use regex `<think>[\s\S]*?</think>` rather than a heuristic character-count filter — ToolMind contains multi-paragraph think blocks that a naive truncation would corrupt.
+1. **Think-block stripping (Executor view only):** Remove `<think>…</think>` from the assistant turns when building the Executor target. Reuse `sft_dataset_assembler._THINK_BLOCK_RE` (`<think>[\s\S]*?</think>`); the source trajectories never nest think blocks, so the regex is sufficient.
 
-2. **Delegation-spec prepending (Executor data):** Each executor training example must begin with a `<delegation>` block matching the schema in §4.3. For pipeline examples, run the vanilla Qwen3-0.6B (or a Qwen3-4B teacher) over the original user message to generate the delegation spec. For external datasets, generate synthetically from the conversation context.
+2. **`<act>` derivation (deterministic — not LLM-generated):** For each Executor-owned tool call (`python_execute`, `web_search`, `read_url`), render a natural-language `<act>` instruction from the call and its concrete arguments. This replaces the external plan's GPU-intensive "run a teacher to generate the plan" step entirely — there is **no GPU cost** for the core data, because the instruction is read off the observed action. This is the single largest saving over the external plan. (A Qwen3-4B paraphrase pass is an optional refinement if the literal rendering reads too mechanically — but it is not required for correctness.)
 
-3. **Constitutional seed filtering (Thinker data):** From `train_sft_v3_robust.jsonl`, retain only examples where `<think>` block length > 200 chars AND no `tool_use`/`tool_result` messages appear. Expected yield: 800–1,200 examples from the full dataset.
+3. **Tool-ownership split:** When factoring, route `user_memory_*` / `scratchpad_*` / `get_datetime` calls to the Thinker context and `python_execute` / `web_search` / `read_url` to the Executor target, per §4.1.
 
-4. **Curriculum ordering:** Interleave constitutional seed examples throughout each epoch rather than batching them at the start or end. Effective ratio: 1 constitutional example per 10–12 general examples, maintained consistently across all training steps.
+4. **Quality gates:** Thinker rows must have each `<think>` block ≥150 chars and a valid action tag (`<ask>`/`<act>`/`<answer>`). Executor rows must have exactly one native `tool_call`, no `<answer>`, and **no** `<think>` block (a positive gate — the whole point is that the Executor never deliberates). Reject any Executor row whose call is not an Executor-owned tool. The Branch B generator already enforces the Thinker-side gates inline (`_validate_ask`, think-length); the splitter applies the analogous gates to factored rows.
 
-The delegation-block generation pass (step 2) is the only GPU-intensive preprocessing step — budget approximately 3 hours on a single A100 for ~44,000 executor examples at batch size 16.
+5. **Curriculum ordering:** Interleave the synthesised Branch B examples (§7.5) throughout the Thinker epoch at roughly 1 per 10–12 Branch A/C examples, so the model does not learn to always delegate.
 
-### 7.6 Synthesised Dataset Plan — Branch B and Branch C
+### 7.10 Implementation in the Pipeline
 
-The two missing branches cannot be sourced from any public dataset and must be generated using an asymmetric distillation approach consistent with the existing `sft_v3_generator.py` intercept loop. This requires adding two new question categories to `sft_question_generator.py`.
+The core factoring is a new pure-transformation script, `sft_trajectory_splitter.py`, that reads `data/train_partA_v3.jsonl` and `data/train_partB_v3.jsonl` and writes `data/train_sft_thinker.jsonl` and `data/train_sft_executor.jsonl`. It reuses the parsing helpers already in `sft_dataset_assembler.py` (`_THINK_BLOCK_RE`, `_TOOL_RE`, the `_TOOL_ARG_MAP` extractors, `convert_to_native`) rather than re-implementing tool parsing. Two new role prompts (`THINKER_PROMPT`, `EXECUTOR_PROMPT`) are added to `sft_v3_generator.py` alongside the existing `STUDENT_PROMPTS`.
 
-#### Branch B — `clarification_needed` category
+Branch B synthesis (§7.5) extends `sft_question_generator.py` with a `clarification_needed` category and `sft_v3_generator.py` with a clarification intercept, gated on a Qwen3-7B+ teacher and written to `data/train_sft_thinker_branch_b.jsonl`, then merged at the curriculum step. Branch C is **not** synthesised — it is factored from the error-bearing trajectories already in the corpus (§7.4); a small accept/reject rebalancing pass is the only contingency.
 
-**What it teaches:** The Thinker must emit `<clarification_request>` rather than `<delegation>` when the user's intent is genuinely ambiguous at the level of constitutional principle — i.e., proceeding without clarification would force a constitutional assumption the model should not make silently.
+Training requires **no changes to `2_model_trainer.py`**: it accepts `--dataset <path> --output_name <name>`, and `messages_to_text` already renders native tool schemas from `metadata.native_tools` via the chat template. Two runs produce the two checkpoints:
 
-**Generation procedure:**
-1. Write ~60 seed prompts where a naive model would proceed to delegate but where a constitutionally careful model should stop and ask. Examples: a user asks "help me write the message" without saying what message or to whom; a user asks "calculate the cost" without specifying units or context; a user asks for a recommendation without revealing a relevant constraint (allergy, budget, legal jurisdiction).
-2. Run teacher (Qwen3-7B or 14B with full constitution system prompt) over each seed. Intercept the output at the point where it would emit a `<delegation>` and instead prompt it to produce a `<clarification_request>` block with `<ambiguity>`, `<question>`, and `<why_needed>` fields.
-3. Follow the clarification with a synthetic human response that resolves the ambiguity, then let the teacher complete the trajectory with a proper `<delegation>`.
-4. Validate: the clarification question must reference a specific constitution principle in `<why_needed>`; the question must be singular (not a list); the human response must make the subsequent delegation unambiguous.
+```bash
+python 2_model_trainer.py --mode sft --dataset data/train_sft_thinker.jsonl  --output_name checkpoint_thinker
+python 2_model_trainer.py --mode sft --dataset data/train_sft_executor.jsonl --output_name checkpoint_executor
+```
 
-**Target yield:** 500 high-quality trajectories. Each trajectory is a 3-turn sequence: user prompt → `<clarification_request>` → synthetic human answer → `<delegation>`. This directly mirrors the Branch B → Branch A flow the Thinker will execute at inference time.
-
-**Critical distinction to encode in training data:** The Thinker must learn to distinguish *genuinely ambiguous* from *under-confident*. A probe where the user says "what is 2+2?" is not ambiguous — asking "could you clarify what you mean by 2+2?" is pathological over-clarification. The training data must include negative examples (examples where the model does NOT ask a clarifying question) alongside the positive `clarification_needed` examples. Use the existing constitution-probe pass-cases as the negative examples to interleave.
-
-#### Branch C — `executor_replan` category
-
-**What it teaches:** The Thinker must receive the Executor's result, evaluate it against the constitution, and decide whether to accept it (emit `<final_answer>`) or reject it and emit a revised `<delegation>`.
-
-**Generation procedure:**
-1. Take ~60 existing tool-call trajectories from `train_sft_v3_robust.jsonl` where the tool returned a partial, ambiguous, or error result (e.g., `web_search` returns a 503, `python_execute` returns a syntax error, `read_url` returns an empty extraction).
-2. Run teacher over the full context including the failed Executor result. Prompt it to produce a Thinker-perspective evaluation turn: first a `<think>` block that analyses why the result is insufficient against the relevant constitution principle, then a revised `<delegation>` with a different strategy (different tool, different query, different code approach).
-3. Also generate accept-cases: trajectories where the Executor returned a good result and the Thinker correctly emits `<final_answer>` with a brief constitutional rationale.
-4. Validate: reject-cases must name the specific failure (e.g., "web_search returned 503 — retry with read_url on a known URL"); accept-cases must include the constitutional check that was satisfied.
-
-**Target yield:** 500 trajectories split ~60/40 between reject-and-replan and accept-and-close. The accept cases are important to prevent the Thinker from over-replanning (analogous to the over-clarification risk in Branch B).
-
-#### Implementation in the pipeline
-
-Both categories extend `sft_question_generator.py` with new `QUESTION_CATEGORIES` entries and a shared generation flag `--include_planning_loop`. The synthesis run gates on a Qwen3-7B+ teacher being available (not 0.6B — the teacher must be strong enough to produce high-quality `<clarification_request>` and re-plan trajectories). Budget: approximately 4 hours on a single A100 for 1,000 total examples at batch size 8.
-
-The synthesised data is stored as `train_sft_thinker_branches_bc.jsonl` and mixed into `train_sft_thinker.jsonl` at the curriculum-ordering step rather than pre-merged, to allow independent filtering and quality checks on each branch.
+The genuinely new runtime component is the two-model orchestration loop (Thinker → Executor → Thinker handoff with the max 3+2 loop cap from §4.5), either as a new module or an extension of `3_infererence.py`.
 
 ## 8. Timeline
 
-Given the dissertation constraint (all experiments complete by 30 June 2026):
+Revised for the trajectory-factoring method (all experiments complete by 30 June 2026). Factoring removes the multi-day external-data sourcing and the GPU delegation-generation pass, compressing the front of the schedule.
 
 | Date | Milestone |
 |---|---|
-| 2026-05-27 | Add `clarification_needed` and `executor_replan` categories to `sft_question_generator.py`; generate 1,000 Branch B+C examples using Qwen3-7B+ teacher |
-| 2026-05-28 | Filter all Thinker data; produce `train_sft_thinker.jsonl` (18K) + `train_sft_thinker_branches_bc.jsonl` (1K); produce `train_sft_executor.jsonl` (44K) |
-| 2026-05-29 | Train Thinker model (SFT, ~3hrs); probe `think_empty` rate + Branch B/C trigger rate on 10 held-out examples |
-| 2026-05-30 | Generate delegation blocks for executor training; train Executor model (~2hrs) |
-| 2026-05-31 | Run full benchmark across all 6 conditions (E0–E5) |
-| 2026-06-01–06-07 | Analyse Branch B/C trigger rates; check RQ4/RQ5; adjust clarification threshold if over/under-triggering |
-| 2026-06-08–06-14 | Iterate on constitution ratio or delegation protocol if H1 not met; re-train if needed |
-| 2026-06-15–06-25 | RL post-training pass on Executor (OPERA-style) + Thinker decision policy (RAGEN/StarPO-style) if results warrant it |
-| 2026-06-28 | Final benchmark run across all 6 conditions |
-| 2026-06-30 | Integrate into dissertation Experiment 3 section; close all open questions |
+| 2026-05-30 | Write `sft_trajectory_splitter.py`; factor existing 2,274 trajectories into `train_sft_thinker.jsonl` + `train_sft_executor.jsonl`; manually inspect 30 factored rows of each (`<act>` fidelity, no-think Executor gate) |
+| 2026-05-31 | Add `THINKER_PROMPT` / `EXECUTOR_PROMPT`; train Executor (E3) from factored Branch A/C data (~2 hrs); probe tool-call discipline and think-empty on held-out |
+| 2026-06-01 | Add `clarification_needed` category; synthesise ~500 Branch B examples (Qwen3-7B+ teacher) — **pending supervisor sign-off on new generation** |
+| 2026-06-02 | Merge Branch B + factored Branch A/C with curriculum ordering; train Thinker (E2) (~3 hrs); probe Branch B trigger rate (RQ4) |
+| 2026-06-03 | Build two-model orchestration loop; run full benchmark across E0–E5 |
+| 2026-06-04–06-10 | Analyse Branch B/C trigger rates, RQ4/RQ5, latency (RQ3); adjust clarification interleave ratio if over/under-triggering |
+| 2026-06-11–06-20 | Iterate on constitution ratio / `<act>` protocol if H1 not met; optional external top-up (§7.7) only if held-out coverage is thin; re-train as needed |
+| 2026-06-25 | Final benchmark run across all six conditions |
+| 2026-06-30 | Integrate into dissertation Experiment 3 section; close open questions |
+
+> The June 15–25 RL post-training slot from the prior plan is **cut** — RL is not supervisor-approved (SFT only), and Beyond ReAct (§9) confirms GRPO instability at 0.6B. The freed time goes to iteration on the SFT data mix.
 
 ## 9. Risks and Mitigations
 
@@ -429,8 +440,8 @@ Given the dissertation constraint (all experiments complete by 30 June 2026):
 | Thinker under-clarifies — delegates when it should ask | Medium | Add constitutional check in `<why_needed>` field as a training signal; probe with genuinely ambiguous inputs in held-out set |
 | Thinker loops endlessly on Branch C — keeps replanning without accepting | Medium | Hard cap of 2 Executor retries in inference loop; monitor RQ5 (average Branch C depth) during evaluation |
 | Synthesised Branch B/C data is too narrow — teacher generates similar clarification questions | Medium | Use diverse seed prompts across all 23 constitution principles; verify principle distribution in generated examples before training |
-| Executor ignores delegation spec scope and expands task beyond what Thinker planned | Low | Include faithfulness-to-spec as an explicit training signal in executor examples; add a post-execution check prompt |
-| Delegation format not reliably followed by Executor | Medium | Use structured XML parsing with schema validation; add delegation-format adherence as a training signal |
+| Executor expands scope beyond the single `<act>` instruction | Low | Executor examples are one-instruction→one-call pairs; the Executor never sees the running conversation, so there is no scope to expand into |
+| Executor maps an `<act>` to the wrong tool or malforms the call | Medium | `<act>` may name the tool explicitly (free when factoring, since the tool used is known); validate the emitted native `tool_call` against the registry schema; add malformed calls as negative signal |
 | Think-block stripping corrupts ToolMind examples with nested reasoning | Medium | Use regex `<think>[\s\S]*?</think>` not character-count heuristic; manually inspect 50 samples post-strip |
 | Combined latency exceeds acceptable threshold for on-device use | Medium | Profile single-pass latency early; max loop depth cap (3+2) bounds worst case; measure RQ3 on first trained models before full benchmark |
 | Delegation-block generation for executor training produces low-quality plans | Medium | Use Qwen3-7B+ (not 0.6B) as teacher; validate 100 examples manually before full pass |

@@ -165,6 +165,8 @@ pipeline/
 ├── sft_v3_generator.py             SFT step 1b — asymmetric distillation: teacher (full constitution) → student prompt swap, live tool intercept, native <tool_call> output
 ├── sft_math_pipeline.py            SFT step 2  — math/code questions (7 types) + rejection sampling
 ├── sft_dataset_assembler.py        SFT step 3  — merge, quality-gate (think≥150, teacher-leak, banned phrases), full-native conversion, robustness variants → train_sft_v3.jsonl
+├── sft_trajectory_splitter.py      Thinker–Executor (exp 3): pure-transform factoring of the *_v3 parts → train_sft_thinker.jsonl (prose <think>+<ask>/<act>/<answer>) + train_sft_executor.jsonl (one <act> → one <tool_call>)
+├── sft_curriculum_merge.py         Thinker–Executor (exp 3): interleave Branch B <ask> rows into the factored Thinker set (auto ratio) → train_sft_thinker_curriculum.jsonl
 ├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
@@ -302,6 +304,36 @@ python sft_v3_generator.py \
   --model     nvidia_nim/minimaxai/minimax-m2.7
 
 python sft_math_pipeline.py --output data/train_partB_v3.jsonl
+
+# (Thinker–Executor experiment, optional) Branch B — clarification trajectories.
+# Re-uses the ambiguous seed questions; teacher decides per item to <ask> (genuine
+# ambiguity → clarify, then a simulated user answer, then resolve) or proceed (don't-ask
+# negative). Output is THINKER format (<think>+<ask>/<act>/<answer>) for the trajectory
+# splitter — NOT the SFT assembler. Spot-check ~5 rows before a full run:
+python sft_v3_generator.py \
+  --questions data/questions_partA.jsonl \
+  --branch_b --max 5 \
+  --model nvidia_nim/minimaxai/minimax-m2.7   # canonical teacher; kimi-k2.6 skips every row (reasoning is out-of-band)
+#   → data/train_sft_thinker_branch_b.jsonl
+
+# (Thinker–Executor experiment, optional) Factor the existing v3 trajectories into the two
+# role-conditioned SFT sets — a pure transformation, no GPU/teacher. Reads the *_v3 parts,
+# renders each Executor-owned call as a plain-language <act> instruction, and writes:
+#   data/train_sft_thinker.jsonl   (<think> + <ask>/<act>/<answer>, prose only)
+#   data/train_sft_executor.jsonl  (one <act> instruction → one native <tool_call>)
+# Spot-check with --inspect before the real write; gates match sft_dataset_assembler.
+python sft_trajectory_splitter.py --inspect 5      # preview, no write
+python sft_trajectory_splitter.py                  # factor both parts → both outputs
+
+# Curriculum merge: interleave the Branch B <ask> rows into the factored Thinker set so the
+# Thinker doesn't learn to always delegate (auto ratio = len(factored)//len(branch_b);
+# places all Branch B rows evenly). Runnable before Branch B exists — it then just passes
+# the factored A/C set through with a warning. Re-run once Branch B is generated.
+python sft_curriculum_merge.py                     # → data/train_sft_thinker_curriculum.jsonl
+
+# Then train two checkpoints (no trainer changes needed):
+#   python 2_model_trainer.py --mode sft --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
+#   python 2_model_trainer.py --mode sft --dataset data/train_sft_executor.jsonl           --output_name checkpoint_executor
 
 python sft_dataset_assembler.py        # part_a/part_b default to the *_v3.jsonl files
 # Quality-gates (think≥150, no teacher leak, no banned phrases), converts to full-native,

@@ -507,15 +507,20 @@ def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
     Returns the same {"function": name, "kwargs": dict} shape as _parse_tool_call
     so the execution loop needs no branching beyond the parse step.
     """
-    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    # Capture the body up to the </tool_call> TAG, not via \{.*?\}: python_execute `code`
+    # arguments contain { } (dicts, f-strings, sets), so a brace-delimited capture truncates
+    # at the first inner brace. strict=False is also required — `code` carries raw newlines
+    # and tabs, which strict JSON (the default) rejects. Together these previously dropped
+    # every python_execute call at inference (see sft_trajectory_splitter.py parser note).
+    m = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
     if not m:
         return None
     try:
-        obj = json.loads(m.group(1))
+        obj = json.loads(m.group(1), strict=False)
         name = obj.get("name", "")
         args = obj.get("arguments", {})
         if isinstance(args, str):       # some models serialise args as a JSON string
-            args = json.loads(args)
+            args = json.loads(args, strict=False)
         return {"function": name, "kwargs": args if isinstance(args, dict) else {}}
     except (json.JSONDecodeError, KeyError, TypeError):
         return None

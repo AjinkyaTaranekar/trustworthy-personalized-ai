@@ -5,8 +5,9 @@ tags: [sft, distillation, training, tool-use, constitutional-ai, curriculum-lear
 sources:
   - pipeline/sft_v3_generator.py
   - pipeline/sft_dataset_assembler.py
+  - pipeline/sft_trajectory_splitter.py
   - pipeline/2_model_trainer.py
-updated: 2026-05-29
+updated: 2026-05-30
 status: current
 ---
 
@@ -35,6 +36,47 @@ Two new question categories train the model on failure recovery:
 ## Quality Gate
 
 `validate_sft_data.py` enforces five invariants before training: (1) system prompt ≤ 50 words — proves the constitution was not leaked to the student; (2) `<think>` block ≥ 50 characters — prevents synthetic laziness (empty think blocks); (3) no banned placeholders in `<think>` — blocks v2-era shortcuts like "see answer below"; (4) tool call immediately followed by tool role — sequence integrity, no hallucinated execution; (5) last message is assistant with `<answer>` — end-to-end resolution guaranteed. If >5% of rows fail, the generation pipeline is broken; fix the generator, not the validator.
+
+## Branch B — Thinker Clarification Trajectories (`--branch_b`)
+
+`sft_v3_generator.py --branch_b` generates training data for the Thinker model of the [[experiments/thinker-executor-experiment|Thinker–Executor experiment]] — specifically the behaviour no public dataset and no existing trajectory contains: deciding to **stop and ask** one targeted clarifying question (grounded in first-principles + 5W+H decomposition) rather than proceeding on a silent assumption. It re-uses the ambiguous seed questions already in `data/questions_partA.jsonl` (categories `multi_step_clarification`, `ambiguous_underspecified`, `user_context_behavioral`, `verbose_context_behavioral`) — no new question generation.
+
+The Thinker vocabulary is **prose only**: a `<think>` block followed by exactly one of `<ask>` / `<act>` / `<answer>` (step-by-step, ReAct-like — confirmed 2026-05-29). This is the structural fix for the capacity-displacement collapse: the Thinker has one output modality, so structured tool-calling (which displaced reasoning in the single model) cannot compete. All tool-call syntax lives in the separate Executor.
+
+Per seed, the teacher (cold-start, no user memory injected, so genuine ambiguity about the user cannot be silently resolved) decides:
+- **Genuinely ambiguous → `<ask>`** (positive, `branch: "B"`): validated by `_validate_ask` (exactly one question; `<think>` names a 5W+H dimension). A second teacher call role-plays the user answering; the teacher then resolves with `<act>` or `<answer>`. Row shape: `system → user → <think>+<ask> → human → <think>+<act|answer>`.
+- **Specifiable → `<act>`/`<answer>`** (don't-ask negative, `branch: "B_negative"`): the teacher proceeds without asking — the negative example that prevents over-clarification.
+
+> **Priming + teacher model (validated 2026-05-30 spot-check).** Both teacher calls are primed with `_BRANCH_B_FEWSHOT` — a one-shot prose demonstration (one ambiguous→`<ask>`, one specifiable→`<answer>`). Without it the teacher emits a bare tag with no `<think>` and every row is rejected by the ≥150-char think gate (`processed=0`). Use `--model nvidia_nim/minimaxai/minimax-m2.7` (now the default): the first-assistant `<think>` auto-wrap is built around minimax's flowing-prose style, whereas kimi-k2.6 returns reasoning out-of-band (empty-content `<think>`) and skips every row.
+
+Output: `data/train_sft_thinker_branch_b.jsonl` in **Thinker format**, consumed by `sft_trajectory_splitter.py` at the Thinker curriculum-merge step — **not** by `sft_dataset_assembler.py` (whose quality gate requires `<answer>`). `THINKER_STUDENT_PROMPT` and the `<ask>`/`<act>`/`<answer>` vocabulary in `sft_v3_generator.py` are the single source of truth shared with the splitter. Spot-check before a full run:
+
+```bash
+python sft_v3_generator.py --questions data/questions_partA.jsonl --branch_b --max 5
+```
+
+## Trajectory Splitter — Thinker · Executor Factoring (`sft_trajectory_splitter.py`)
+
+**Implemented 2026-05-30.** A pure transformation (no GPU, no teacher) that projects the already-generated v3 trajectories (`data/train_partA_v3.jsonl` + `data/train_partB_v3.jsonl`) onto the two role-conditioned SFT sets for the [[experiments/thinker-executor-experiment|Thinker–Executor experiment]] (§7.2–7.3, §7.9–7.10). Because both views are read off the *same* trajectory, the `<act>` the Thinker learns to emit and the `<tool_call>` the Executor learns to produce are the same action — alignment is structural, not stitched. It reuses the assembler's parsing helpers (`_THINK_BLOCK_RE`, `_TOOL_RE`, `_xml_tool_to_native`, `_unwrap_tool_result`, `MIN_THINK_CHARS`, `MAX_RESULT_CHARS`) and adds a Hermes `<tool_call>{json}</tool_call>` text parser (the format the v3 generator actually emits — not legacy `<tool>` XML, not a structured `tool_calls` field). Role prompts `THINKER_STUDENT_PROMPT` and the new `EXECUTOR_STUDENT_PROMPT` are imported from `sft_v3_generator.py` (single source of truth shared with the served models).
+
+> **Parser gotcha (load-bearing).** The Hermes body must be captured up to the `</tool_call>` **tag**, not via `\{.*?\}`, and parsed with `json.loads(..., strict=False)`. `python_execute` `code` arguments contain `{ }` (dicts, f-strings, sets) **and raw newlines**; a brace-delimited capture truncates at the first inner `}`, and strict JSON rejects the raw newlines — together these silently dropped ~780 of the ~800 Part B maths `python_execute` calls in the first cut (executor `python_execute` pairs were 177 instead of 980). The same brace-truncating regex + strict parse also lived in `3_infererence.py` `_parse_native_tool_call` (~line 510) — **fixed 2026-05-30** with the identical `</tool_call>`-delimited capture + `strict=False`. Before the fix, the model's `python_execute` calls failed to parse at inference (JSONDecodeError on the first inner brace / raw newline), so maths tool-calls were silently dropped and never executed — a likely contributor to weak P4/P10 maths-probe scores. The return shape (`{"function", "kwargs"}`) is unchanged, so the execution loop needed no other change.
+
+**Tool ownership at factor time:** Executor-owned (delegated as `<act>`) = `python_execute`, `web_search`, `read_url`. The Thinker's own state tools (`user_memory_*`, `scratchpad_*`, `get_datetime`) are dropped from the factored Thinker stream — their call turns are handled in-context by the orchestrator at inference, so the Thinker never learns to emit tool-call syntax, while their preceding `<think>` reasoning is carried forward to the next emitted Thinker turn. `get_datetime` is still advertised in the Executor's schema list but never delegated.
+
+**Outputs (validated 2026-05-30):** from 2,274 source trajectories → `train_sft_thinker.jsonl` (2,220 rows, prose-only `<think>` + `<ask>`/`<act>`/`<answer>`; 1,366 with ≥1 `<act>`, 854 reason→answer; 54 dropped for missing `<answer>`, opening `<think>` <150 chars, or tool-syntax leak) and `train_sft_executor.jsonl` (2,243 deduped one-`<act>`→one-`<tool_call>` pairs: 1,055 web_search, 980 python_execute, 208 read_url). The Executor target preserves the source Hermes call **verbatim** (raw newlines and all) so it matches what the model emits and what the inference parser consumes. All 2,243 Executor rows and the Thinker rows render cleanly through the Qwen3 chat template in `2_model_trainer.messages_to_text` (Thinker with no tools block; Executor with the 4-tool schema + an empty `<think></think>` before the call), so training needs **no** trainer changes — just two `--dataset … --output_name …` runs.
+
+```bash
+python sft_trajectory_splitter.py --inspect 5   # preview factored rows, no write
+python sft_trajectory_splitter.py               # → train_sft_thinker.jsonl + train_sft_executor.jsonl
+```
+
+### Curriculum merge (`sft_curriculum_merge.py`)
+
+**Implemented 2026-05-30.** The factored Thinker set is entirely Branch A/C — every row eventually acts — so a Thinker trained on it alone learns to *always delegate* and never `<ask>`. This step interleaves the synthesised Branch B rows (`train_sft_thinker_branch_b.jsonl`, from `sft_v3_generator.py --branch_b`) into the factored set for curriculum ordering (§7.5, §7.9 #5), writing the Thinker trainer input `data/train_sft_thinker_curriculum.jsonl`. Default ratio is **auto** = `len(factored)//len(branch_b)` so all Branch B rows are placed evenly (with ~500 Branch B + 2,220 factored that is ~1 per 4; `--ratio 11` forces the sparser 1-per-10–12 the experiment text assumed for the larger external-topped mix). Every row is re-stamped with `THINKER_STUDENT_PROMPT` so both sources carry a byte-identical system prompt. It is runnable **before** Branch B exists: if the Branch B file is missing/empty it warns loudly and passes the factored A/C set through unchanged, so Thinker training can still proceed on A/C alone and the merge is simply re-run once Branch B is generated (pending supervisor sign-off).
+
+```bash
+python sft_curriculum_merge.py   # → data/train_sft_thinker_curriculum.jsonl
+```
 
 ## Curriculum Learning
 
