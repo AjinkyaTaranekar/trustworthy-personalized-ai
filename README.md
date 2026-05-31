@@ -305,16 +305,26 @@ python sft_v3_generator.py \
 
 python sft_math_pipeline.py --output data/train_partB_v3.jsonl
 
-# (Thinker–Executor experiment, optional) Branch B — clarification trajectories.
-# Re-uses the ambiguous seed questions; teacher decides per item to <ask> (genuine
-# ambiguity → clarify, then a simulated user answer, then resolve) or proceed (don't-ask
-# negative). Output is THINKER format (<think>+<ask>/<act>/<answer>) for the trajectory
-# splitter — NOT the SFT assembler. Spot-check ~5 rows before a full run:
+# (Thinker–Executor experiment, optional) Branch B — clarification trajectories — PLUS
+# adversarial/security refusal trajectories, in ONE rate-limited run (shared worker pool +
+# key rotation; avoids two processes competing for the NIM rate limit). Branch B: teacher
+# decides per item to <ask> (genuine ambiguity → clarify → simulated user answer → resolve)
+# or proceed (don't-ask negative). Adversarial: a built-in red-team seed set (prompt
+# injection, authority spoof, tool-result injection, malware/intrusion demands) where
+# <think> detects the attack and <answer> refuses. Both are THINKER format (<think>+
+# <ask>/<act>/<answer>) and BOTH land in train_sft_thinker_branch_b.jsonl (the `branch`
+# metadata distinguishes them); consumed by the curriculum merge, NOT the SFT assembler.
+# Memory is 50/50: half the rows carry a sampled [USER MEMORY] profile, half an explicit
+# empty block, so the Thinker learns to use memory AND to cope when it's empty. Spot-check first:
 python sft_v3_generator.py \
   --questions data/questions_partA.jsonl \
-  --branch_b --max 5 \
+  --branch_b --adversarial --max 8 \
   --model nvidia_nim/minimaxai/minimax-m2.7   # canonical teacher; kimi-k2.6 skips every row (reasoning is out-of-band)
-#   → data/train_sft_thinker_branch_b.jsonl
+#   → data/train_sft_thinker_branch_b.jsonl   (Branch B + adversarial rows)
+# Full unattended run on a VM (auto-commit+push the data file every 50 rows):
+#   nohup python -u sft_v3_generator.py --questions data/questions_partA.jsonl \
+#     --branch_b --adversarial --workers 5 --watch_commit --watch_threshold 50 \
+#     > nohup_thinker_gen.out 2>&1 &
 
 # (Thinker–Executor experiment, optional) Factor the existing v3 trajectories into the two
 # role-conditioned SFT sets — a pure transformation, no GPU/teacher. Reads the *_v3 parts,

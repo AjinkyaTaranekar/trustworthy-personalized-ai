@@ -78,30 +78,36 @@ def _branch_dist(rows: list[dict]) -> dict:
     return dict(c)
 
 
-def run(factored_path: str, branch_b_path: str, output: str,
+def run(factored_path: str, supplementary_paths: list[str], output: str,
         ratio: int = 0, seed: int = 42, restamp: bool = True) -> None:
     factored = _load(Path(factored_path))
-    branch_b = _load(Path(branch_b_path))
-
     if not factored:
         raise SystemExit(f"[merge] factored Thinker set is empty/missing: {factored_path}\n"
                          f"        run sft_trajectory_splitter.py first.")
 
+    # Supplementary Thinker rows (Branch B clarification + adversarial refusals) are pooled
+    # and interleaved into the factored A/C set so the Thinker doesn't learn to always act.
+    supplementary: list[dict] = []
+    for sp in supplementary_paths:
+        rows = _load(Path(sp))
+        if rows:
+            print(f"  [merge] loaded {len(rows)} rows from {Path(sp).name}")
+        supplementary.extend(rows)
+
     if restamp:
         factored = [_restamp(r) for r in factored]
-        branch_b = [_restamp(r) for r in branch_b]
+        supplementary = [_restamp(r) for r in supplementary]
 
-    if not branch_b:
-        print(f"  [merge] WARNING: Branch B file is missing/empty ({branch_b_path}).")
-        print( "          Writing the factored A/C set through unchanged — the Thinker will")
-        print( "          have NO <ask> examples and will learn to always delegate. Re-run this")
-        print( "          merge once Branch B is generated (pending supervisor sign-off).")
+    if not supplementary:
+        print( "  [merge] WARNING: no supplementary (Branch B / adversarial) rows found.")
+        print( "          Writing the factored A/C set through unchanged — the Thinker will have")
+        print( "          NO <ask> / refusal examples. Re-run once those are generated.")
         merged = factored
         used_ratio = None
     else:
-        random.Random(seed).shuffle(branch_b)   # variety in placement, deterministic
-        used_ratio = ratio if ratio > 0 else max(1, len(factored) // len(branch_b))
-        merged = interleave(factored, branch_b, used_ratio)
+        random.Random(seed).shuffle(supplementary)   # variety in placement, deterministic
+        used_ratio = ratio if ratio > 0 else max(1, len(factored) // len(supplementary))
+        merged = interleave(factored, supplementary, used_ratio)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w", encoding="utf-8") as f:
@@ -109,30 +115,32 @@ def run(factored_path: str, branch_b_path: str, output: str,
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     print("\n=== Curriculum merge summary ===")
-    print(f"  factored A/C rows : {len(factored)}")
-    print(f"  branch B rows     : {len(branch_b)}  {_branch_dist(branch_b) if branch_b else ''}")
+    print(f"  factored A/C rows  : {len(factored)}")
+    print(f"  supplementary rows : {len(supplementary)}  {_branch_dist(supplementary) if supplementary else ''}")
     if used_ratio:
-        print(f"  interleave ratio  : 1 Branch B per {used_ratio} factored"
+        print(f"  interleave ratio   : 1 supplementary per {used_ratio} factored"
               f"{' (auto)' if ratio == 0 else ''}")
     else:
-        print( "  interleave ratio  : n/a (no Branch B)")
-    print(f"  merged total      : {len(merged)}")
-    print(f"  restamp prompt    : {'on' if restamp else 'off'}")
+        print( "  interleave ratio   : n/a (no supplementary rows)")
+    print(f"  merged total       : {len(merged)}")
+    print(f"  restamp prompt     : {'on' if restamp else 'off'}")
     print(f"\n  wrote {output}")
     print("\nNext: train the Thinker on the merged curriculum:")
     print(f"  python 2_model_trainer.py --mode sft --dataset {output} --output_name checkpoint_thinker")
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Interleave Branch B clarification rows into the factored Thinker set.")
+    p = argparse.ArgumentParser(description="Interleave Branch B + adversarial rows into the factored Thinker set.")
     p.add_argument("--factored", default="data/train_sft_thinker.jsonl")
     p.add_argument("--branch_b", default="data/train_sft_thinker_branch_b.jsonl")
+    p.add_argument("--adversarial", default="data/train_sft_thinker_adversarial.jsonl",
+                   help="Adversarial/security refusal rows to interleave (skipped if missing).")
     p.add_argument("--output", default="data/train_sft_thinker_curriculum.jsonl")
-    p.add_argument("--ratio", type=int, default=0, help="Factored rows per 1 Branch B row (0 = auto: len(factored)//len(branch_b)).")
+    p.add_argument("--ratio", type=int, default=0, help="Factored rows per 1 supplementary row (0 = auto).")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--no_restamp", action="store_true", help="Keep each row's own system prompt instead of THINKER_STUDENT_PROMPT.")
     args = p.parse_args()
-    run(args.factored, args.branch_b, args.output,
+    run(args.factored, [args.branch_b, args.adversarial], args.output,
         ratio=args.ratio, seed=args.seed, restamp=not args.no_restamp)
 
 

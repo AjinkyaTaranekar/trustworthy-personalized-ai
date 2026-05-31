@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 from pathlib import Path
 
@@ -45,8 +46,9 @@ from sft_dataset_assembler import (
     _unwrap_tool_result,
     _xml_tool_to_native,
 )
-# Role prompts — single source of truth shared with the served models.
-from sft_v3_generator import THINKER_STUDENT_PROMPT, EXECUTOR_STUDENT_PROMPT
+# Role prompts + the shared user-memory context block — single source of truth shared with
+# the served models and the Branch B generator (so A/C and B present memory identically).
+from sft_v3_generator import THINKER_STUDENT_PROMPT, EXECUTOR_STUDENT_PROMPT, prepend_memory
 
 # --- Tool ownership (experiment §4.1) -------------------------------------------------
 EXECUTOR_OWNED = {"python_execute", "web_search", "read_url"}   # delegated via <act>
@@ -158,16 +160,20 @@ def _cap(result: str) -> str:
 
 
 # --- Thinker view (§7.2) ---------------------------------------------------------------
-def factor_thinker(messages: list[dict]) -> dict | None:
+def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | None:
     """Project one source trajectory onto the Thinker target: prose only — a <think> block
     followed by <act> (Executor-owned step) or the final <answer>. Thinker-owned tool turns
-    are dropped (their <think> is carried forward). Returns a row dict, or None if it fails
-    the gate (must end in <answer>; opening <think> >= MIN_THINK_CHARS)."""
+    are dropped (their <think> is carried forward). The user_memory_read result is preserved
+    as a context block prepended to the user turn — the same representation Branch B and the
+    inference orchestrator use — so the Thinker learns to GROUND personalisation in injected
+    memory rather than appear to hallucinate user facts. Returns a row dict, or None if it
+    fails the gate (must end in <answer>; opening <think> >= MIN_THINK_CHARS)."""
     out: list[dict] = [{"role": "system", "content": THINKER_STUDENT_PROMPT}]
     carry: list[str] = []
     opening_think_len: int | None = None
     emitted_act = False
     ended_answer = False
+    memory_text: str | None = None
 
     i, n = 0, len(messages)
     while i < n:
@@ -219,7 +225,11 @@ def factor_thinker(messages: list[dict]) -> dict | None:
             ended_answer = True
         else:
             # Thinker-owned call (user_memory_*/scratchpad_*/get_datetime) or bare think: drop
-            # the turn, keep its reasoning for the next emitted Thinker turn.
+            # the turn, keep its reasoning for the next emitted Thinker turn. Capture the
+            # user_memory_read profile (if real) so it can be re-attached as a context block.
+            if (call is not None and call[0] == "user_memory_read" and result
+                    and "not available" not in result.lower()):
+                memory_text = result
             if think:
                 carry.append(think)
         i += 1
@@ -237,6 +247,17 @@ def factor_thinker(messages: list[dict]) -> dict | None:
            for m in out):
         return None
 
+    # 50/50 memory regime (caller decides per row): always prepend a [USER MEMORY] block to the
+    # first user turn — the populated profile when keep_memory and one was read, otherwise the
+    # explicit empty '(no profile stored)' block. The orchestrator always injects the slot at
+    # inference, so an empty read is shown as an empty block (teaching the Thinker to cope when
+    # no profile is available), never as a missing block.
+    has_memory = bool(keep_memory and memory_text)
+    for msg in out:
+        if msg["role"] == "user":
+            msg["content"] = prepend_memory(msg["content"], memory_text if has_memory else "")
+            break
+
     return {
         "messages": out,
         "metadata": {
@@ -244,6 +265,7 @@ def factor_thinker(messages: list[dict]) -> dict | None:
             "pipeline": "thinker_executor",
             "source": "trajectory_factoring",
             "has_act": emitted_act,
+            "has_memory": has_memory,
             # No native_tools: the Thinker never emits tool-call syntax.
         },
     }
@@ -323,7 +345,8 @@ def _load(path: Path, limit: int | None) -> list[dict]:
 
 
 def run(part_a: str, part_b: str, out_thinker: str, out_executor: str,
-        limit: int | None = None, inspect: int = 0, dedup_executor: bool = True) -> None:
+        limit: int | None = None, inspect: int = 0, dedup_executor: bool = True,
+        memory_ratio: float = 0.5, seed: int = 42) -> None:
     sources: list[dict] = []
     for p in (part_a, part_b):
         path = Path(p)
@@ -339,12 +362,16 @@ def run(part_a: str, part_b: str, out_thinker: str, out_executor: str,
     n_thinker_dropped = 0
     seen_exec: set[tuple[str, str]] = set()
     tool_counts: dict[str, int] = {}
+    rng = random.Random(seed)   # deterministic 50/50 memory split
 
     for ex in sources:
         msgs = ex.get("messages", [])
         q_id = (ex.get("metadata") or {}).get("question_id")
 
-        t = factor_thinker(msgs)
+        # Per-row coin flip: keep the read profile as memory context (memory_ratio) or strip
+        # it (cold-start) — so the Thinker learns BOTH regimes (§4.2 / memory-aware decision).
+        keep_memory = rng.random() < memory_ratio
+        t = factor_thinker(msgs, keep_memory=keep_memory)
         if t is None:
             n_thinker_dropped += 1
         else:
@@ -363,6 +390,9 @@ def run(part_a: str, part_b: str, out_thinker: str, out_executor: str,
     print(f"  thinker rows kept   : {len(thinker_rows)}  (dropped {n_thinker_dropped} — no <answer> or short opening <think>)")
     n_act = sum(1 for r in thinker_rows if r['metadata']['has_act'])
     print(f"    with >=1 <act>    : {n_act}   no-tool (reason->answer): {len(thinker_rows) - n_act}")
+    n_mem = sum(1 for r in thinker_rows if r['metadata'].get('has_memory'))
+    pct = (100 * n_mem / len(thinker_rows)) if thinker_rows else 0
+    print(f"    with user memory  : {n_mem} ({pct:.0f}%)   cold-start (no memory): {len(thinker_rows) - n_mem}")
     print(f"  executor pairs      : {len(executor_rows)}  (dedup={'on' if dedup_executor else 'off'})")
     for tool, c in sorted(tool_counts.items(), key=lambda kv: -kv[1]):
         print(f"      {tool:16s} {c}")
@@ -410,9 +440,14 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=None, help="Cap trajectories read per source (quick runs).")
     p.add_argument("--inspect", type=int, default=0, help="Print N factored rows of each view and exit (no write).")
     p.add_argument("--no_dedup_executor", action="store_true", help="Keep duplicate Executor instruction->call pairs.")
+    p.add_argument("--memory_ratio", type=float, default=0.5,
+                   help="Fraction of Thinker rows that keep the user-memory context block; the rest are "
+                        "cold-start (no memory). Default 0.5 so the Thinker learns both regimes.")
+    p.add_argument("--seed", type=int, default=42, help="Seed for the deterministic memory split.")
     args = p.parse_args()
     run(args.part_a, args.part_b, args.out_thinker, args.out_executor,
-        limit=args.limit, inspect=args.inspect, dedup_executor=not args.no_dedup_executor)
+        limit=args.limit, inspect=args.inspect, dedup_executor=not args.no_dedup_executor,
+        memory_ratio=args.memory_ratio, seed=args.seed)
 
 
 if __name__ == "__main__":
