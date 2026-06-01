@@ -82,6 +82,67 @@ python sft_trajectory_splitter.py               # → train_sft_thinker.jsonl + 
 python sft_curriculum_merge.py   # → data/train_sft_thinker_curriculum.jsonl
 ```
 
+## Training Runbook — vast.ai (Thinker + Executor)
+
+**Decision (2026-05-31): the factored final-answer turns are kept _as-is_ (option 1, faithful to v3).** The source v3 ReAct format emits the final `<answer>` directly after the last tool result with **no fresh `<think>`** (Part A: 1,426/1,438 multi-turn trajectories; Part B: 800/800), and the splitter carries that through, so 1,371 of the 2,220 factored Thinker rows have a think-less final answer. We accept this rather than synthesising a closing `<think>`: the Thinker still reasons before every _act_, and only the post-tool delivery turn is think-less. The consequence is an asymmetry inside the merged set — Branch B turn-2 resolutions (which follow a _user_ reply) always carry `<think>`, while factored final answers (which follow a _tool_ result) do not; the Thinker is expected to learn "re-think when the human adds information, deliver directly when a tool returns a computed result." Revisit (option 2 = synthesise a closing think) only if the trained Thinker drops reasoning on resolution turns.
+
+Both SFT runs are a single LoRA fine-tune of `unsloth/Qwen3-0.6B` and fit on one 24 GB GPU (RTX 4090 / A5000 / A6000; 16 GB also works). Rent a vast.ai box on a PyTorch 2.x + CUDA 12.x image, then clone, install, and (re)build the trainer inputs (CPU-only — no GPU or teacher API):
+
+```bash
+git clone https://github.com/AjinkyaTaranekar/trustworthy-personalized-ai.git
+cd trustworthy-personalized-ai/pipeline && git checkout feat/thinker-executor-sft
+pip install -r requirements.txt
+export HF_TOKEN=hf_...                     # unsloth model pull + checkpoint upload
+
+# Source v3 + Branch B data are committed; the executor set is committed too.
+# Rebuild the Thinker curriculum set (deterministic by --seed) on the box:
+python sft_curriculum_merge.py             # → data/train_sft_thinker_curriculum.jsonl
+```
+
+Train each model **straight through with `--no_curriculum`** — the Thinker set is _already_ curriculum-ordered by `sft_curriculum_merge.py`, and the Executor set is single-action pairs, so the trainer's built-in 3-stage format/complexity split would only re-order them and break that ordering:
+
+```bash
+# Executor — one <act> instruction → one native <tool_call> (2,243 pairs)
+python 2_model_trainer.py --mode sft --no_curriculum \
+    --dataset data/train_sft_executor.jsonl --output_name checkpoint_executor
+
+# Thinker — prose <think> + exactly one <ask>/<act>/<answer> (2,720 rows)
+python 2_model_trainer.py --mode sft --no_curriculum \
+    --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
+```
+
+By default each run publishes the LoRA adapter + GGUF to `AjinkyaTaranekar/<output_name>` on the Hub and computes ROUGE — on a rented box this is how the checkpoint survives instance teardown, so keep it on (or pass `--no_publish` and `scp` the `models/` directory out before destroying the box). Pull both adapters back locally for the one-GPU benchmark workflow. Re-running is safe: `--skip_if_exists` short-circuits a finished checkpoint and `--resume` continues an interrupted one.
+
+### Inference orchestration (`thinker_executor_orchestrator.py`)
+
+**Implemented 2026-06-01.** The two-model inference loop the dual-SFT set was built for. It loads ONE `unsloth/Qwen3-0.6B` base and attaches **both LoRA adapters via PEFT multi-adapter** (`PeftModel.from_pretrained(base, thinker, adapter_name="thinker")` + `load_adapter(executor, "executor")`, switched per step with `set_adapter`) — not two model instances, so the base loads once and there is no unsloth multi-load conflict; `--load_in_4bit` shrinks it further. The served prompts (`THINKER_STUDENT_PROMPT`, `EXECUTOR_STUDENT_PROMPT`), the `[USER MEMORY]` block (`prepend_memory`), and the `ToolRegistry` are **imported from the same modules the training data was stamped with**, so inference is byte-identical to training.
+
+The loop per user turn: the **Thinker** generates `<think>` + one of `<ask>`/`<act>`/`<answer>` (system prompt only, no tools block, `temperature` sampling). `<answer>` → return; `<ask>` → surface to the user and await a reply (resolved on the next call via `history`); `<act>` → the plain instruction becomes the **Executor's** user message (with the 4-tool schema, **greedy** — it is a deterministic one-call transducer), the Executor's `<tool_call>` is parsed (same `</tool_call>`-tag + `strict=False` parser as the splitter / `3_infererence.py`) and run through `ToolRegistry.call(..., check_profile=False)`, and the result is appended as a **`tool` turn** in the Thinker context (matching the role the factored Thinker rows trained on). Loops to `--max_steps` (default 6), then forces a final `<answer>`. Memory is the Thinker's alone — the orchestrator injects the 5W+H profile (`--memory_file`, or per-request `memory_text`); an empty profile is the explicit cold-start block, exactly as in training. A malformed Executor call is fed back as a recoverable error rather than crashing the turn.
+
+Four entry points; the loop is **injectable-generator** so the control flow is validated on CPU with a scripted fake model (no GPU needed):
+
+```bash
+python thinker_executor_orchestrator.py --self_test          # CPU: act→python_execute(391)→answer, ask path, memory block, error recovery — all pass
+python thinker_executor_orchestrator.py --question "What is 17 times 23?"   # one-shot
+python thinker_executor_orchestrator.py --chat               # interactive REPL (handles <ask>)
+python thinker_executor_orchestrator.py --serve --port 8000  # FastAPI /v1/chat/completions for 4_benchmark.py
+```
+
+`--serve` matches the `4_benchmark.py` contract: it accepts the `messages`/`session_id`/`temperature` body, ignores `system_override` (the Thinker has a fixed served prompt), and returns `response` + `think_content`/`answer_content`/`tool_trace`/`conversation`, so the existing E0–E5 benchmark runs against the pair unchanged. **However the standalone `--serve` has no harness engineering** — only length-truncation of tool output, no injection sanitiser, no metrics, no durable records. Use it for a *bare two-model* sanity server, not for thesis-grade benchmarking.
+
+### Harness engineering — hosted inside `3_infererence.py` (`--thinker/--executor`)
+
+**Implemented 2026-06-01.** The constitutional harness *is* the dissertation's contribution (a sub-1B constitutional harness), so for the dual-vs-single comparison to be valid **both arms must run the byte-identical harness**. Rather than duplicate the harness/sanitiser/metrics stack into the standalone file, the Thinker–Executor loop is **hosted inside the single inference server**: `python 3_infererence.py --thinker models/checkpoint_thinker --executor models/checkpoint_executor`. The single-model handler is a three-stage pipeline — module pre-hooks → generation/tool loop → answer-level post-processing — and the dual model differs **only in the middle stage**. So in dual mode the server swaps stage 2 for `ThinkerExecutor.run()` (the same tested loop, reused via its injectable `Generator`) and stages 1 and 3 are unchanged. The pair therefore inherits, for free and identically to the single model:
+
+- **Injection sanitiser** — the loop's tool-output sanitiser is wired to the server's `_sanitise_tool_output` (`[FILTERED]` stripping + per-tool token budgets), so the Thinker sees the same filtered tool output the single model enforces.
+- **Constitutional harness** — `_HARNESS.check_and_steer(response=final, …)` validates and steers the Thinker's final `<answer>`; retries regenerate on the Thinker adapter.
+- **Dependency monitor**, **self-critique judge**, **`METRICS`** (latency/tokens/tools), and the `/harness/metrics`, `/metrics`, `/v1/model/swap` endpoints.
+- **Loading**: ONE base + both LoRA adapters via PEFT (the orchestrator's `HFGenerator`); the `PeftModel`/tokenizer are exposed as the server globals so the shared `_generate()` (harness retries, self-critique) works, with the active adapter pinned to the Thinker for answer regeneration.
+
+The GraphRAG/empathy *system-prompt* injections are skipped in dual mode (the Thinker keeps its fixed served prompt for train/inference byte-identity); memory arrives via the `[USER MEMORY]` block (`CompletionRequest.memory_text`, cold-start when empty). `/health` reports `mode: dual`, `architecture: thinker_executor`.
+
+**Durable run records (both modes).** Every `/v1/chat/completions` appends one JSON line to `reports/inference_runs.jsonl` — timestamp, mode (`single`/`dual`/`gguf`), model, session, tool_profile, question, final answer, `<think>` analysis, the full `tool_trace`, harness violations/retries, self-critique outcome, dependency disclosure, and latency/token metrics. This is a self-contained audit trail for the reporting layer, independent of the benchmark CSVs. The dual-mode `tool_trace` was enriched to mirror the single-model schema (`output_full`/`output_model`/`success`/`gen_ms`/`tool_ms`/`think_before_call`) so analysis sees uniform records across experiments.
+
 ## Curriculum Learning
 
 `2_model_trainer.py` gains a `--curriculum_stage {1,2,3}` flag: Stage 1 uses short, no-tool examples to establish `<think>...</think><answer>...</answer>` syntax; Stage 2 uses all examples to introduce multi-tool reasoning trajectories; Stage 3 uses all examples plus 20% Stage-1 replay to prevent anti-drift loss of basic instruction-following. Pass each stage's output checkpoint as `--from_checkpoint` for the next stage.

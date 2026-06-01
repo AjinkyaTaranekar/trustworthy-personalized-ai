@@ -68,8 +68,9 @@ Required variables:
 
 ```bash
 cd /workspace/trustworthy-personalized-ai
+git fetch origin
+git checkout feat/thinker-executor-sft
 git pull
-git checkout feat/sft-grpo-experiments
 cd pipeline
 ```
 
@@ -358,18 +359,59 @@ python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 # Load SFT checkpoint
 python 3_infererence.py --model_dir models/checkpoint_sft --port 8000
 
+# Thinker–Executor dual-adapter experiment (exp 3) — ONE base + BOTH LoRA adapters,
+# hosted inside the SAME server so the pair inherits the full constitutional harness,
+# injection sanitiser, dependency monitor, self-critique, metrics, and run records.
+# This is the production/benchmark path (the standalone thinker_executor_orchestrator.py
+# --serve has NO harness — use it only for a bare CPU sanity server).
+python 3_infererence.py \
+    --thinker models/checkpoint_thinker \
+    --executor models/checkpoint_executor \
+    --port 8000
+# /health then reports  "mode": "dual",  "architecture": "thinker_executor".
+# Benchmark it exactly like any single model (apples-to-apples, harness on both arms):
+#   python 4_benchmark.py --probe_only --model_label thinker_executor --no_judge --output_dir reports
+# Optional: --max_steps N caps the Thinker↔Executor cycles per turn (default 6).
+
+# ── Smoke-test the dual model BEFORE the full benchmark ──────────────────────
+# The PEFT two-adapter load + set_adapter switching only runs on a real GPU (the
+# offline --self_test exercises control flow with a fake model). Run one query first:
+
+# 1. Confirm dual mode loaded
+curl -s http://localhost:8000/health         # expect "mode":"dual","architecture":"thinker_executor"
+
+# 2. Sample query — a maths question forces the act → Executor <tool_call> → tool path
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"messages":[{"role":"user","content":"What is 17 times 23?"}]}' \
+    | python -m json.tool
+# Healthy response has: "type":"answer", a non-empty "tool_trace" with
+# tool":"python_execute", "think_content", and "answer_content" containing 391.
+# The same request is also appended to reports/inference_runs.jsonl.
+
+# 2b. With a [USER MEMORY] profile (dual mode injects it on the user turn):
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"messages":[{"role":"user","content":"Plan my morning workout."}],
+         "memory_text":"WHO: prefers short sessions. WHAT: training for a 5k. HOW: low-impact only (knee injury)."}' \
+    | python -m json.tool
+
 # Health check
 curl http://localhost:8000/health
 
 # View server metrics (latency, tool call counts)
 curl http://localhost:8000/metrics
+
+# Inspect the last durable run record (reporting/audit trail; both single + dual mode)
+tail -n 1 reports/inference_runs.jsonl | python -m json.tool
 ```
 
 The inference server:
-- Imports student prompts from `sft_v3_generator.py` (canonical source — always in sync)
-- Runs the constitutional harness (P1–P21 checks + steering on violation)
+- Imports student prompts from `sft_v3_generator.py` (canonical source — always in sync). In dual mode the Thinker also imports `THINKER_STUDENT_PROMPT` / `EXECUTOR_STUDENT_PROMPT` from there, so inference is byte-identical to training.
+- Runs the constitutional harness (P1–P21 checks + steering on violation) — applied identically to the single model and the Thinker–Executor pair.
 - Executes tools server-side: `python_execute`, `web_search`, `scratchpad`, `user_memory`
 - Auto-injects 5W+H state and task status after every tool result
+- **Appends a durable per-request record to `reports/inference_runs.jsonl`** (both single and dual mode): question, final answer, `<think>` analysis, full `tool_trace`, harness violations/retries, self-critique, dependency disclosure, and latency/token metrics — a self-contained audit trail for the dissertation's reporting, independent of the benchmark CSVs.
 
 ---
 
@@ -456,7 +498,8 @@ the assembled file. The per-reason drop counts are printed during assembly.
 | `sft_math_pipeline.py`     | Maths question→gold-response pipeline (Part B)  | data gen   |
 | `sft_dataset_assembler.py` | Assemble + quality-gate + full-native → `train_sft_v3.jsonl` | step 4 |
 | `2_model_trainer.py`       | SFT training (3-stage curriculum default; + GRPO reward fns, unused) | step 5 |
-| `3_infererence.py`         | FastAPI inference server (loads prompts from sft_v3_generator) | step 9 |
+| `3_infererence.py`         | FastAPI inference server (loads prompts from sft_v3_generator). Single-model, OR `--thinker/--executor` for the Thinker–Executor dual-adapter loop with the same harness | step 9 |
+| `thinker_executor_orchestrator.py` | Thinker–Executor (exp 3) two-model loop; hosted inside `3_infererence.py` for serving/benchmark, standalone `--self_test`/`--serve` for a bare no-harness server | step 9 |
 | `4_benchmark.py`           | Constitutional benchmark — 22 probe groups     | step 6     |
 | `compare_runs.py`          | Offline comparison: two JSON files → CSV table | step 6C    |
 | `scratchpad.py`            | Session working memory (5wh_state, tasks, notes)| all       |
@@ -482,3 +525,4 @@ the assembled file. The per-reason drop counts are printed during assembly.
 | `reports/constitution_probe_<ts>.csv`       | `4_benchmark.py`      | dissertation tables        |
 | `reports/comparison_<a>_vs_<b>.csv`         | `compare_runs.py`     | dissertation results table |
 | `reports/training/*/loss_history_<ts>.json` | `2_model_trainer.py`  | git / loss analysis        |
+| `reports/inference_runs.jsonl`              | `3_infererence.py` (every request) | reporting / audit trail (single + dual) |

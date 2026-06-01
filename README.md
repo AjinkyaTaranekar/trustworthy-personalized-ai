@@ -173,7 +173,8 @@ pipeline/
 ├── 2_model_trainer.py              Phase 1: SFT  |  Phase 2: GRPO (DAPO improvements)  |  Publish: upload checkpoint to HuggingFace
 │
 │   ─── Inference + evaluation ───
-├── 3_infererence.py                FastAPI server — model + all four module hooks
+├── 3_infererence.py                FastAPI server — model + all four module hooks. Single-model OR (with --thinker/--executor) the Thinker–Executor dual-adapter loop, so both experiments share one harness, sanitiser, metrics, and run-record log (reports/inference_runs.jsonl)
+├── thinker_executor_orchestrator.py  Thinker–Executor (exp 3): the two-model loop itself — Thinker <act> → Executor <tool_call> → tool → back; one base + two LoRA adapters (PEFT). Hosted inside 3_infererence.py for production/benchmark; standalone --self_test / --question / --chat / --serve for a bare server with no harness
 ├── 4_benchmark.py                  Constitutional probes + adversarial suite
 ├── 5_context_degradation.py        Context-length degradation study (greedy decoding)
 ├── experiment0_reasoning_comparison.py  Experiment 0 — CoT/ToT/interleaved/baseline
@@ -341,9 +342,19 @@ python sft_trajectory_splitter.py                  # factor both parts → both 
 # the factored A/C set through with a warning. Re-run once Branch B is generated.
 python sft_curriculum_merge.py                     # → data/train_sft_thinker_curriculum.jsonl
 
-# Then train two checkpoints (no trainer changes needed):
-#   python 2_model_trainer.py --mode sft --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
-#   python 2_model_trainer.py --mode sft --dataset data/train_sft_executor.jsonl           --output_name checkpoint_executor
+# Then train two checkpoints (no trainer changes needed; --no_curriculum — both sets are
+# already ordered / single-action, so the trainer's 3-stage split would only re-order them):
+#   python 2_model_trainer.py --mode sft --no_curriculum --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
+#   python 2_model_trainer.py --mode sft --no_curriculum --dataset data/train_sft_executor.jsonl           --output_name checkpoint_executor
+# Serve the pair (one base + both LoRA adapters) THROUGH the main inference server so the dual
+# model inherits the full constitutional harness, injection sanitiser, dependency monitor,
+# self-critique, metrics, and per-request run records — identical post-processing to the single
+# model, so the dual-vs-single benchmark is apples-to-apples:
+#   python thinker_executor_orchestrator.py --self_test                       # CPU loop sanity check, no GPU
+#   python 3_infererence.py --thinker models/checkpoint_thinker --executor models/checkpoint_executor --port 8000
+#   python 4_benchmark.py --server_url http://localhost:8000
+# (Records land in reports/inference_runs.jsonl; harness stats at /harness/metrics. The standalone
+#  thinker_executor_orchestrator.py --serve still exists for a bare two-model server with no harness.)
 
 python sft_dataset_assembler.py        # part_a/part_b default to the *_v3.jsonl files
 # Quality-gates (think≥150, no teacher leak, no banned phrases), converts to full-native,
