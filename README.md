@@ -179,13 +179,18 @@ pipeline/
 ├── 5_context_degradation.py        Context-length degradation study (greedy decoding)
 ├── experiment0_reasoning_comparison.py  Experiment 0 — CoT/ToT/interleaved/baseline
 │
+│   ─── Analysis / dissertation export ───
+├── principle_families.py           Canonical probe→family + framing map (single source for stratification)
+├── export_assets.py                reports/ → LaTeX tables + PDF figures + significance (reports/dissertation_assets/)
+├── analysis.ipynb                  Interactive Plotly analysis dashboard
+│
 │   ─── Runtime modules (loaded by 3_infererence.py via feature flags) ───
 ├── user_modelling.py               FalkorDB 5W+H graph + Mem0g write + scrutability
 ├── empathy.py                      Appraisal-conditioned generation helpers
 ├── ontology_verifier.py            Post-hoc SPARQL claim scorer (Experiment 6 Approach B)
 │
 │   ─── Reference ───
-├── constitution.md                 19 constitutional principles
+├── constitution.md                 Constitution (defines P1–P25; the probe suite scores 21 items — P1–P21 with P2+P3 merged, plus H2_memory_persistence)
 ├── .env.example                    Copy to .env and add API keys
 ├── data/                           Datasets + appraisal_labels.jsonl (git-ignored)
 ├── models/                         Checkpoints (git-ignored)
@@ -575,6 +580,36 @@ python pipeline/3_infererence.py --model_dir models/checkpoint_sft
 python pipeline/4_benchmark.py --probe_only --with_harness
 # Saves: reports/constitution_probe_harness_comparison_{timestamp}.json
 ```
+
+### Exporting dissertation assets (tables, figures, stats)
+
+`analysis.ipynb` produces interactive Plotly charts only. To generate the **static LaTeX tables, PDF figures, and significance statistics** the dissertation `\input`s, run:
+
+```bash
+python pipeline/export_assets.py
+# Auto-selects the vanilla-vs-SFT probe pair BY model_label and writes into
+# reports/dissertation_assets/:
+#   tab_*.tex      \input-able tabulars (per-principle, per-family, think-collapse,
+#                  adversarial, category, runs)
+#   fig_*.pdf      \includegraphics figures (think-collapse, per-family)
+#   summary.json   all aggregates + significance
+
+# Pin the pair explicitly (recommended once the final runs exist):
+python pipeline/export_assets.py \
+    --vanilla reports/constitution_probe_vanilla_<ts>.json \
+    --sft     reports/constitution_probe_<ts>.json
+```
+
+What it computes (no third-party stats dependency):
+
+- per-principle vanilla→SFT deltas + Cohen's *h*; per-**family** scores and the C3AI positive/negative **framing split** (family map: `pipeline/principle_families.py`)
+- the `<think>`-trace collapse (mean chars, % empty), adversarial-by-attack-type, category coverage, and a run summary
+- exact two-sided **McNemar** p (paired by principle × question), **Wilson** 95% CIs
+
+Notes:
+
+- It selects the pair by `run_metadata.model_label` and **warns** if the chosen "SFT" run is actually a base-model re-run, or if vanilla and SFT used a different number of questions per principle (they must match for a clean 66-probe comparison).
+- `4_benchmark.py` now writes `run_metadata` (incl. `model_label`) into the adversarial, category, and drift reports too, so every report is model-attributable (older reports without it are paired by timestamp batch).
 
 ---
 
