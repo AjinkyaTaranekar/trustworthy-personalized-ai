@@ -910,22 +910,34 @@ def messages_to_text(example, tokenizer):
 # ---------------------------------------------------------------------------
 
 class CollapseMonitorCallback(TrainerCallback):
-    """Generate on a few held-out prompts at each eval and report think-empty rate +
-    mean tool-call count.
+    """Generate on a few held-out prompts at each eval, PRINT the sample generations, and
+    report think-empty rate + mean tool-call count.
 
     This surfaces the think-collapse failure mode (reasoning displaced by tool-calls)
-    *during* training instead of only after a full multi-hour run + benchmark. Fully
-    guarded — any generation error is swallowed so it can never abort training.
+    *during* training instead of only after a full multi-hour run + benchmark, and lets you
+    eyeball what the model actually produces at each eval. Generation matches inference
+    (greedy, enable_thinking=True, native tools rendered). Fully guarded — any generation
+    error is swallowed so it can never abort training. Samples are also appended to
+    reports/training/<run>/eval_samples.jsonl for later inspection.
+
+    Env knobs:
+      PIPELINE_EVAL_SHOW_SAMPLES — how many generations to print per eval (default 2; 0 = none)
+      PIPELINE_EVAL_SAMPLE_CHARS — truncation length per printed generation (default 700)
     """
 
-    def __init__(self, tokenizer, eval_raw, n: int = 5, max_new_tokens: int = 512):
+    def __init__(self, tokenizer, eval_raw, n: int = 5, max_new_tokens: int = 512,
+                 samples_path: "Optional[Path]" = None):
         self._tok = tokenizer
         self._max_new = max_new_tokens
-        self._prompts: list[tuple[list, object]] = []
+        self._show = int(os.environ.get("PIPELINE_EVAL_SHOW_SAMPLES", "2"))
+        self._chars = int(os.environ.get("PIPELINE_EVAL_SAMPLE_CHARS", "700"))
+        self._samples_path = samples_path
+        self._prompts: list[tuple[list, object, str]] = []
         for ex in (eval_raw or [])[:n]:
             msgs = [m for m in ex.get("messages", []) if m.get("role") in ("system", "user")]
             if msgs:
-                self._prompts.append((msgs, ex.get("metadata", {}).get("native_tools")))
+                question = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
+                self._prompts.append((msgs, ex.get("metadata", {}).get("native_tools"), question))
 
     def on_evaluate(self, args, state, control, **kwargs):  # noqa: D401
         model = kwargs.get("model")
@@ -934,7 +946,9 @@ class CollapseMonitorCallback(TrainerCallback):
         try:
             import torch as _torch
             empties = total_calls = n = 0
-            for msgs, native_tools in self._prompts:
+            printed = 0
+            records = []
+            for msgs, native_tools, question in self._prompts:
                 text = self._tok.apply_chat_template(
                     msgs, tokenize=False, add_generation_prompt=True,
                     tools=native_tools, enable_thinking=True,
@@ -949,6 +963,15 @@ class CollapseMonitorCallback(TrainerCallback):
                     empties += 1
                 total_calls += len(re.findall(r"<tool_call>|<tool>", gen))
                 n += 1
+                records.append({"step": state.global_step, "question": question, "generation": gen})
+                # Print the first few generations so you can SEE the model at each eval.
+                if printed < self._show:
+                    printed += 1
+                    snippet = gen if len(gen) <= self._chars else gen[:self._chars] + " …[truncated]"
+                    print(f"\n  ┌─ [eval-sample {printed}] step={state.global_step}", flush=True)
+                    print(f"  │ Q: {question[:200]}", flush=True)
+                    print(f"  │ A: {snippet}".replace("\n", "\n  │    "), flush=True)
+                    print("  └─", flush=True)
             if n:
                 print(
                     f"  [collapse-monitor] step={state.global_step} "
@@ -956,8 +979,38 @@ class CollapseMonitorCallback(TrainerCallback):
                     f"mean_tool_calls={total_calls / n:.2f}",
                     flush=True,
                 )
+            # Persist all sampled generations for later inspection.
+            if self._samples_path is not None and records:
+                try:
+                    self._samples_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(self._samples_path, "a", encoding="utf-8") as f:
+                        for r in records:
+                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
         except Exception as e:  # never break training over a monitoring read
             print(f"  [collapse-monitor] skipped ({type(e).__name__}: {e})", flush=True)
+
+
+class LogStreamCallback(TrainerCallback):
+    """Append every trainer log record (loss, lr, eval_loss, …) to a JSONL the moment it is
+    produced, so metrics persist LIVE — a crash/disconnect on a remote GPU loses nothing instead
+    of losing the whole log (which was previously dumped only after training finished). Fully
+    guarded; a write failure never breaks training."""
+
+    def __init__(self, path: Path):
+        self._path = path
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs:
+            return
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            rec = {"step": state.global_step, "epoch": state.epoch, **logs}
+            with open(self._path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, default=str) + "\n")
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1114,7 +1167,13 @@ class ModelTrainer:
         )
 
         # Surface the think-collapse failure mode during training (not just after).
-        trainer.add_callback(CollapseMonitorCallback(self.tokenizer, self._eval_raw))
+        _live_dir = self.output_dir.parent / "reports" / "training" / output_name
+        _samples_path = _live_dir / "eval_samples.jsonl"
+        trainer.add_callback(CollapseMonitorCallback(
+            self.tokenizer, self._eval_raw, samples_path=_samples_path))
+        # Stream loss/metrics to disk as they happen (live persistence for long remote runs).
+        trainer.add_callback(LogStreamCallback(_live_dir / "loss_live.jsonl"))
+        print(f"  Live logs     : {_live_dir / 'loss_live.jsonl'}  (+ eval_samples.jsonl)")
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 

@@ -978,6 +978,46 @@ CONSTITUTIONAL_PROBE_GROUPS: List[Dict[str, Any]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Live, incremental result persistence
+#
+# Long benchmark runs on a remote GPU should not lose everything to a disconnect or crash.
+# Each suite streams its per-item results to reports/live/<suite>_<model>_<ts>.jsonl as they
+# complete, independent of the final aggregated JSON/CSV (which is still written at the end).
+# ---------------------------------------------------------------------------
+_LIVE_DIR: Path = Path("reports") / "live"
+_LIVE_PATH: Optional[Path] = None
+
+
+def _live_init(suite: str, server_url: str) -> None:
+    """Open a fresh live JSONL for this suite run (model label derived from /health)."""
+    global _LIVE_PATH
+    import datetime as _dt
+    try:
+        label = _http(server_url, "/health", "GET", timeout=5).get("model", "model")
+    except Exception:
+        label = "model"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(label))[:40] or "model"
+    ts = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    try:
+        _LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        _LIVE_PATH = _LIVE_DIR / f"{suite}_{safe}_{ts}.jsonl"
+        print(f"  [live] streaming {suite} results → {_LIVE_PATH}")
+    except Exception:
+        _LIVE_PATH = None
+
+
+def _live(record: Dict[str, Any]) -> None:
+    """Append one result record to the live JSONL. Best-effort; never aborts a run."""
+    if _LIVE_PATH is None:
+        return
+    try:
+        with open(_LIVE_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
+
+
 def run_probe_group(
     server_url: str,
     group: Dict[str, Any],
@@ -1110,6 +1150,7 @@ def run_constitution_probes(
     print(f"  CONSTITUTIONAL PROBE SUITE  ({total} principles × {q_per} questions)")
     print(f"{'='*60}")
     print(f"  Server : {server_url}  |  Judge: {'LLM (' + judge_model + ')' if judge_model else 'rule-based only'}")
+    _live_init("probe", server_url)
 
     group_results = []
     all_judge_queue: List[Tuple] = []
@@ -1129,6 +1170,7 @@ def run_constitution_probes(
             status = "PASS" if qr["rule_passed"] else "FAIL"
             print(f"    q{qi} {status}  (rule)  {str(qr['question'])[:60]}")
         group_results.append(result)
+        _live({"suite": "probe", "index": gi, "id": group["id"], "result": result})
 
     # Batch LLM judge
     if judge_model and all_judge_queue:
@@ -1309,6 +1351,7 @@ def run_category_probes(
     print(f"\n{'='*60}")
     print(f"  CATEGORY COVERAGE PROBES  (18 categories × {q_per} questions)")
     print(f"{'='*60}")
+    _live_init("category", server_url)
 
     results = []
     judge_queue: List[Tuple] = []
@@ -1369,7 +1412,9 @@ def run_category_probes(
                 "combined_score": None,
             })
 
-        results.append({"category": cat["category"], "type": cat["type"], "question_results": cat_results})
+        _cat_rec = {"category": cat["category"], "type": cat["type"], "question_results": cat_results}
+        results.append(_cat_rec)
+        _live({"suite": "category", **_cat_rec})
 
     # Batch judge
     if judge_model and judge_queue:
@@ -1804,6 +1849,7 @@ def run_adversarial_probes(
     print("  ADVERSARIAL PROBE SUITE  (Blocker 3 — OWASP LLM01/LLM04)")
     print(f"  {total} probes  |  types: {attack_types or _ATTACK_TYPES}")
     print(f"{'='*60}")
+    _live_init("adversarial", server_url)
 
     results: List[Dict[str, Any]] = []
     by_type: Dict[str, List[float]] = {t: [] for t in _ATTACK_TYPES}
@@ -1842,7 +1888,7 @@ def run_adversarial_probes(
         print(f"  Q: {q_short}...")
         print(f"  → {status}  {probe['description']}")
 
-        results.append({
+        _adv_rec = {
             "id":           probe["id"],
             "attack_type":  probe["attack_type"],
             "description":  probe["description"],
@@ -1854,7 +1900,9 @@ def run_adversarial_probes(
             "answer_content": adv_res.get("answer_content", ""),
             "passed":       passed,
             "score":        score,
-        })
+        }
+        results.append(_adv_rec)
+        _live({"suite": "adversarial", **_adv_rec})
 
     all_scores = [r["score"] for r in results]
     adversarial_score = sum(all_scores) / len(all_scores) if all_scores else 0.0
@@ -2476,6 +2524,9 @@ Examples:
     args = ap.parse_args()
 
     output_dir   = Path(args.output_dir)
+    # Live, incremental results stream under <output_dir>/live so a long remote run survives a crash.
+    global _LIVE_DIR
+    _LIVE_DIR = output_dir / "live"
     timestamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
     baseline_path = Path(args.baseline) if args.baseline else None
     attack_types  = [t.strip() for t in args.attack_types.split(",")] if args.attack_types else None
