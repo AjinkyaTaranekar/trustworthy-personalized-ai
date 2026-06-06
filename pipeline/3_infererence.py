@@ -153,71 +153,20 @@ except ImportError as _ue:
 # Single global registry — session_id is updated per-request in chat_completions
 _TOOL_REGISTRY: ToolRegistry = ToolRegistry()   # stores bound at main() startup
 
-# Tool profiles — which tools are active per session
-_ALWAYS_ON_TOOLS = frozenset({
-    "get_datetime",
-    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
-    "user_memory_sections", "user_memory_read", "user_memory_update",
-})
-
-TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"} | _ALWAYS_ON_TOOLS,
-    "compute_only":       {"python_execute"} | _ALWAYS_ON_TOOLS,
-    "compute_and_search": {"python_execute", "web_search", "read_url"} | _ALWAYS_ON_TOOLS,
-    "no_tools":           set(_ALWAYS_ON_TOOLS),
-}
+# Tool profiles — which tools are active per session. Canonical definitions live in tool_io.py so
+# the served tool set is identical to what restamp_native_tools.py stamps into the training data.
+from tool_io import TOOL_PROFILES, ALWAYS_ON_TOOLS as _ALWAYS_ON_TOOLS   # noqa: E402
 
 
-# Patterns that could hijack the model's instruction context if returned by a tool.
-# Strips XML control tags the model reads, and common injection phrases from web content.
-_INJECTION_RE = re.compile(
-    r"</?tool>|</?think>|</?answer>|CAPABILITY_CHECK|\[/?TOOL_RESULT[^\]]*\]"
-    r"|ignore\s+(all\s+)?previous\s+(instructions?|prompts?|context)"
-    r"|disregard\s+previous|you\s+are\s+now\s+|new\s+instructions?\s*:",
-    re.IGNORECASE,
+# Canonical tool-result presentation (injection stripping + per-tool budgets) lives in tool_io.py
+# so training-data generation and inference use the BYTE-IDENTICAL representation (train/serve
+# parity). _sanitise_tool_output is kept as a thin alias so existing call sites are unchanged.
+from tool_io import (                                                       # noqa: E402
+    sanitise_tool_result as _sanitise_tool_output,
+    INJECTION_RE as _INJECTION_RE,
+    MAX_TOOL_OUTPUT as _MAX_TOOL_OUTPUT,
+    TOOL_OUTPUT_BUDGETS as _TOOL_OUTPUT_BUDGETS,
 )
-
-# 1500 chars ≈ 375 tokens per tool result. With 4096 token context and ~400 token
-# system prompt, 4 tool calls at 375 tokens each = 1500 tokens, leaving ~2200 for
-# reasoning and answer. Previous 3000 char limit left <1000 tokens for reasoning on
-# a busy conversation — a significant bottleneck for the 0.6B model.
-_MAX_TOOL_OUTPUT = 1500
-
-# Per-tool output budgets — tools that return structured multi-result data get
-# tighter limits so each result stays readable rather than one result dominating.
-_TOOL_OUTPUT_BUDGETS: Dict[str, int] = {
-    "web_search":  1200,   # multi-result; truncate aggressively
-    "read_url":    1000,   # raw HTML → text can be very long
-    "python_execute": 800, # stdout only; long output usually means debug noise
-}
-
-
-def _sanitise_tool_output(tool_name: str, raw: str) -> str:
-    """Strip injection patterns and apply per-tool token budgets before context injection.
-
-    For web_search: keeps the first N chars of the *combined* result, preserving
-    result boundaries so the model sees [title] + snippet for each hit rather than
-    one result in full and nothing else.
-    """
-    cleaned = _INJECTION_RE.sub("[FILTERED]", raw)
-    budget = _TOOL_OUTPUT_BUDGETS.get(tool_name, _MAX_TOOL_OUTPUT)
-
-    if tool_name == "web_search" and len(cleaned) > budget:
-        # Split on blank lines (result boundaries) and keep as many full results as fit
-        results = [r.strip() for r in cleaned.split("\n\n") if r.strip()]
-        kept, total = [], 0
-        for r in results:
-            if total + len(r) + 2 > budget:
-                break
-            kept.append(r)
-            total += len(r) + 2
-        cleaned = "\n\n".join(kept) if kept else cleaned[:budget]
-        if len(cleaned) < len(raw):
-            cleaned += " … [truncated]"
-    elif len(cleaned) > budget:
-        cleaned = cleaned[:budget] + " … [truncated]"
-
-    return f"[TOOL_RESULT: {tool_name}]\n{cleaned}\n[/TOOL_RESULT]"
 
 
 def _is_tool_error(raw: str) -> bool:
@@ -699,11 +648,17 @@ def _strip_answer_block(text: str, use_native: bool) -> str:
 
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
               greedy: bool = False,
-              tools: Optional[List[Dict[str, Any]]] = None) -> tuple:
+              tools: Optional[List[Dict[str, Any]]] = None,
+              role: Optional[str] = None) -> tuple:
     """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s).
 
     tools — OpenAI-schema list for native JSON tool calling (tool_mode="native").
     When None the call is identical to the previous XML-only behaviour.
+
+    role — dual Thinker–Executor decoding selector (P0.2). None (single model) keeps the legacy
+    1.3 / 3 anti-repetition defaults unchanged. "executor" decodes CLEAN (no penalties — it copies
+    code/JSON verbatim and anti-repetition forbids its own gold target). "thinker" uses a mild
+    penalty and no n-gram ban so quoted code/numbers in <act> are not corrupted.
     """
     if _USE_GGUF:
         return _generate_gguf(conversation, max_new_tokens, temperature, greedy, tools)
@@ -721,16 +676,25 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
     # </think>, never emits <act>/<answer>, and burns the entire token budget.
     # Tunable per box via env; set PIPELINE_REPETITION_PENALTY=1.0 / PIPELINE_NO_REPEAT_NGRAM=0
     # to disable (e.g. for the deterministic degradation study where you want raw behaviour).
-    _rep_pen = float(os.environ.get("PIPELINE_REPETITION_PENALTY", "1.3"))
-    _no_rep  = int(os.environ.get("PIPELINE_NO_REPEAT_NGRAM", "3"))
-    if _rep_pen and _rep_pen != 1.0:
-        gen_kwargs["repetition_penalty"] = _rep_pen
-    if _no_rep and _no_rep > 0:
-        gen_kwargs["no_repeat_ngram_size"] = _no_rep
-    if greedy:
-        gen_kwargs["do_sample"] = False       # deterministic — required for reproducible context degradation study
+    if role == "executor":
+        # Deterministic transducer — NO anti-repetition (it would forbid the verbatim code/JSON
+        # the Executor must reproduce; a real python_execute target repeats 3-grams by nature).
+        gen_kwargs["do_sample"] = False
     else:
-        gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+        # role == "thinker" → mild penalty, no n-gram ban (it quotes code/numbers in <act>).
+        # role is None (single model) → legacy 1.3 / 3 defaults, unchanged.
+        _default_rep = "1.1" if role == "thinker" else "1.3"
+        _default_ngr = "0"   if role == "thinker" else "3"
+        _rep_pen = float(os.environ.get("PIPELINE_REPETITION_PENALTY", _default_rep))
+        _no_rep  = int(os.environ.get("PIPELINE_NO_REPEAT_NGRAM", _default_ngr))
+        if _rep_pen and _rep_pen != 1.0:
+            gen_kwargs["repetition_penalty"] = _rep_pen
+        if _no_rep and _no_rep > 0:
+            gen_kwargs["no_repeat_ngram_size"] = _no_rep
+        if greedy:
+            gen_kwargs["do_sample"] = False   # deterministic — required for reproducible context degradation study
+        else:
+            gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
     with torch.no_grad():
         out = _MODEL.generate(**gen_kwargs)
     elapsed = time.perf_counter() - t0
@@ -820,9 +784,10 @@ class _ServerGenerator(_TEGenerator if _dual_available else object):
 
     def generate(self, role, conversation, tools, max_new_tokens, temperature, greedy):
         # set_adapter on the PeftModel selects thinker vs executor weights for this step.
-        _MODEL.set_adapter("thinker" if role == "thinker" else "executor")
+        _role = "thinker" if role == "thinker" else "executor"
+        _MODEL.set_adapter(_role)
         text, n_in, n_out, _ = _generate(
-            conversation, max_new_tokens, temperature, greedy, tools=tools,
+            conversation, max_new_tokens, temperature, greedy, tools=tools, role=_role,
         )
         if self._first:
             self.first_input_tokens = n_in

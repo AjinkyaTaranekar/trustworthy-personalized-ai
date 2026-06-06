@@ -165,8 +165,13 @@ pipeline/
 ├── sft_v3_generator.py             SFT step 1b — asymmetric distillation: teacher (full constitution) → student prompt swap, live tool intercept, native <tool_call> output
 ├── sft_math_pipeline.py            SFT step 2  — math/code questions (7 types) + rejection sampling
 ├── sft_dataset_assembler.py        SFT step 3  — merge, quality-gate (think≥150, teacher-leak, banned phrases), full-native conversion, robustness variants → train_sft_v3.jsonl
-├── sft_trajectory_splitter.py      Thinker–Executor (exp 3): pure-transform factoring of the *_v3 parts → train_sft_thinker.jsonl (prose <think>+<ask>/<act>/<answer>) + train_sft_executor.jsonl (one <act> → one <tool_call>)
+├── sft_trajectory_splitter.py      Thinker–Executor (exp 3): pure-transform factoring of the *_v3 parts → train_sft_thinker.jsonl (prose <think>+<ask>/<act>/<answer>) + train_sft_executor.jsonl (one <act> → one <tool_call>). Thinker tool turns are stamped with tool_io.sanitise_tool_result — byte-identical to what the server feeds (train/serve parity)
 ├── sft_curriculum_merge.py         Thinker–Executor (exp 3): interleave Branch B <ask> rows into the factored Thinker set (auto ratio) → train_sft_thinker_curriculum.jsonl
+├── tool_io.py                      Single source of truth for tool-result presentation (injection strip + per-tool budgets + [TOOL_RESULT] wrapper) AND the TOOL_PROFILES tool-set definitions; imported by 3_infererence.py, the orchestrator, the splitter, and the re-stamper so a model is served what it was trained on
+├── restamp_native_tools.py         Pure transform: rewrite metadata.native_tools in any SFT JSONL to the canonical served schema (registry.to_openai_schemas(TOOL_PROFILES[profile])). Run after any tool-description change or to repair tool-set drift (fixed train_sft_v3 training on 1–4 tools while served 7–10)
+├── validate_thinker_executor_data.py  Pre-train gate (CPU): asserts Thinker/Executor train/serve contract — canonical tool turns, prose-only, opening <think>≥150, Executor one-call + copy-fidelity. Run before any GPU time
+├── executor_ablation.py            Decides whether the Executor SFT earns its place: base Qwen3-0.6B vs SFT'd Executor on tool-choice accuracy + copy-fidelity (--self_test on CPU; GPU to run)
+├── composed_loop_eval.py           End-to-end Thinker–Executor eval: completion rate, exec parse rate, copy-fidelity (Executor copies the Thinker's <act> arg verbatim), math correctness — the gate that component eval_loss/ROUGE can't see (--self_test on CPU; GPU to run)
 ├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
@@ -859,7 +864,7 @@ Four pre-GRPO security blockers are implemented and verified by `preflight_check
 | Blocker | File | What it does |
 |---|---|---|
 | 1a — code sandbox | `3_infererence.py` | AST-validates LLM-generated code before `subprocess.run`; blocks `os`, `sys`, `socket`, dangerous builtins |
-| 1b — injection sanitiser | `3_infererence.py` | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context |
+| 1b — injection sanitiser | `tool_io.py` (used by `3_infererence.py`, orchestrator, splitter) | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context; the SAME function stamps Thinker training data so serve == train |
 | 1c/1d — sampler sandbox | `sft_math_pipeline.py` | Same AST validation for verification code (math question generation + rejection sampling merged into one script) |
 | 2a — distillation format gate | `sft_v3_generator.py` | Intercept loop enforces think→tool→answer structure; banned-placeholder + think-length checks on generated rows |
 | 2b — training data quality gate | `sft_dataset_assembler.py` | `passes_quality_filter()`: rejects short `<think>`, teacher-constitution leak, banned phrases, missing `<answer>` before any row enters training |

@@ -1021,7 +1021,15 @@ class ModelTrainer:
     # ── Phase 1: SFT ────────────────────────────────────────────────────────
 
     def train_sft(self, dataset_path: str, output_name: str = "checkpoint_sft",
-                  resume_from_checkpoint=False):
+                  resume_from_checkpoint=False, eval_records: list | None = None):
+        """Train one SFT run.
+
+        eval_records — an externally-held-out eval set (P1.2). When provided, the WHOLE of
+        dataset_path is used for training and these records are the eval set, so a multi-stage
+        curriculum measures every stage against the SAME held-out set (comparable eval_loss, no
+        per-stage re-split, no train/eval leakage). When None, the legacy internal 90/10 split is
+        used (single-run path). Publishing is NOT done here (P1.1) — the caller publishes once.
+        """
         print(f"  SFT dataset   : {dataset_path}")
         print(f"  Output dir    : {self.output_dir / output_name}")
         print(f"  Resume        : {resume_from_checkpoint}")
@@ -1037,15 +1045,24 @@ class ModelTrainer:
         # due to dill/pickle._batch_setitems signature change in 3.14).
         with open(dataset_path, encoding="utf-8") as _f:
             _records = [json.loads(l) for l in _f if l.strip()]
-        raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
-        train_dataset = raw_split["train"].map(
+        if eval_records is not None:
+            # P1.2: externally-held-out eval — train on ALL of dataset_path, eval on the shared set.
+            train_records = _records
+            eval_raw = list(eval_records)
+            print(f"  Eval set      : external held-out ({len(eval_raw)} rows, shared across stages)")
+        else:
+            # Legacy single-run path: internal 90/10 split.
+            raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
+            train_records = list(raw_split["train"])
+            eval_raw = [dict(ex) for ex in raw_split["test"]]
+        train_dataset = Dataset.from_list(train_records).map(
             messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
-        eval_dataset = raw_split["test"].map(
+        eval_dataset = Dataset.from_list(eval_raw).map(
             messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
         # Keep raw eval records (with 'messages' key) for ROUGE computation in publish()
-        self._eval_raw = [dict(ex) for ex in raw_split["test"]]
+        self._eval_raw = [dict(ex) for ex in eval_raw]
         split = {"train": train_dataset, "test": eval_dataset}
         print(f"  Train: {len(split['train'])}  |  Eval: {len(split['test'])}")
 
@@ -1124,15 +1141,8 @@ class ModelTrainer:
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
-
-        # Auto-publish unless suppressed
-        if self._no_publish:
-            print("  Publish       : skipped (--no_publish)")
-        else:
-            self.publish(
-                output_name=output_name,
-                hf_username=self._hf_username,
-            )
+        # P1.1: publishing is the caller's responsibility (publish ONCE after the final stage),
+        # so a multi-stage curriculum does not merge/export/upload after every stage.
         return self
 
     # ── Phase 2: GRPO ───────────────────────────────────────────────────────
@@ -1284,15 +1294,7 @@ class ModelTrainer:
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")
-
-        # Auto-publish unless suppressed
-        if self._no_publish:
-            print("  Publish       : skipped (--no_publish)")
-        else:
-            self.publish(
-                output_name=output_name,
-                hf_username=self._hf_username,
-            )
+        # P1.1: caller publishes once (consistent with train_sft).
         return self
 
     # ── Convenience: run full SFT pipeline ──────────────────────────────────
@@ -1729,26 +1731,38 @@ def main():
                         pass
             return rows
 
+        # P1.2: carve ONE held-out eval set from the full dataset (seed 42), shared by every
+        # curriculum stage. Stage pools are built from the TRAIN remainder only, so no eval row
+        # leaks into any stage and eval_loss is comparable across stages. The fixed seed also makes
+        # the eval set identical across separate --curriculum_stage processes (manual chaining).
+        import random as _random_main
+        _all_rows = _load_all(dataset_path)
+        _shuf = list(_all_rows)
+        _random_main.Random(42).shuffle(_shuf)
+        _n_eval = max(1, len(_shuf) // 10)
+        eval_pool, train_pool = _shuf[:_n_eval], _shuf[_n_eval:]
+        print(f"  Held-out eval : {len(eval_pool)} rows (shared, seed 42)  |  train pool: {len(train_pool)}")
+
         if args.curriculum_stage:
             # Manual single-stage control (for checkpoint chaining via --from_checkpoint).
-            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            _s1, _s2, _s3 = _split_curriculum_stages(train_pool)
             _stage = {1: _s1, 2: _s2, 3: _s3}[args.curriculum_stage]
             print(f"Curriculum stage {args.curriculum_stage}: {len(_stage)} examples "
                   f"(S1={len(_s1)} S2={len(_s2)} S3={len(_s3)})")
             trainer.train_sft(_write_temp_jsonl(_stage), args.output_name,
-                              resume_from_checkpoint=args.resume)
+                              resume_from_checkpoint=args.resume, eval_records=eval_pool)
         elif not args.no_curriculum:
             # Default: 3-stage curriculum (format -> full complexity -> anti-drift replay),
             # trained sequentially on the SAME in-memory model so each stage continues from
             # the previous stage's best checkpoint. Per-stage epoch schedule keeps total
             # training moderate (1+2+1 = 4 effective epochs) to avoid the over-training that
             # contributed to the reasoning collapse. Tune on GPU; use --no_curriculum to skip.
-            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            _s1, _s2, _s3 = _split_curriculum_stages(train_pool)
             if len(_s1) < 8 or len(_s2) < 8:
                 print(f"  [curriculum] degenerate split (S1={len(_s1)} S2={len(_s2)}) — "
-                      f"falling back to single full-dataset run.")
-                trainer.train_sft(str(dataset_path), args.output_name,
-                                  resume_from_checkpoint=args.resume)
+                      f"falling back to single train-pool run.")
+                trainer.train_sft(_write_temp_jsonl(train_pool), args.output_name,
+                                  resume_from_checkpoint=args.resume, eval_records=eval_pool)
             else:
                 stages = [("1-format", _s1, 1), ("2-complexity", _s2, 2), ("3-replay", _s3, 1)]
                 print(f"  [curriculum] 3 stages: S1={len(_s1)} S2={len(_s2)} S3={len(_s3)}")
@@ -1761,12 +1775,20 @@ def main():
                         trainer.train_sft(
                             _write_temp_jsonl(_stage), args.output_name,
                             resume_from_checkpoint=(args.resume and _i == 1),
+                            eval_records=eval_pool,
                         )
                 finally:
                     SFT_CONFIG["num_train_epochs"] = _orig_epochs
         else:
-            trainer.train_sft(str(dataset_path), args.output_name,
-                              resume_from_checkpoint=args.resume)
+            trainer.train_sft(_write_temp_jsonl(train_pool), args.output_name,
+                              resume_from_checkpoint=args.resume, eval_records=eval_pool)
+
+        # P1.1: publish ONCE after all training completes (model is in memory). For a curriculum
+        # this replaces the old per-stage publish (which merged/exported/uploaded 3×).
+        if args.no_publish:
+            print("  Publish       : skipped (--no_publish)")
+        else:
+            trainer.publish(output_name=args.output_name, hf_username=args.hf_username)
         print(f"\nNext step → run GRPO training from this checkpoint:")
         print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")
@@ -1788,6 +1810,11 @@ def main():
             reward_type=args.reward_type,
             resume_from_checkpoint=args.resume,
         )
+        # P1.1: publish once after GRPO completes (was previously auto-published inside train_grpo).
+        if args.no_publish:
+            print("  Publish       : skipped (--no_publish)")
+        else:
+            trainer.publish(output_name=args.output_name, hf_username=args.hf_username)
         print(f"\nNext step → serve the GRPO checkpoint:")
         print(f"  python 3_infererence.py --model_dir {checkpoint_path}")
         print(f"  # To re-upload this checkpoint later (if publish failed):")

@@ -40,7 +40,6 @@ from pathlib import Path
 # Reused parsing helpers / constants (single source of truth for tool parsing + gates).
 from sft_dataset_assembler import (
     MIN_THINK_CHARS,
-    MAX_RESULT_CHARS,
     _THINK_BLOCK_RE,
     _TOOL_RE,
     _unwrap_tool_result,
@@ -49,11 +48,18 @@ from sft_dataset_assembler import (
 # Role prompts + the shared user-memory context block — single source of truth shared with
 # the served models and the Branch B generator (so A/C and B present memory identically).
 from sft_v3_generator import THINKER_STUDENT_PROMPT, EXECUTOR_STUDENT_PROMPT, prepend_memory
+# Canonical tool-result presentation — the EXACT function the inference server/orchestrator use,
+# so the Thinker trains on byte-identical tool turns to what it is served (train/serve parity, P0.1).
+from tool_io import sanitise_tool_result
 
 # --- Tool ownership (experiment §4.1) -------------------------------------------------
 EXECUTOR_OWNED = {"python_execute", "web_search", "read_url"}   # delegated via <act>
-EXECUTOR_TOOL_NAMES = {"python_execute", "web_search", "read_url", "get_datetime"}  # advertised
-# get_datetime + user_memory_* + scratchpad_* stay Thinker-side (handled in context).
+# Advertise EXACTLY the tools the Executor is trained to emit. get_datetime was removed: it has
+# zero Executor training examples (datetime calls are dropped from the factored stream), so
+# advertising it created a dead capability the model would mis-select (P0.3). It must match
+# EXECUTOR_TOOLS in thinker_executor_orchestrator.py.
+EXECUTOR_TOOL_NAMES = set(EXECUTOR_OWNED)  # advertised native schema == trained targets
+# user_memory_* + scratchpad_* stay Thinker-side (handled in context).
 
 # Native schemas advertised to the Executor at train/inference time.
 try:
@@ -153,10 +159,34 @@ def _join_think(carry: list[str], current: str) -> str:
     return "\n\n".join(parts)
 
 
-def _cap(result: str) -> str:
-    if len(result) > MAX_RESULT_CHARS:
-        return result[:MAX_RESULT_CHARS] + " … [truncated]"
-    return result
+# --- P1.4: continuation <think> for FOLLOW-UP turns that have no source reasoning -----------
+# 49% of factored Thinker turns had an empty <think>; with enable_thinking=False the Qwen3
+# template renders those as `<think>\n\n</think>\n\n<output>` — explicitly teaching the
+# empty-think→output pattern that IS the think-collapse failure mode. The FIRST turn keeps its
+# real (gated ≥150-char) reasoning; for later act/answer turns with no carried reasoning we
+# synthesise a SHORT, grounded transition so the model always sees think→output (matching
+# inference, where enable_thinking=True makes it reason every turn). These are scaffolds, not
+# substantive reasoning — grounded in the actual tool/instruction and rotated for variety so the
+# model cannot memorise one string. Audited via metadata["synth_think"].
+def _continuation_think_act(instr: str, idx: int) -> str:
+    head = instr.split(":", 1)[0].strip().lower()  # e.g. "use web_search to find"
+    variants = (
+        f"With the previous result in hand, the next concrete step is to {head}. I'll delegate that single action and wait for what it returns before deciding anything else.",
+        f"The last result moves me forward but is not sufficient on its own; the right next step is to {head}, so I'll hand exactly that one action to the execution system.",
+        f"Building on what just came back, I still need one more thing — to {head}. I'll issue precisely that step now and reassess once its result arrives.",
+    )
+    return variants[idx % len(variants)]
+
+
+def _continuation_think_answer(last_tool: str, idx: int) -> str:
+    src = {"web_search": "search results", "python_execute": "computed result",
+           "read_url": "page content"}.get(last_tool, "results I gathered")
+    variants = (
+        f"I now have the {src} I was waiting for, and it covers what the user actually needs. I'll turn it into a direct, complete answer and close with the single most useful follow-up.",
+        f"The {src} resolves the open question and nothing further needs fetching. I'll synthesise it into a clear answer and surface the one thing still worth clarifying.",
+        f"With the {src} back, I can answer well now without more steps. I'll give the user the bottom line plainly and end on one targeted follow-up question.",
+    )
+    return variants[idx % len(variants)]
 
 
 # --- Thinker view (§7.2) ---------------------------------------------------------------
@@ -174,6 +204,9 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
     emitted_act = False
     ended_answer = False
     memory_text: str | None = None
+    emit_idx = 0            # count of emitted assistant turns (variant rotation for synth think)
+    last_tool = ""          # most recent act's tool, for grounding answer continuation think
+    synth_think = 0         # number of follow-up turns given a synthesised <think> (audited)
 
     i, n = 0, len(messages)
     while i < n:
@@ -210,18 +243,29 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
                 continue
             think_text = _join_think(carry, think)
             carry = []
-            out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<act>{instr}</act>"})
             if opening_think_len is None:
-                opening_think_len = len(think_text)
+                opening_think_len = len(think_text)   # gate sees the REAL opening think only
+            elif not think_text:
+                think_text = _continuation_think_act(instr, emit_idx)   # P1.4: follow-up only
+                synth_think += 1
+            out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<act>{instr}</act>"})
+            emit_idx += 1
             emitted_act = True
+            last_tool = call[0]
             if result is not None:
-                out.append({"role": "tool", "content": _cap(result)})
+                # Stamp the canonical served representation (injection-filtered, per-tool budget,
+                # [TOOL_RESULT] wrapper) so the Thinker trains on exactly what the server feeds it.
+                out.append({"role": "tool", "content": sanitise_tool_result(call[0], result)})
         elif answer is not None:
             think_text = _join_think(carry, think)
             carry = []
-            out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<answer>{answer}</answer>"})
             if opening_think_len is None:
-                opening_think_len = len(think_text)
+                opening_think_len = len(think_text)   # gate sees the REAL opening think only
+            elif not think_text:
+                think_text = _continuation_think_answer(last_tool, emit_idx)   # P1.4: follow-up only
+                synth_think += 1
+            out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<answer>{answer}</answer>"})
+            emit_idx += 1
             ended_answer = True
         else:
             # Thinker-owned call (user_memory_*/scratchpad_*/get_datetime) or bare think: drop
@@ -266,6 +310,7 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
             "source": "trajectory_factoring",
             "has_act": emitted_act,
             "has_memory": has_memory,
+            "synth_think": synth_think,   # P1.4: follow-up turns given a synthesised continuation think
             # No native_tools: the Thinker never emits tool-call syntax.
         },
     }

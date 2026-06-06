@@ -5,7 +5,7 @@ tags: [sft, reasoning, tool-use, small-model, architecture, agents, multi-agent,
 sources:
   - pipeline/4_benchmark.py
   - wiki/experiments/sft-benchmark-analysis-20260525.md
-updated: 2026-05-29
+updated: 2026-06-06
 status: draft
 ---
 
@@ -515,3 +515,22 @@ The TML Interaction-Small precedent ([[entities/tml-interaction-small]]) at 276B
 
 ### Empirical baseline
 - `wiki/experiments/sft-benchmark-analysis-20260525.md` — empirical baseline (this repository)
+
+## Implementation review & P0 fixes (2026-06-06)
+
+A senior-LLM-engineer pass over the pipeline (full write-up: `pipeline/THINKER_EXECUTOR_FIXES.md`) found three train/serve contract violations, all verified empirically with the cached Qwen3-0.6B tokenizer and now fixed:
+
+- **P0.1 — tool-result representation was off-distribution at serve time.** The splitter stripped the `[TOOL_RESULT]` wrapper and capped at 3000 chars (raw), but the inference server re-added the wrapper, injection-filtered, and capped at 800–1500 — so the Thinker was served a doubly-wrapped (`<tool_response>` + `[TOOL_RESULT]`), filtered, shorter turn than it trained on (proven: a real web_search turn 1748 → 1255 chars, not byte-identical). Fix: one canonical sanitiser in `pipeline/tool_io.py`, imported by `3_infererence.py`, `thinker_executor_orchestrator.py`, AND `sft_trajectory_splitter.py`. Thinker data re-factored; all 2162 tool turns now wrapped and within budget (validator green). The single-model contract is unchanged (it already used the wrapper).
+- **P0.2 — anti-repetition decoding corrupted the Executor.** A real 120-token `python_execute` target contains 12 repeated 3-grams, so `no_repeat_ngram_size=3` forbade the Executor from emitting its own gold target. Fix: per-role decoding — Executor decodes clean (greedy, no penalties); Thinker keeps a mild penalty and no n-gram ban (it quotes code/numbers in `<act>`). Single-model defaults untouched.
+- **P0.3 — `get_datetime` was advertised to the Executor with zero training examples** (datetime calls are dropped from the factored stream). Removed from the Executor schema and `EXECUTOR_TOOLS`; time-dependent questions are handled via `web_search`, as the Thinker data teaches.
+
+New tooling: `validate_thinker_executor_data.py` (pre-train CPU gate — run before any GPU time) and `executor_ablation.py` (base Qwen3-0.6B vs SFT'd Executor on tool-choice + copy-fidelity).
+
+### P1 fixes (trainer + data, 2026-06-06)
+- **P1.1 (publish once):** `publish()` removed from `train_sft()`/`train_grpo()`; the curriculum no longer merges/exports/uploads 3× per run. `main()` publishes once after training.
+- **P1.2 (one comparable eval):** a single held-out eval is carved from the full dataset (seed 42) and shared across all curriculum stages; stage pools come from the train remainder only — 0 leakage (verified: 2720 → eval 272 / train 2448).
+- **P1.3 (composed-loop eval):** `composed_loop_eval.py` measures the end-to-end loop — completion rate, exec parse rate, copy-fidelity (does the Executor copy the Thinker's `<act>` argument verbatim?), and math correctness — the failure surface component eval_loss/ROUGE cannot see.
+- **P1.4 (no empty `<think>`):** the `enable_thinking=False` training render baked an empty `<think></think>` into **49.4%** of Thinker turns — the think-collapse pattern. Follow-up turns now carry a short grounded continuation think (first turn keeps real gated reasoning); empty-think turns 2167 → 0. New validator invariant T6 enforces it.
+- **P1.5 (GRPO):** kept — it is the main constitution experiment's RL phase, not part of the T–E runtime path.
+
+> ⚠ Open question (industry-grounded): the Executor's task is native Hermes function calling, which base Qwen3-0.6B already does. Run `executor_ablation.py` before committing the rewrite — if base is within margin, drop the Executor SFT and serve the base model behind `EXECUTOR_STUDENT_PROMPT` + schema. **Decision pending GPU run.**

@@ -56,11 +56,50 @@ from sft_v3_generator import (
     prepend_memory,
 )
 from pipeline_tools import ToolRegistry
+from tool_io import sanitise_tool_result
 
-# Executor-owned tools (delegated via <act>) + get_datetime, which is advertised in the
-# Executor's schema list. check_profile=False at call time — the model picks the tool.
-EXECUTOR_TOOLS = {"python_execute", "web_search", "read_url", "get_datetime"}
-MAX_RESULT_CHARS = 2000   # mirror the assembler's MAX_RESULT_CHARS so the Thinker sees results as in training
+# Executor-owned tools (delegated via <act>). get_datetime was REMOVED: the splitter drops
+# datetime calls from the Thinker stream and never emits a datetime instruction→call pair, so the
+# Executor has ZERO datetime training examples. Advertising it created a dead capability (the model
+# would pick the wrong tool or hallucinate). In this trained system, time-dependent questions are
+# handled the way the Thinker data teaches — via web_search ("search for today's …"). Proactive
+# current-datetime injection is a possible future enhancement but is intentionally NOT done here to
+# avoid a speculative train/serve contract change.
+EXECUTOR_TOOLS = {"python_execute", "web_search", "read_url"}
+MAX_RESULT_CHARS = 2000   # legacy length-only cap; only used by the deprecated sanitise_result below
+
+# ---------------------------------------------------------------------------
+# Per-role decoding (P0.2)
+# ---------------------------------------------------------------------------
+# The two roles need OPPOSITE decoding regimes:
+#   • Executor — a deterministic instruction→one-tool-call transducer whose target embeds verbatim
+#     Python/JSON. Anti-repetition is actively harmful: a real python_execute target contains many
+#     repeated 3-grams (indentation, `print(`, `= 1`, digits), so no_repeat_ngram_size=3 forbids the
+#     model from emitting its own gold target and repetition_penalty biases against correct code
+#     tokens. Executor decodes CLEAN (pure greedy, no penalties).
+#   • Thinker — free-form prose; a 0.6B can loop and never close </think>. Keep a MILD repetition
+#     penalty for loop protection but NO n-gram ban (it quotes code/numbers inside <act>, which an
+#     n-gram ban would corrupt). EOS + max_new_tokens are the real loop guards.
+# Env overrides (apply to the THINKER only): PIPELINE_REPETITION_PENALTY, PIPELINE_NO_REPEAT_NGRAM.
+import os as _os
+
+
+def _apply_decoding(gen_kwargs: dict, role: str, greedy: bool, temperature: float) -> None:
+    if role == "executor":
+        gen_kwargs["do_sample"] = False        # transducer: deterministic, no anti-repetition knobs
+        return
+    # Thinker
+    _rep_pen = float(_os.environ.get("PIPELINE_REPETITION_PENALTY", "1.1"))
+    _no_rep  = int(_os.environ.get("PIPELINE_NO_REPEAT_NGRAM", "0"))
+    if _rep_pen and _rep_pen != 1.0:
+        gen_kwargs["repetition_penalty"] = _rep_pen
+    if _no_rep and _no_rep > 0:
+        gen_kwargs["no_repeat_ngram_size"] = _no_rep
+    if greedy:
+        gen_kwargs["do_sample"] = False
+    else:
+        gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+
 
 # ---------------------------------------------------------------------------
 # Parsers
@@ -110,9 +149,18 @@ def extract_think(text: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def default_sanitiser(raw: str, tool_name: str = "") -> str:
+    """Canonical sanitiser (injection-stripping + per-tool budgets + [TOOL_RESULT] wrapper),
+    shared with the inference server and the training-data splitter via tool_io.sanitise_tool_result.
+    Argument order is (raw, tool_name) to match the orchestrator's call site; tool_io takes
+    (tool_name, raw). Using this as the default makes standalone --serve/--chat byte-identical to
+    the server-hosted path and to what the Thinker was trained on."""
+    return sanitise_tool_result(tool_name, raw)
+
+
 def sanitise_result(raw: str, tool_name: str = "") -> str:
-    """Default sanitiser: length-truncation only. The server injects its own
-    sanitiser (injection-stripping + per-tool budgets) via ThinkerExecutor(sanitiser=...)."""
+    """DEPRECATED length-only sanitiser. Kept for callers that explicitly want raw truncation;
+    no longer the default (it diverged from the served representation — train/serve mismatch)."""
     s = (raw or "").strip()
     if len(s) > MAX_RESULT_CHARS:
         s = s[:MAX_RESULT_CHARS] + f"\n…[truncated {len(s) - MAX_RESULT_CHARS} chars]"
@@ -126,14 +174,16 @@ def looks_like_error(raw: str) -> bool:
 
 
 def openai_schemas(registry: ToolRegistry, names: set[str] = EXECUTOR_TOOLS) -> list[dict]:
-    """Build the OpenAI-schema tool list the Executor was trained with (4 tools, same shape
-    as the `native_tools` metadata stamped onto every Executor row)."""
-    out = []
-    for n in sorted(names):
-        spec = registry._specs.get(n)
-        if spec:
-            out.append({"type": "function", "function": spec.schema()})
-    return out
+    """Build the OpenAI-schema tool list the Executor is served at inference.
+
+    MUST be byte-identical (including ORDER) to the `native_tools` stamped onto every Executor
+    training row, because the schema list is rendered into the Executor's prompt — a different
+    tool order is a train/serve mismatch. The training rows are built with
+    ToolRegistry.to_openai_schemas (registration order), so we delegate to the SAME method here
+    rather than re-deriving with a different (sorted) order. (Previously this used sorted(names),
+    which served python_execute/read_url/web_search while training baked
+    python_execute/web_search/read_url.)"""
+    return registry.to_openai_schemas(set(names))
 
 
 # ---------------------------------------------------------------------------
@@ -279,19 +329,7 @@ class HFGenerator(Generator):
         inputs = self.tok(prompt, return_tensors="pt").to(self.model.device)
         n_in = inputs["input_ids"].shape[1]
         gen_kwargs: dict[str, Any] = dict(**inputs, max_new_tokens=max_new_tokens)
-        # Anti-repetition — without this a 0.6B Thinker loops, never closes </think>
-        # and never emits <act>/<answer> (mirrors the server's _generate; same env knobs).
-        import os as _os
-        _rep_pen = float(_os.environ.get("PIPELINE_REPETITION_PENALTY", "1.3"))
-        _no_rep  = int(_os.environ.get("PIPELINE_NO_REPEAT_NGRAM", "3"))
-        if _rep_pen and _rep_pen != 1.0:
-            gen_kwargs["repetition_penalty"] = _rep_pen
-        if _no_rep and _no_rep > 0:
-            gen_kwargs["no_repeat_ngram_size"] = _no_rep
-        if greedy:
-            gen_kwargs["do_sample"] = False
-        else:
-            gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+        _apply_decoding(gen_kwargs, role, greedy, temperature)
         with self.torch.no_grad():
             out = self.model.generate(**gen_kwargs)
         return self.tok.decode(out[0][n_in:], skip_special_tokens=True)
@@ -316,7 +354,7 @@ class ThinkerExecutor:
         # sanitiser(raw, tool_name) -> str. Defaults to length-only truncation. The inference
         # server passes its injection-stripping `_sanitise_tool_output` so the Thinker sees the
         # same filtered tool output the single-model server enforces (feature parity).
-        self.sanitiser: Callable[[str, str], str] = sanitiser or sanitise_result
+        self.sanitiser: Callable[[str, str], str] = sanitiser or default_sanitiser
         self.schemas = openai_schemas(self.registry)
 
     def _log(self, *a):
@@ -542,7 +580,9 @@ def _self_test() -> None:
     assert res["type"] == "answer", res["type"]
     assert res["steps"] == 1, res["steps"]
     assert res["tool_trace"][0]["tool_call"]["function"] == "python_execute"
-    assert res["tool_trace"][0]["result"].strip() == "391", res["tool_trace"][0]["result"]
+    # result is now the canonical served representation ([TOOL_RESULT: python_execute]\n391\n…)
+    assert "391" in res["tool_trace"][0]["result"], res["tool_trace"][0]["result"]
+    assert res["tool_trace"][0]["output_full"].strip() == "391", res["tool_trace"][0]["output_full"]
     assert "391" in res["answer"], res["answer"]
     print("  [pass] act → python_execute(391) → answer\n")
 
