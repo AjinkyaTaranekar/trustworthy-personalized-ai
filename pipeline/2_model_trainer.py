@@ -920,20 +920,33 @@ class CollapseMonitorCallback(TrainerCallback):
     error is swallowed so it can never abort training. Samples are also appended to
     reports/training/<run>/eval_samples.jsonl for later inspection.
 
+    The probe set is FIXED (a seed-stable sample of the held-out eval set) and decoding is greedy,
+    so the same questions are shown at every eval ON PURPOSE — that is what lets you watch one
+    example improve across steps. To vary which examples are shown, change PIPELINE_EVAL_N / the
+    seed or set PIPELINE_EVAL_SHUFFLE=1.
+
     Env knobs:
-      PIPELINE_EVAL_SHOW_SAMPLES — how many generations to print per eval (default 2; 0 = none)
+      PIPELINE_EVAL_N            — how many held-out prompts to generate on per eval (default 5).
+                                   This also caps how many can be printed.
+      PIPELINE_EVAL_SHOW_SAMPLES — how many of those to print per eval (default 2; 0 = none)
       PIPELINE_EVAL_SAMPLE_CHARS — truncation length per printed generation (default 700)
+      PIPELINE_EVAL_SHUFFLE      — 1 to pick a random (seed-42) sample instead of the first N
     """
 
     def __init__(self, tokenizer, eval_raw, n: int = 5, max_new_tokens: int = 512,
                  samples_path: "Optional[Path]" = None):
         self._tok = tokenizer
         self._max_new = max_new_tokens
+        n = int(os.environ.get("PIPELINE_EVAL_N", str(n)))
         self._show = int(os.environ.get("PIPELINE_EVAL_SHOW_SAMPLES", "2"))
         self._chars = int(os.environ.get("PIPELINE_EVAL_SAMPLE_CHARS", "700"))
         self._samples_path = samples_path
+        pool = list(eval_raw or [])
+        if os.environ.get("PIPELINE_EVAL_SHUFFLE") == "1":
+            import random as _r
+            _r.Random(42).shuffle(pool)   # seed-stable so the chosen set is still fixed across evals
         self._prompts: list[tuple[list, object, str]] = []
-        for ex in (eval_raw or [])[:n]:
+        for ex in pool[:n]:
             msgs = [m for m in ex.get("messages", []) if m.get("role") in ("system", "user")]
             if msgs:
                 question = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
