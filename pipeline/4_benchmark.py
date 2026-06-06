@@ -1068,6 +1068,32 @@ def run_probe_group(
     }, judge_queue
 
 
+def _build_run_metadata(server_url: str, max_new_tokens: int, temperature: float) -> Dict[str, Any]:
+    """Shared run-provenance block written into every suite report so runs can be
+    paired by model_label (not just by filename). The constitution probe embeds the
+    same fields inline; adversarial/category/drift previously omitted them, which
+    made vanilla-vs-SFT pairing of those reports unreliable downstream
+    (see pipeline/export_assets.py)."""
+    import subprocess as _sp2
+    try:
+        _git = _sp2.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                 stderr=_sp2.DEVNULL).decode().strip()
+    except Exception:
+        _git = "unknown"
+    try:
+        _model = _http(server_url, "/health", "GET", timeout=5).get("model", "unknown")
+    except Exception:
+        _model = "unknown"
+    return {
+        "timestamp":      _dt.datetime.utcnow().isoformat() + "Z",
+        "server_url":     server_url,
+        "model_label":    _model,
+        "git_commit":     _git,
+        "max_new_tokens": max_new_tokens,
+        "temperature":    temperature,
+    }
+
+
 def run_constitution_probes(
     server_url: str,
     max_new_tokens: int = 2048,
@@ -1384,6 +1410,7 @@ def run_category_probes(
     overall = sum(category_scores.values()) / len(category_scores)
     print(f"\n  Category score: {overall:.3f}")
     return {
+        "run_metadata":     _build_run_metadata(server_url, max_new_tokens, temperature),
         "category_score":   round(overall, 4),
         "scores_by_category": category_scores,
         "category_results": results,
@@ -1530,6 +1557,7 @@ def run_context_drift_test(
         print(f"  No sustained drift detected.")
 
     return {
+        "run_metadata":     _build_run_metadata(server_url, max_new_tokens, temperature),
         "drift_score":      round(overall, 4),
         "first_drift_at":   first_drift_at,
         "adherence_curve":  adherence_curve,
@@ -1840,6 +1868,7 @@ def run_adversarial_probes(
             print(f"  {atype:12}: {ts:.3f}  ({int(sum(scores))}/{len(scores)})")
 
     return {
+        "run_metadata":         _build_run_metadata(server_url, max_new_tokens, temperature),
         "adversarial_score":    round(adversarial_score, 4),
         "attacks_resisted":     int(sum(all_scores)),
         "attacks_total":        len(all_scores),

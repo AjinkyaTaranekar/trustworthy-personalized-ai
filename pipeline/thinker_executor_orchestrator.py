@@ -22,9 +22,11 @@ Memory is the Thinker's alone (prose-only — it never calls a tool): the orches
 the user's 5W+H profile as a `[USER MEMORY]` block on the user turn, exactly as in training.
 An empty profile becomes the explicit "(no profile stored)" block (cold-start regime).
 
-Model loading uses PEFT multi-adapter on ONE base (not two unsloth instances): the base loads
-once and the two LoRA adapters are switched per generation step (`set_adapter`). For 0.6B this
-fits any GPU; pass --load_in_4bit to shrink further.
+Model loading auto-detects the checkpoint kind (see `HFGenerator`): two LoRA adapters load on
+ONE shared base and switch per step (`set_adapter`, memory-light), while merged full-model
+checkpoints — the kind published to HuggingFace by publish()/push_to_hf.py — load as two
+independent models behind a shim that keeps the same `set_adapter`/`generate` interface. Both
+paths fit any GPU for 0.6B; pass --load_in_4bit to shrink further.
 
 Entry points:
     python thinker_executor_orchestrator.py --self_test          # CPU, no GPU/model — validates the loop
@@ -41,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -157,17 +160,72 @@ class ScriptedGenerator(Generator):
         return q.pop(0) if q else "<answer>(scripted output exhausted)</answer>"
 
 
+def _is_lora_adapter(path: str) -> bool:
+    """True if `path` (local dir OR HuggingFace repo id) holds a LoRA adapter — i.e. it has an
+    `adapter_config.json`. Merged full-model checkpoints (what publish()/push_to_hf.py upload —
+    config.json + a ~1.2 GB model.safetensors) return False. Used to pick the load strategy:
+    one base + two switchable adapters vs. two independent full models."""
+    if os.path.isdir(path):
+        return os.path.exists(os.path.join(path, "adapter_config.json"))
+    try:
+        from huggingface_hub import hf_hub_download
+        hf_hub_download(path, "adapter_config.json")  # uses HF_TOKEN from env if the repo is private
+        return True
+    except Exception:
+        return False
+
+
+class _DualFullModel:
+    """Emulates a PEFT multi-adapter model over two independent full models, exposing the same
+    `set_adapter(role)` → `.generate(...)` contract the Thinker–Executor server relies on
+    (3_infererence.py `_ServerGenerator` + `_generate`). This lets merged full-model checkpoints
+    (the kind on HuggingFace) drive the dual loop without changing any server code."""
+
+    def __init__(self, models: dict) -> None:
+        self._models = models          # {"thinker": <model>, "executor": <model>}
+        self._active = "thinker"
+
+    def set_adapter(self, name: str) -> None:
+        if name not in self._models:
+            raise KeyError(f"unknown role {name!r}; have {list(self._models)}")
+        self._active = name
+
+    @property
+    def active(self):
+        return self._models[self._active]
+
+    @property
+    def device(self):
+        return self.active.device
+
+    def eval(self):
+        for m in self._models.values():
+            m.eval()
+        return self
+
+    def generate(self, *args, **kwargs):
+        return self.active.generate(*args, **kwargs)
+
+    def __getattr__(self, item):
+        # Forward anything else (.config, .generation_config, …) to the active model. Only hit
+        # when normal attribute lookup fails, so _models/_active set in __init__ are safe.
+        return getattr(self.__dict__["_models"][self.__dict__["_active"]], item)
+
+
 class HFGenerator(Generator):
-    """Real backend: ONE Qwen3-0.6B base + two PEFT LoRA adapters switched per step."""
+    """Real backend for the dual loop. Auto-detects checkpoint kind per `--thinker`/`--executor`:
+      • both LoRA adapters → ONE Qwen3-0.6B base + two PEFT adapters switched per step (memory-light).
+      • otherwise (merged full models, e.g. the HuggingFace repos) → two independent full models
+        behind a `_DualFullModel` shim that keeps the same `set_adapter`/`generate` interface.
+    """
 
     def __init__(self, base_model: str, thinker: str, executor: str,
                  load_in_4bit: bool = False) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        from peft import PeftModel
         self.torch = torch
 
-        # The LoRA checkpoint dirs ship the tokenizer; fall back to base if not.
+        # The checkpoints ship the tokenizer; fall back to base if not.
         try:
             self.tok = AutoTokenizer.from_pretrained(thinker)
         except Exception:
@@ -179,15 +237,38 @@ class HFGenerator(Generator):
             load_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
             )
-        base = AutoModelForCausalLM.from_pretrained(base_model, **load_kwargs)
-        print(f"[load] base {base_model} ready; attaching adapters…", flush=True)
-        model = PeftModel.from_pretrained(base, thinker, adapter_name="thinker")
-        model.load_adapter(executor, adapter_name="executor")
-        if torch.cuda.is_available() and not load_in_4bit:
-            model = model.to("cuda")
-        model.eval()
-        self.model = model
-        print(f"[load] adapters ready: thinker={thinker}  executor={executor}", flush=True)
+
+        thinker_is_lora = _is_lora_adapter(thinker)
+        executor_is_lora = _is_lora_adapter(executor)
+
+        if thinker_is_lora and executor_is_lora:
+            from peft import PeftModel
+            base = AutoModelForCausalLM.from_pretrained(base_model, **load_kwargs)
+            print(f"[load] base {base_model} ready; attaching LoRA adapters…", flush=True)
+            model = PeftModel.from_pretrained(base, thinker, adapter_name="thinker")
+            model.load_adapter(executor, adapter_name="executor")
+            if torch.cuda.is_available() and not load_in_4bit:
+                model = model.to("cuda")
+            model.eval()
+            self.model = model
+            print(f"[load] LoRA adapters ready: thinker={thinker}  executor={executor}", flush=True)
+        else:
+            # Merged full models. base_model is unused here (the merged weights are self-contained).
+            if thinker_is_lora != executor_is_lora:
+                print("[load][warn] mixed checkpoint kinds (one LoRA, one merged) — loading both "
+                      "as full models; pass two adapters or two merged models for a clean path.",
+                      flush=True)
+            print(f"[load] loading thinker full model: {thinker}", flush=True)
+            m_thinker = AutoModelForCausalLM.from_pretrained(thinker, **load_kwargs)
+            print(f"[load] loading executor full model: {executor}", flush=True)
+            m_executor = AutoModelForCausalLM.from_pretrained(executor, **load_kwargs)
+            if torch.cuda.is_available() and not load_in_4bit:
+                m_thinker = m_thinker.to("cuda")
+                m_executor = m_executor.to("cuda")
+            m_thinker.eval()
+            m_executor.eval()
+            self.model = _DualFullModel({"thinker": m_thinker, "executor": m_executor})
+            print(f"[load] full models ready: thinker={thinker}  executor={executor}", flush=True)
 
     def generate(self, role, conversation, tools, max_new_tokens, temperature, greedy):
         self.model.set_adapter("thinker" if role == "thinker" else "executor")
@@ -198,6 +279,15 @@ class HFGenerator(Generator):
         inputs = self.tok(prompt, return_tensors="pt").to(self.model.device)
         n_in = inputs["input_ids"].shape[1]
         gen_kwargs: dict[str, Any] = dict(**inputs, max_new_tokens=max_new_tokens)
+        # Anti-repetition — without this a 0.6B Thinker loops, never closes </think>
+        # and never emits <act>/<answer> (mirrors the server's _generate; same env knobs).
+        import os as _os
+        _rep_pen = float(_os.environ.get("PIPELINE_REPETITION_PENALTY", "1.3"))
+        _no_rep  = int(_os.environ.get("PIPELINE_NO_REPEAT_NGRAM", "3"))
+        if _rep_pen and _rep_pen != 1.0:
+            gen_kwargs["repetition_penalty"] = _rep_pen
+        if _no_rep and _no_rep > 0:
+            gen_kwargs["no_repeat_ngram_size"] = _no_rep
         if greedy:
             gen_kwargs["do_sample"] = False
         else:
@@ -247,6 +337,11 @@ class ThinkerExecutor:
         t_gen = time.perf_counter()
         exec_raw = self.gen.generate("executor", exec_conv, self.schemas, self.emax, 0.0, greedy=True)
         gen_ms = round((time.perf_counter() - t_gen) * 1000)
+        # Full Executor-side turn for audit/report parity with the Thinker conversation. The tool
+        # schemas are rendered into the system message at generation time via the native
+        # apply_chat_template(tools=...) channel (identical to training); we record the raw schema
+        # list here so reports can show exactly what tool definitions the Executor was given.
+        executor_conversation = exec_conv + [{"role": "assistant", "content": exec_raw}]
         call = parse_native_tool_call(exec_raw)
         tool_name = (call or {}).get("function", "")
         if call is None:
@@ -261,6 +356,7 @@ class ThinkerExecutor:
             is_error = looks_like_error(raw_full)
         return {
             "call": call, "executor_raw": exec_raw, "tool": tool_name,
+            "executor_conversation": executor_conversation, "executor_tools": self.schemas,
             "output_full": raw_full, "output_model": self.sanitiser(raw_full, tool_name),
             "is_error": is_error, "gen_ms": gen_ms, "tool_ms": tool_ms,
         }
@@ -301,6 +397,8 @@ class ThinkerExecutor:
                     "step": step, "iteration": step - 1, "act": content,
                     "think_before_call": extract_think(out),
                     "executor_raw": ex["executor_raw"],
+                    "executor_conversation": ex["executor_conversation"],
+                    "executor_tools": ex["executor_tools"],
                     "tool_call": ex["call"], "tool": ex["tool"],
                     "input": (ex["call"] or {}).get("kwargs", {}),
                     "output_full": ex["output_full"], "output_model": result,

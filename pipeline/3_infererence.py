@@ -716,6 +716,17 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
     t0 = time.perf_counter()
     gen_kwargs: Dict[str, Any] = dict(inputs, max_new_tokens=max_new_tokens)
     gen_kwargs.pop("max_length", None)  # avoid conflict with max_new_tokens
+    # Anti-repetition. Without this a 0.6B model (especially the Thinker under the
+    # reasoning-heavy dual-mode prompt) falls into a token loop, never closes
+    # </think>, never emits <act>/<answer>, and burns the entire token budget.
+    # Tunable per box via env; set PIPELINE_REPETITION_PENALTY=1.0 / PIPELINE_NO_REPEAT_NGRAM=0
+    # to disable (e.g. for the deterministic degradation study where you want raw behaviour).
+    _rep_pen = float(os.environ.get("PIPELINE_REPETITION_PENALTY", "1.3"))
+    _no_rep  = int(os.environ.get("PIPELINE_NO_REPEAT_NGRAM", "3"))
+    if _rep_pen and _rep_pen != 1.0:
+        gen_kwargs["repetition_penalty"] = _rep_pen
+    if _no_rep and _no_rep > 0:
+        gen_kwargs["no_repeat_ngram_size"] = _no_rep
     if greedy:
         gen_kwargs["do_sample"] = False       # deterministic — required for reproducible context degradation study
     else:
