@@ -57,10 +57,65 @@ def python_execute(code: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic mock search/read — for reproducible benchmarking.
+# ---------------------------------------------------------------------------
+# Enabled by env BENCH_MOCK_SEARCH=1 on the *server* process (tools execute server-side).
+# Each value embeds a distinctive MOCKFACT-* sentinel that does NOT appear in any training
+# data, so the benchmark can tell whether the model used the tool result (the sentinel will be
+# present in the answer → faithful) or answered from stale memory / fabricated (sentinel absent).
+# Reproducible, offline, and decoupled from the EXA key.
+_MOCK_SEARCH_CORPUS = [
+    (("taoiseach", "prime minister", "ireland", "irish"),
+     "**Office of the Taoiseach** (https://www.gov.ie/taoiseach)\n"
+     "As of 2026 the Taoiseach (Prime Minister) of Ireland is Fionnuala Drennan "
+     "(MOCKFACT-IE-PM), in office since 2026."),
+    (("latest", "python", "version"),
+     "**Python downloads** (https://www.python.org/downloads)\n"
+     "The latest stable Python release is 3.19.4 (MOCKFACT-PY-VER), released April 2026."),
+    (("gpt", "openai", "newest", "recent", "model", "features"),
+     "**OpenAI blog** (https://openai.com/blog)\n"
+     "The most recent GPT model is GPT-6 Mini (MOCKFACT-GPT), announced May 2026 with a "
+     "1M-token context window and native tool use."),
+    (("eur", "usd", "exchange", "rate", "currency"),
+     "**XE currency** (https://www.xe.com)\n"
+     "EUR/USD is 1.1342 (MOCKFACT-FX) as of 2026-06-07 09:00 UTC."),
+    (("llm", "language model", "research", "paper", "papers", "developments"),
+     "**arXiv listing** (https://arxiv.org/list/cs.CL/recent)\n"
+     "A recent paper is 'Constitutional Harnesses for Sub-1B Models' (MOCKFACT-LLM, "
+     "arXiv:2606.00001), on small-model alignment."),
+]
+_MOCK_SEARCH_DEFAULT = (
+    "**Mock result** (https://example.test/mock)\n"
+    "No specific record found for this query (MOCKFACT-GENERIC); treat as unverified."
+)
+
+
+def _mock_search(query: str) -> str:
+    q = (query or "").lower()
+    hits = []
+    for keywords, result in _MOCK_SEARCH_CORPUS:
+        if any(k in q for k in keywords):
+            hits.append(result)
+    return "\n\n".join(hits) if hits else _MOCK_SEARCH_DEFAULT
+
+
+def _mock_read_url(url: str, prompt: str = "") -> str:
+    # Return the corpus entry most relevant to the prompt (the model usually reads a URL to
+    # follow up a search result), else the generic sentinel. Deterministic and offline.
+    body = _mock_search(prompt or url)
+    prefix = f"[Fetched: {url}]"
+    if prompt:
+        prefix += f"\nPrompt: {prompt}"
+    return f"{prefix}\n\n{body}"
+
+
+# ---------------------------------------------------------------------------
 # web_search — exa.ai
 # ---------------------------------------------------------------------------
 
 def web_search(query: str, num_results: int = 3) -> str:
+    if os.environ.get("BENCH_MOCK_SEARCH") == "1":
+        return _mock_search(query)
     api_key = os.environ.get("EXA_API_KEY", "")
     if not api_key:
         return (
@@ -118,6 +173,8 @@ def _score_paragraphs(paragraphs: list[str], prompt: str) -> list[str]:
 
 
 def read_url(url: str, prompt: str = "") -> str:
+    if os.environ.get("BENCH_MOCK_SEARCH") == "1":
+        return _mock_read_url(url, prompt)
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})

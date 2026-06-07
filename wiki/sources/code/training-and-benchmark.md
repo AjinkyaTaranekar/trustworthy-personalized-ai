@@ -8,6 +8,9 @@ sources:
   - pipeline/2_model_trainer.py
   - pipeline/3_infererence.py
   - pipeline/4_benchmark.py
+  - pipeline/rescore_report.py
+  - pipeline/alignment_metrics.py
+  - pipeline/pipeline_tools.py
   - pipeline/5_context_degradation.py
   - pipeline/experiment0_reasoning_comparison.py
   - pipeline/sft_math_pipeline.py
@@ -20,7 +23,7 @@ sources:
   - pipeline/preflight_check.sh
   - docker-compose.yml
   - README.md
-updated: 2026-05-24
+updated: 2026-06-07
 status: current
 ---
 
@@ -38,7 +41,9 @@ status: current
 | `1_dataset_generator.py` | V1 template-based interleaved data. Legacy prototype. |
 | `2_model_trainer.py` | **Phase 1: SFT** — LoRA fine-tuning of [[entities/qwen3-0.6b\|Qwen3-0.6B]] on `train_sft_v3_robust.jsonl`. Loss masked on system+user tokens via `train_on_responses_only` (fixes large train/eval gap from ~400-token system prompt). **Phase 2: GRPO** — DAPO RL training with per-component reward functions (`make_reward_fns`) so TRL logs each component separately. **Publish** — merges LoRA → safetensors, exports GGUF, pushes to HuggingFace with retry. CLI: `--mode {sft,grpo,publish}`, `--reward_type {c,d}`, `--resume`. |
 | `3_infererence.py` | **FastAPI inference server.** Model loaded once. Four built-in tools. Dual tool-call mode: `tool_mode="xml"` (custom `<tool>` tags, default) or `tool_mode="native"` (Qwen3 JSON `<tool_call>` via `apply_chat_template(tools=…)` — zero-shot new tools without retraining). Tool loop treats safety-validator failures as non-retryable and falls back to a no-tool answer after repeated tool errors. Full security hardening (Blockers 1–4). Module lifecycle hooks: write_pipeline → retrieve → analyse_appraisal → generate → onto_score. Endpoints: `/memory/inspect\|contest\|correct`, `/config`, `/dependency/status\|reset`, `POST /v1/model/swap` (hot-swap loaded model for multi-model benchmarking). |
-| `4_benchmark.py` | **Benchmark client** (zero GPU). Three suites: 12-probe constitutional drift, 14-turn conversation + 6 edge cases, 14-probe adversarial suite. Multi-model hot-swap mode: `--models path1 path2 ...` drives the inference server to sequentially load, benchmark, and compare N models without restarting either process; produces per-model JSON reports + a comparison CSV with Δ columns. |
+| `4_benchmark.py` | **Benchmark client** (zero GPU). Four suites: constitutional probes, category coverage, context drift, adversarial. **Trace-aware tool detection** (2026-06-07): tool-use checks read the orchestrator `tool_trace` via a centralised `_TRACE_TOOLS_OVERRIDE` + `_trace_tools()` context manager, not a grep of the prose answer — essential for the dual Thinker–Executor (whose answer carries no `<tool>` syntax). Falls back to text-grep for single-model responses. Judge robustness: a failed judge call returns `score=None` (excluded from the average, not silently 0.5); `_batch_judge` warns when the judge did not run. Multi-model hot-swap mode: `--models path1 path2 ...`. |
+| `rescore_report.py` | **Offline re-scorer** (zero GPU). Re-runs each probe's exact check against a saved report's `tool_trace`, swapping only the tool-detection source. Emits `saved` vs `replicated_textgrep` vs `rescored_trace` columns (isolates the tool-detection fix from check-version drift). On `a8d0c2a`: text-grep 0.4762 → trace-aware 0.5238 (P4/P10 corrected to PASS; P11 corrected to FAIL — a real failure the grep had masked). |
+| `alignment_metrics.py` | **Offline trustworthiness/scrutability metrics** (zero GPU). Honesty F1 / over-refusal (positive class = abstain), fabrication rate (specific factual tokens absent from tool outputs), answer-grounding rate. Pairs with the deterministic mock search for exact, reproducible grounding. |
 | `experiment0_reasoning_comparison.py` | **Experiment 0**: baseline / CoT / interleaved / ToT on GSM8K + logic puzzles. Must run before GRPO. |
 | `5_context_degradation.py` | Context-length degradation study. Greedy decoding, 12 turns with known correct answers. |
 | `user_modelling.py` | 5W+H FalkorDB graph client; Mem0g 4-stage write pipeline; retrieval gating; scrutability handlers. Loaded by `3_infererence.py` when `ENABLE_USER_MODELLING=true`. |

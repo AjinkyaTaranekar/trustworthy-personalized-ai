@@ -27,6 +27,7 @@ Backward-compatible:
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 import re
@@ -207,8 +208,31 @@ def _has_cap_check(r: str) -> bool:
     return bool(re.search(r"capability[_\s-]?check", _think(r), re.IGNORECASE))
 
 
+# Tool-detection override. The dual Thinker–Executor's final answer is prose, so grepping
+# it for `<tool>name(` syntax misses real tool calls — they live in the orchestrator trace.
+# Suite runners set this to the trace-derived tool list (via `_trace_tools`) around check
+# evaluation, so checks written as `"X" in _tool_names(r)` see what ACTUALLY ran. When None,
+# fall back to grepping the response (single-model responses that contain `<tool>` syntax).
+_TRACE_TOOLS_OVERRIDE: Optional[List[str]] = None
+
+
 def _tool_names(r: str) -> List[str]:
+    if _TRACE_TOOLS_OVERRIDE is not None:
+        return list(_TRACE_TOOLS_OVERRIDE)
     return re.findall(r"<tool>\s*(\w+)\s*\(", r)
+
+
+@contextlib.contextmanager
+def _trace_tools(tools: Optional[List[str]]):
+    """Within this context, `_tool_names` returns `tools` (the orchestrator-trace tool list)
+    instead of grepping the response text. Pass [] to mean 'trace shows no tools called'."""
+    global _TRACE_TOOLS_OVERRIDE
+    prev = _TRACE_TOOLS_OVERRIDE
+    _TRACE_TOOLS_OVERRIDE = list(tools) if tools is not None else None
+    try:
+        yield
+    finally:
+        _TRACE_TOOLS_OVERRIDE = prev
 
 
 def _q_count(text: str) -> int:
@@ -304,7 +328,10 @@ def _llm_judge(
             "reason": str(data.get("reason", "")),
         }
     except Exception as e:
-        return {"score": 0.5, "passed": False, "reason": f"judge_failed: {e}"}
+        # score=None so a FAILED judge call is EXCLUDED from the average rather than silently
+        # scored 0.5 — a 0.5 floor pollutes combined_score and hides that the judge never
+        # actually evaluated this item (the failing principles get inflated, passing deflated).
+        return {"score": None, "passed": False, "reason": f"judge_failed: {e}"}
 
 
 def _batch_judge(
@@ -318,7 +345,19 @@ def _batch_judge(
     print(f"\n  Running LLM judge on {len(items)} responses (model={model})...", flush=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
         results = list(ex.map(lambda t: _llm_judge(t[0], t[1], t[2], t[3], model), items))
-    print(f"    judged {len(results)}/{len(items)}", flush=True)
+    n_failed = sum(1 for r in results if str(r.get("reason", "")).startswith("judge_failed"))
+    if n_failed:
+        msg = (f"    [WARN] LLM judge FAILED on {n_failed}/{len(results)} items "
+               f"(scored None, excluded from averages)")
+        if n_failed == len(results):
+            msg += " — judge effectively DID NOT RUN (check API key / model name)"
+        print(msg, flush=True)
+        # surface one example failure reason so the cause is visible, not buried per-item
+        for r in results:
+            if str(r.get("reason", "")).startswith("judge_failed"):
+                print(f"           e.g. {r['reason'][:160]}", flush=True)
+                break
+    print(f"    judged {len(results) - n_failed}/{len(items)}", flush=True)
     return results
 
 # ---------------------------------------------------------------------------
@@ -1185,7 +1224,10 @@ def run_probe_group(
             if "check_trace" in q:
                 rule_passed = bool(q["check_trace"](final_response, tools_called))
             else:
-                rule_passed = bool(q["check"](final_response))
+                # Make plain `check` lambdas trace-aware: _tool_names() returns the tools that
+                # actually ran (orchestrator trace), not a grep of the prose answer.
+                with _trace_tools(tools_called):
+                    rule_passed = bool(q["check"](final_response))
         except Exception:
             rule_passed = False
 
@@ -1500,6 +1542,7 @@ def run_category_probes(
             turns = q if is_multiturn else [q]
 
             cat_res: Dict[str, Any] = {}
+            cat_tools: List[str] = []
             for turn in turns:
                 history.append({"role": "user", "content": turn})
                 try:
@@ -1511,11 +1554,13 @@ def run_category_probes(
                     print(f"  [ERROR] {cat['category']} q{qi}: {e}")
                     final_response = f"[SERVER ERROR: {e}]"
                     cat_res = {}
+                cat_tools += [t.get("tool") for t in (cat_res.get("tool_trace") or []) if t.get("tool")]
                 history.append({"role": "assistant", "content": final_response})
 
-            # Rule check for math: did it use python_execute?
+            # Rule check for math: did it use python_execute? (trace-aware — the dual model's
+            # answer is prose, so detect the call from the orchestrator trace, not the text.)
             if cat["type"] == "math":
-                rule_passed = "python_execute" in _tool_names(final_response)
+                rule_passed = "python_execute" in cat_tools
                 rule_score  = 1.0 if rule_passed else 0.0
             else:
                 rule_passed = None
@@ -1534,6 +1579,7 @@ def run_category_probes(
                 "response":       final_response,
                 "conversation":   cat_res.get("conversation") or history,
                 "tool_trace":     cat_res.get("tool_trace", []),
+                "tools_called":   cat_tools,
                 "think_content":  cat_res.get("think_content", ""),
                 "answer_content": cat_res.get("answer_content", ""),
                 "rule_score":     rule_score,
@@ -1674,6 +1720,7 @@ def run_context_drift_test(
         q = t["question"]
         history.append({"role": "user", "content": q})
         print(f"\n  Turn {t['turn']:02d} [{t['principle']:6}]: {q[:65]}...")
+        res: Dict[str, Any] = {}
         try:
             res = _complete(server_url, history, "all_tools", _SYS_ALL,
                             max_new_tokens, temperature, session_id=session_id,
@@ -1682,12 +1729,14 @@ def run_context_drift_test(
         except Exception as e:
             print(f"  [ERROR] Turn {t['turn']}: {e}")
             response = f"[SERVER ERROR: {e}]"
+            res = {}
         history.append({"role": "assistant", "content": response})
 
         # Quick rule-based signal
         has_think = len(_think(response).strip()) > 20
         has_answer = "<answer>" in response.lower()
-        tools_called = _tool_names(response)
+        # Trace-aware: read tools from the orchestrator trace, not a grep of the prose answer.
+        tools_called = [tt.get("tool") for tt in (res.get("tool_trace") or []) if tt.get("tool")]
 
         print(f"  → think={'✓' if has_think else '✗'}  answer={'✓' if has_answer else '✗'}  tools={tools_called or 'none'}")
 
@@ -1990,6 +2039,7 @@ def run_adversarial_probes(
         session_id = f"adv_{probe['id']}_{uuid.uuid4().hex[:6]}"
 
         adv_res: Dict[str, Any] = {}
+        adv_tools: List[str] = []
         for q in questions:
             history.append({"role": "user", "content": q})
             try:
@@ -2001,10 +2051,14 @@ def run_adversarial_probes(
                 print(f"  [ERROR] {probe['id']}: {e}")
                 final_response = f"[SERVER ERROR: {e}]"
                 adv_res = {}
+            adv_tools += [t.get("tool") for t in (adv_res.get("tool_trace") or []) if t.get("tool")]
             history.append({"role": "assistant", "content": final_response})
 
         try:
-            passed = bool(probe["check"](final_response))
+            # Trace-aware: refusal checks like `"send_sms" not in _tool_names(r)` must see the
+            # tools that actually ran (orchestrator trace), not a grep of the prose answer.
+            with _trace_tools(adv_tools):
+                passed = bool(probe["check"](final_response))
         except Exception:
             passed = False
 
@@ -2025,6 +2079,7 @@ def run_adversarial_probes(
             "response":     final_response,
             "conversation": adv_res.get("conversation") or history,
             "tool_trace":   adv_res.get("tool_trace", []),
+            "tools_called": adv_tools,
             "think_content":  adv_res.get("think_content", ""),
             "answer_content": adv_res.get("answer_content", ""),
             "passed":       passed,

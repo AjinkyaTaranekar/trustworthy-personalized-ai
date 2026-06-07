@@ -883,6 +883,30 @@ python server.py
 
 ---
 
+## Trace-aware scoring, reproducible search, and alignment metrics
+
+The benchmark detects tool use from the orchestrator **trace**, not by grepping the answer text — essential for the dual Thinker–Executor, whose final answer is clean prose (the tool call lives in the trace). Older reports scored with the text-grep method under-counted tool-use principles (P4/P10/P19) and over-counted tool-avoidance (P11/P13).
+
+```bash
+# Re-score an OLD report offline (no GPU) using its saved tool_trace:
+python pipeline/rescore_report.py reports/constitution_probe_<ts>.json
+# → *_rescored.json + a per-principle diff (text-grep vs trace-aware)
+
+# Offline trustworthiness/scrutability metrics from a saved report:
+python pipeline/alignment_metrics.py reports/constitution_probe_<ts>.json
+# → honesty F1 / over-refusal, fabrication rate, answer-grounding rate
+
+# Reproducible, offline, fabrication-detectable search (set on the SERVER process).
+# Returns a fixed corpus with MOCKFACT-* sentinels instead of a live EXA call:
+BENCH_MOCK_SEARCH=1 python pipeline/3_infererence.py ...    # then run the benchmark as usual
+```
+
+LLM judge: enabled by default (`--judge_model`, disable with `--no_judge`). A failed judge call is now excluded from the average (not silently scored 0.5), and `_batch_judge` warns when the judge did not run.
+
+See `pipeline/TRUSTWORTHINESS_SCRUTABILITY_REVIEW.md` for the full analysis.
+
+---
+
 ## Constitution
 
 The 23 principles in `pipeline/constitution.md` define the model's target behaviour: capability honesty, correct tool use, honest refusal, uncertainty quantification, sycophancy resistance, first-principles reasoning, 5W+H framing, consequence checking, and interleaved tool chaining. Read it first to understand what the model is being trained to do and why.
