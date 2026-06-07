@@ -1115,6 +1115,7 @@ def _build_run_metadata(server_url: str, max_new_tokens: int, temperature: float
     made vanilla-vs-SFT pairing of those reports unreliable downstream
     (see pipeline/export_assets.py)."""
     import subprocess as _sp2
+    import datetime as _dt
     try:
         _git = _sp2.check_output(["git", "rev-parse", "--short", "HEAD"],
                                  stderr=_sp2.DEVNULL).decode().strip()
