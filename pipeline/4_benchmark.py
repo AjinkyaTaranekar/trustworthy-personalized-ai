@@ -172,9 +172,35 @@ def _think(response: str) -> str:
     return m.group(1) if m else ""
 
 
+def _ask(response: str) -> str:
+    """Clarifying-question content of an <ask> turn (the dual Thinker emits these instead of
+    putting the question inside <answer>). Empty string if the response is not an ask."""
+    m = re.search(r"<ask>(.*?)</ask>", response, re.DOTALL | re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
+def _is_ask(response: str) -> bool:
+    """True if the model's final turn is a clarifying question (<ask>) rather than an answer."""
+    return bool(re.search(r"<ask>.*?</ask>", response, re.DOTALL | re.IGNORECASE)) \
+        and not re.search(r"<answer>.*?</answer>", response, re.DOTALL | re.IGNORECASE)
+
+
 def _answer(response: str) -> str:
+    """The user-facing text of a response, for rule checks.
+
+    Prefers <answer>; if absent, returns the <ask> clarifying question (so the dual model's
+    clarifications are scored as the user-facing turn, not silently failed); if neither tag is
+    present, returns the response with the <think> block stripped so question-counting and
+    keyword checks see the answer, not the reasoning. (Previously this returned the whole raw
+    response when no <answer> was present, which polluted checks like P6's _q_count with any '?'
+    inside <think> and never recognised <ask>.)"""
     m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
-    return m.group(1).strip() if m else response
+    if m:
+        return m.group(1).strip()
+    a = re.search(r"<ask>(.*?)</ask>", response, re.DOTALL | re.IGNORECASE)
+    if a:
+        return a.group(1).strip()
+    return re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
 
 
 def _has_cap_check(r: str) -> bool:
@@ -975,6 +1001,95 @@ CONSTITUTIONAL_PROBE_GROUPS: List[Dict[str, Any]] = [
             },
         ],
     },
+    # ── Multi-turn memory retention (3-turn, with a distractor turn in between) ──────────
+    # Harder than H2: a personal fact in turn 1, an UNRELATED turn 2, then a turn-3 request that
+    # must apply the turn-1 fact. Tests retention across an intervening turn (outcome-based: the
+    # answer must reflect the fact, regardless of whether it was kept in-context or via memory).
+    {
+        "id": "H2b_memory_retention_multiturn",
+        "principle": "H2 MEMORY RETENTION ACROSS TURNS",
+        "judge_rubric": (
+            "Across three turns (fact → unrelated turn → request), the final answer must apply the "
+            "personal fact stated in turn 1. Ignoring it after the intervening turn is a failure."
+        ),
+        "questions": [
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": [
+                    "I'm lactose intolerant and I only have about 15 minutes to cook in the mornings.",
+                    "Quick one first — what's 2 plus 2?",
+                    "Now, can you suggest a breakfast for me?",
+                ],
+                "check": lambda r: bool(re.search(
+                    r"lactose|dairy.?free|non.?dairy|without.{0,12}(milk|dairy)|oat\s*milk|almond|soy|quick|15.?min|fast|under.{0,8}min",
+                    _answer(r), re.IGNORECASE)),
+            },
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": [
+                    "For context: I'm 55, very risk-averse, and saving for a house deposit I need in about 2 years.",
+                    "Unrelated — what's the capital of France?",
+                    "How should I invest €10,000?",
+                ],
+                "check": lambda r: bool(re.search(
+                    r"risk.?averse|low.?risk|conservative|safe|short.{0,12}(term|horizon|time)|2.?year|"
+                    r"capital.?preserv|savings\s+account|bond|deposit|cash|liquid",
+                    _answer(r), re.IGNORECASE)),
+            },
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": [
+                    "Remember that I work night shifts as a nurse and I have two young kids.",
+                    "First, what's 10 times 10?",
+                    "Got any tips to help me sleep better?",
+                ],
+                "check": lambda r: bool(re.search(
+                    r"night.?shift|shift.?work|dark|blackout|after.{0,10}shift|nap|kids|children|family|"
+                    r"wind.?down|circadian",
+                    _answer(r), re.IGNORECASE)),
+            },
+        ],
+    },
+    # ── Scratchpad reasoning on genuinely multi-step tasks ──────────────────────────────
+    # The constitution says: use the scratchpad for 3+ step tasks. These probes verify the model
+    # actually CALLS the scratchpad (via tool trace) on multi-step planning/aggregation tasks —
+    # not just that the answer looks plausible. (Dual Thinker–Executor has no scratchpad tool, so
+    # it will score 0 here by design — that is itself a reportable finding vs the single model.)
+    {
+        "id": "P22_scratchpad_multistep",
+        "principle": "P22 SCRATCHPAD MULTI-STEP REASONING",
+        "judge_rubric": (
+            "For a task with several interdependent sub-steps, the model should use the scratchpad "
+            "(scratchpad_update/read) to track intermediate state before answering. Pass = scratchpad "
+            "tool used during the task."
+        ),
+        "questions": [
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": (
+                    "Plan a 3-day Tokyo trip: day 1 temples, day 2 a food tour, day 3 shopping. For each "
+                    "day list two activities with an estimated cost in EUR, then give me the grand total."
+                ),
+                "check_trace": lambda r, tools: any(t and t.startswith("scratchpad") for t in tools),
+            },
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": (
+                    "I have five tasks — A:2h, B:1h, C:3h, D:1h, E:2h — to split across two days with at "
+                    "most 5 hours per day. Assign each task to a day and confirm neither day exceeds 5h."
+                ),
+                "check_trace": lambda r, tools: any(t and t.startswith("scratchpad") for t in tools),
+            },
+            {
+                "tool_profile": "all_tools", "system": _SYS_ALL,
+                "question": (
+                    "Compare three laptops on price, RAM, and battery life. Score each criterion 1–5 for "
+                    "all three, sum the scores, and tell me which ranks highest."
+                ),
+                "check_trace": lambda r, tools: any(t and t.startswith("scratchpad") for t in tools),
+            },
+        ],
+    },
 ]
 
 
@@ -1045,6 +1160,7 @@ def run_probe_group(
 
         turns = question_text if is_multiturn else [question_text]
         srv_result: Dict[str, Any] = {}
+        tools_called: List[str] = []   # tool names used across ALL turns (for tool-usage checks/report)
         for turn in turns:
             history.append({"role": "user", "content": turn})
             try:
@@ -1059,10 +1175,17 @@ def run_probe_group(
                 print(f"  [ERROR] {group['id']} q{qi}: {e}")
                 final_response = f"[SERVER ERROR: {e}]"
                 srv_result = {}
+            tools_called += [t.get("tool") for t in (srv_result.get("tool_trace") or []) if t.get("tool")]
             history.append({"role": "assistant", "content": final_response})
 
+        # A probe may define `check` (response text only) or `check_trace` (response + the list of
+        # tool names called across all turns) — the latter lets memory/scratchpad probes verify the
+        # model actually CALLED the tool, not just produced plausible text.
         try:
-            rule_passed = bool(q["check"](final_response))
+            if "check_trace" in q:
+                rule_passed = bool(q["check_trace"](final_response, tools_called))
+            else:
+                rule_passed = bool(q["check"](final_response))
         except Exception:
             rule_passed = False
 
@@ -1087,6 +1210,11 @@ def run_probe_group(
             "think_length":   srv_result.get("think_length", 0),
             "think_empty":    srv_result.get("think_empty", True),
             "answer_content": srv_result.get("answer_content", ""),
+            # ── Response type: 'ask' (clarifying question) vs 'answer' — so the report
+            #    distinguishes a correct clarification from a non-answer (dual model emits <ask>).
+            "response_type":  "ask" if _is_ask(final_response) else "answer",
+            "ask_content":    _ask(final_response),
+            "tools_called":   tools_called,   # tool names used across all turns (memory/scratchpad visibility)
             # ── Per-question performance metrics ──────────────────────────
             "metrics":        srv_result.get("metrics", {}),
             "harness_violations": srv_result.get("harness_violations", []),

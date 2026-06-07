@@ -164,29 +164,67 @@ def _join_think(carry: list[str], current: str) -> str:
 # template renders those as `<think>\n\n</think>\n\n<output>` — explicitly teaching the
 # empty-think→output pattern that IS the think-collapse failure mode. The FIRST turn keeps its
 # real (gated ≥150-char) reasoning; for later act/answer turns with no carried reasoning we
-# synthesise a SHORT, grounded transition so the model always sees think→output (matching
-# inference, where enable_thinking=True makes it reason every turn). These are scaffolds, not
-# substantive reasoning — grounded in the actual tool/instruction and rotated for variety so the
-# model cannot memorise one string. Audited via metadata["synth_think"].
-def _continuation_think_act(instr: str, idx: int) -> str:
-    head = instr.split(":", 1)[0].strip().lower()  # e.g. "use web_search to find"
-    variants = (
-        f"With the previous result in hand, the next concrete step is to {head}. I'll delegate that single action and wait for what it returns before deciding anything else.",
-        f"The last result moves me forward but is not sufficient on its own; the right next step is to {head}, so I'll hand exactly that one action to the execution system.",
-        f"Building on what just came back, I still need one more thing — to {head}. I'll issue precisely that step now and reassess once its result arrives.",
-    )
-    return variants[idx % len(variants)]
+# synthesise a SHORT transition so the model always sees think→output (matching inference, where
+# enable_thinking=True makes it reason every turn).
+#
+# CRITICAL (learned the hard way): these MUST be GROUNDED IN THE ACTUAL TOOL RESULT and unique
+# per row. A first attempt used a handful of static templates → the model memorised one string
+# ("The computed result resolves the open question…") and parroted it 831× as its "reasoning".
+# We now embed a gist of the real result so every continuation is distinct content (no
+# memorisation) and the think genuinely reflects what just came back. Still a scaffold, not deep
+# reasoning — the gold fix is teacher-regenerated reflections — but it removes the memorisation
+# trap. Audited via metadata["synth_think"].
+
+def _result_gist(tool: str, result: str) -> str:
+    """A short, clean snippet of the tool result to ground the continuation think in real content."""
+    r = (result or "").strip()
+    if not r:
+        return ""
+    if tool == "python_execute":
+        lines = [x.strip() for x in r.splitlines() if x.strip()]
+        gist = lines[-1] if lines else r            # the printed value is what matters
+    else:
+        # web_search / read_url: first meaningful line (often a result title), cleaned of markdown
+        gist = r
+        for line in r.splitlines():
+            s = line.strip()
+            s = re.sub(r"\*+", "", s)                # drop markdown bold
+            s = re.split(r"\s*\(https?://", s)[0]    # drop the " (https://…)" url tail
+            s = s.strip(" *[]#–-").strip()
+            if len(s) > 8:
+                gist = s
+                break
+    gist = " ".join(gist.split())                    # collapse whitespace
+    gist = gist[:80].rsplit(" ", 1)[0] if len(gist) > 80 else gist  # avoid mid-word truncation
+    return gist
 
 
-def _continuation_think_answer(last_tool: str, idx: int) -> str:
-    src = {"web_search": "search results", "python_execute": "computed result",
-           "read_url": "page content"}.get(last_tool, "results I gathered")
+def _continuation_think_act(instr: str, last_result: str, idx: int) -> str:
+    head = instr.split(":", 1)[0].strip().lower()    # e.g. "use web_search to find"
+    gist = _result_gist("", last_result)
+    seen = f" The last step gave \"{gist}\", which is not yet enough." if gist else ""
     variants = (
-        f"I now have the {src} I was waiting for, and it covers what the user actually needs. I'll turn it into a direct, complete answer and close with the single most useful follow-up.",
-        f"The {src} resolves the open question and nothing further needs fetching. I'll synthesise it into a clear answer and surface the one thing still worth clarifying.",
-        f"With the {src} back, I can answer well now without more steps. I'll give the user the bottom line plainly and end on one targeted follow-up question.",
+        f"{seen} The next concrete step is to {head}; I'll delegate exactly that one action and wait for its result.",
+        f"{seen} I still need one more thing — to {head} — so I'll hand precisely that step to the execution system now.",
+        f"{seen} Building on what came back, the right move is to {head}; I'll issue that single step and reassess.",
+        f"{seen} That doesn't fully resolve it yet, so I'll {head} and use what returns before answering.",
     )
-    return variants[idx % len(variants)]
+    return variants[idx % len(variants)].strip()
+
+
+def _continuation_think_answer(last_tool: str, last_result: str, idx: int) -> str:
+    src = {"web_search": "search", "python_execute": "computation",
+           "read_url": "page"}.get(last_tool, "step")
+    gist = _result_gist(last_tool, last_result)
+    g = f" returned \"{gist}\"" if gist else " came back"
+    variants = (
+        f"The {src}{g}, which is exactly what the question turned on; I can answer directly now and state any assumption I'm making.",
+        f"With the {src} result{(' ' + chr(34) + gist + chr(34)) if gist else ''} in hand I have enough to respond fully — I'll give the bottom line and flag the one thing still worth confirming.",
+        f"The {src}{g} — that's the missing piece, so no further tool calls are needed. I'll fold it into a clear answer and close on the most useful follow-up.",
+        f"Now that the {src}{g}, I can resolve this without more steps; I'll present it plainly and end with one targeted question.",
+        f"The {src}{g}; I'll synthesise that into a direct answer for the user and check the next most relevant detail.",
+    )
+    return variants[idx % len(variants)].strip()
 
 
 # --- Thinker view (§7.2) ---------------------------------------------------------------
@@ -206,6 +244,7 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
     memory_text: str | None = None
     emit_idx = 0            # count of emitted assistant turns (variant rotation for synth think)
     last_tool = ""          # most recent act's tool, for grounding answer continuation think
+    last_result = ""        # most recent act's RAW result, for grounding continuation think (P1.4)
     synth_think = 0         # number of follow-up turns given a synthesised <think> (audited)
 
     i, n = 0, len(messages)
@@ -246,13 +285,15 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
             if opening_think_len is None:
                 opening_think_len = len(think_text)   # gate sees the REAL opening think only
             elif not think_text:
-                think_text = _continuation_think_act(instr, emit_idx)   # P1.4: follow-up only
+                # grounded in the PRIOR result (this act follows it); follow-up turns only
+                think_text = _continuation_think_act(instr, last_result, emit_idx)
                 synth_think += 1
             out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<act>{instr}</act>"})
             emit_idx += 1
             emitted_act = True
             last_tool = call[0]
             if result is not None:
+                last_result = result        # ground the NEXT continuation think in this result
                 # Stamp the canonical served representation (injection-filtered, per-tool budget,
                 # [TOOL_RESULT] wrapper) so the Thinker trains on exactly what the server feeds it.
                 out.append({"role": "tool", "content": sanitise_tool_result(call[0], result)})
@@ -262,7 +303,8 @@ def factor_thinker(messages: list[dict], keep_memory: bool = True) -> dict | Non
             if opening_think_len is None:
                 opening_think_len = len(think_text)   # gate sees the REAL opening think only
             elif not think_text:
-                think_text = _continuation_think_answer(last_tool, emit_idx)   # P1.4: follow-up only
+                # grounded in the most recent tool result that precedes this answer
+                think_text = _continuation_think_answer(last_tool, last_result, emit_idx)
                 synth_think += 1
             out.append({"role": "assistant", "content": _wrap_think(think_text) + f"<answer>{answer}</answer>"})
             emit_idx += 1
