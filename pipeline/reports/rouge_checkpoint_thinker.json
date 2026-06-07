@@ -2,36 +2,36 @@
   "checkpoint": "checkpoint_thinker",
   "eval_split_rouge": {
     "rouge1": {
-      "precision": 0.292,
-      "recall": 0.3772,
-      "fmeasure": 0.2583
+      "precision": 0.2618,
+      "recall": 0.4669,
+      "fmeasure": 0.2116
     },
     "rouge2": {
-      "precision": 0.095,
-      "recall": 0.1024,
-      "fmeasure": 0.0858
+      "precision": 0.0564,
+      "recall": 0.0914,
+      "fmeasure": 0.0447
     },
     "rougeL": {
-      "precision": 0.1616,
-      "recall": 0.2599,
-      "fmeasure": 0.1472
+      "precision": 0.1287,
+      "recall": 0.3744,
+      "fmeasure": 0.1101
     }
   },
   "probe_baseline_rouge": {
     "rouge1": {
-      "precision": 0.3276,
-      "recall": 0.489,
-      "fmeasure": 0.3367
+      "precision": 0.3627,
+      "recall": 0.4082,
+      "fmeasure": 0.3543
     },
     "rouge2": {
-      "precision": 0.1078,
-      "recall": 0.1449,
-      "fmeasure": 0.1094
+      "precision": 0.1135,
+      "recall": 0.1245,
+      "fmeasure": 0.1125
     },
     "rougeL": {
-      "precision": 0.1729,
-      "recall": 0.2957,
-      "fmeasure": 0.18
+      "precision": 0.2099,
+      "recall": 0.2477,
+      "fmeasure": 0.2081
     }
   },
   "grpo_held_out_reward": null
