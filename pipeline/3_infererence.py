@@ -870,6 +870,7 @@ class ModelSwapRequest(BaseModel):
     gguf: Optional[str] = None
     max_seq_length: int = 4096
     reset_metrics: bool = True
+    load_in_4bit: bool = False   # bf16 by default — 4-bit is slower for a 0.6B on a 24 GB GPU
 
 
 class CompletionRequest(BaseModel):
@@ -1468,7 +1469,7 @@ def swap_model(req: ModelSwapRequest) -> Dict[str, Any]:
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
             model_name=source,
             max_seq_length=req.max_seq_length,
-            load_in_4bit=True,
+            load_in_4bit=req.load_in_4bit,
             dtype=None,
         )
         FastModel.for_inference(_MODEL)
@@ -1521,6 +1522,10 @@ def main() -> None:
                         help="Executor LoRA checkpoint dir or HF repo id (required with --thinker).")
     parser.add_argument("--max_steps", type=int, default=6,
                         help="Dual mode only: max Thinker↔Executor cycles per turn.")
+    parser.add_argument("--load_in_4bit", action="store_true",
+                        help="Serve in 4-bit (bitsandbytes). Default is bf16/fp16 — on a 0.6B model "
+                             "4-bit gives no memory benefit and is SLOWER per token (dequant overhead), "
+                             "so only use this on a tiny GPU that genuinely cannot fit the 16-bit weights.")
     args = parser.parse_args()
 
     global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL, _HARNESS, _HF_USERNAME, _DEFAULT_TOOL_MODE
@@ -1556,8 +1561,8 @@ def main() -> None:
         # via the orchestrator's HFGenerator. We expose the PeftModel + tokenizer as the server
         # globals so the shared _generate() (used by harness retries, self-critique) works, and
         # wire the loop's tool sanitiser to this server's injection-stripping _sanitise_tool_output.
-        print(f"Loading Thinker–Executor dual adapters on base {args.base_model} (load_in_4bit=True)…")
-        _hf = _HFGenerator(args.base_model, args.thinker, args.executor, load_in_4bit=True)
+        print(f"Loading Thinker–Executor dual adapters on base {args.base_model} (load_in_4bit={args.load_in_4bit})…")
+        _hf = _HFGenerator(args.base_model, args.thinker, args.executor, load_in_4bit=args.load_in_4bit)
         _MODEL, _TOKENIZER = _hf.model, _hf.tok
         _MODEL_LABEL = f"thinker={Path(args.thinker).name}|executor={Path(args.executor).name}"
         _server_gen = _ServerGenerator()
@@ -1606,10 +1611,11 @@ def main() -> None:
         gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         gpu_mem  = f"{torch.cuda.get_device_properties(0).total_memory // 1024**3} GB" if torch.cuda.is_available() else ""
         print(f"  GPU            : {gpu_name}{' / ' + gpu_mem if gpu_mem else ''}")
-        print(f"  max_seq_length={args.max_seq_length}  load_in_4bit=True")
+        print(f"  max_seq_length={args.max_seq_length}  load_in_4bit={args.load_in_4bit}")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
-            model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
+            model_name=source, max_seq_length=args.max_seq_length,
+            load_in_4bit=args.load_in_4bit, dtype=None,
         )
         FastModel.for_inference(_MODEL)
         print(f"Model ready: {_MODEL_LABEL}")

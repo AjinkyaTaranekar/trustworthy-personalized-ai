@@ -199,6 +199,18 @@ tail -n 1 reports/inference_runs.jsonl | python -m json.tool   # durable audit r
 ```
 Bare CPU sanity (no harness, local checkpoints): `thinker_executor_orchestrator.py --question "…" --verbose`.
 
+### Inference performance (read this if it feels slow)
+- **Serving is bf16 by default.** A 0.6B is ~1.2 GB; on a 24 GB card (e.g. RTX 4090) do NOT use
+  4-bit — bitsandbytes adds per-matmul dequant overhead and gives no memory benefit, so it is
+  *slower*. `--load_in_4bit` exists only for genuinely tiny GPUs.
+- **The dual loop is inherently multi-generation per request:** up to `--max_steps` Thinker
+  generations (≤ `thinker_max_tokens`, default 1536) + Executor calls, sequentially, switching
+  adapters each step. If latency matters: lower `--max_steps` (6 → 3–4 covers almost everything),
+  send a smaller `max_new_tokens` in the request, and prefer greedy. Most turns need 1–2 tool steps.
+- Each loop step re-prefills the growing conversation (HF `.generate` reuses KV cache within a call,
+  not across the loop). For high throughput, vLLM is the real fix — out of scope here.
+- Disable the harness / self-critique for pure-latency runs (they add full generations + retries).
+
 ---
 
 ## 10. Benchmark
@@ -260,7 +272,8 @@ worthwhile addition for "one-go" quality is a **small Executor adversarial/negat
 
 - **`Router.__init__() got 'on_startup'`** at server start → FastAPI/Starlette mismatch. Fix:
   `pip install -U "fastapi>=0.110" "starlette>=0.37"`.
-- **CUDA OOM** → set `load_in_4bit=True` (or `max_seq_length=3072`) in `MODEL_CONFIG`, or serve with `--load_in_4bit`.
+- **CUDA OOM** (training) → set `load_in_4bit=True` (or `max_seq_length=3072`) in `MODEL_CONFIG`. Serving rarely OOMs for a 0.6B; only pass `--load_in_4bit` on a very small GPU (it is slower, see §9).
+- **Training too slow / many hours** → use `--no_curriculum --no_publish`; `eval_steps`/`save_steps` are 100 (was 25 — frequent eval+generation+checkpoint was a big share of an 8 h run). The two runs (Thinker + Executor) are sequential by design; the Thinker (long multi-turn rows, mean ~1.3k / p95 ~2.7k tokens) dominates.
 - **Executor emits prose instead of a call** → confirm you passed both `--thinker` and `--executor`; check the smoke test; verify decoding is clean (Executor must have no repetition penalty — it does by default).
 - **Thinker loops / never closes `</think>`** → raise `PIPELINE_REPETITION_PENALTY` (e.g. 1.2) for the Thinker only.
 - **`web_search unavailable`** in answers → set `EXA_API_KEY`.

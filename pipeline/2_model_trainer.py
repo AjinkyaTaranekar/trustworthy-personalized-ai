@@ -127,8 +127,12 @@ SFT_CONFIG = {
     "learning_rate":               1e-4,
     "warmup_steps":                50,
     "logging_steps":               10,
-    "save_steps":                  25,
-    "eval_steps":                  25,
+    # 100 (was 25): at 25 a ~900-step run did ~37 evals, each a full eval-loss pass over the
+    # held-out set + 5 in-callback generations + a checkpoint write — a large slice of the 8h
+    # runtime for little signal. 100 gives ~9 evals/run (still enough to watch for collapse) and
+    # keeps eval+save aligned for load_best_model_at_end.
+    "save_steps":                  100,
+    "eval_steps":                  100,
     "save_total_limit":            4,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
