@@ -640,6 +640,43 @@ Score = fraction of attacks successfully resisted. Run on SFT checkpoint before 
 
 ---
 
+## Evaluation: persona conversation suite (Suite E)
+
+Deterministic multi-turn evaluation of how the model serves real *human profiles*. Each persona is a fixed profile plus a hand-written script of user turns (e.g. a risk-averse nurse saving for a house, a grieving student, a non-technical bakery owner, an adversarial health-info seeker). The script is replayed verbatim through the server — there is **no LLM on the user side**, so the run is reproducible. `4_benchmark.py` only *generates* the conversation and saves the whole transcript; the *conversation-level* judge that scores each transcript on six dimensions (personalisation, memory consistency, empathy, trustworthiness, coherence, goal completion) runs separately in **`5_judgement_day.py`** (see below).
+
+```bash
+# Generate the persona transcripts (GPU; deterministic — use temperature 0)
+python 4_benchmark.py --persona_only --temperature 0
+
+# As part of a full generation pass
+python 4_benchmark.py --probe --categories --persona --temperature 0
+
+# Across checkpoints via hot-swap (per-model persona reports)
+python 4_benchmark.py --models ./models/vanilla ./models/checkpoint_sft \
+    --labels vanilla sft --persona --temperature 0
+```
+
+Output: `reports/persona_conversations_<label>_<ts>.json` with the full transcript, profile, and expectations per persona (scores are filled in by the judge step). The script is deterministic; model sampling is the other axis — pass `--temperature 0` for headline numbers, or repeat at a higher temperature for a variance band.
+
+---
+
+## Evaluation: judging (`5_judgement_day.py`, no GPU)
+
+`4_benchmark.py` makes **no LLM calls** — it generates responses on the GPU and embeds each item's judge spec into the report. The LLM-as-judge is a separate, API-only step, so you can release the GPU first and re-judge locally for free:
+
+```bash
+# Judge every saved report under reports/ (in place; keeps a .prejudge.bak)
+python 5_judgement_day.py --judge_model claude-opus-4-8
+
+# Scope to the five ladder conditions and also write a narrative diagnostic
+python 5_judgement_day.py --judge_model claude-opus-4-8 \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor --report
+```
+
+It fills `llm_score` / `combined_score` / `persona_score` (+ the six persona `dimension_means`) and recomputes the blended aggregates. Two upgraded prompts (both system+user, reasoning-before-score, calibrated anchors): a per-response judge for Suites A–C and a whole-transcript conversation judge for Suite E. A failed judge call scores `None` (excluded from the average), never a silent 0.5. Keep the judge model identical across conditions (recorded in `run_metadata.judged_by`); adversarial (Suite D) is rule-only and never judged.
+
+---
+
 ## Evaluation: multi-turn benchmark + comparison
 
 ```bash
@@ -686,6 +723,35 @@ Model labels default to the last path component — `unsloth/Qwen3-0.6B` → `Qw
 | `--base_model` | `unsloth/Qwen3-0.6B` | Fallback HF ID when a `--models` path does not exist on disk |
 | `--max_seq_length` | `4096` | Sequence length passed to the swap endpoint |
 | `--compare_output` | `reports/comparison_<ts>.csv` | Where to save the comparison CSV |
+
+---
+
+## Five-condition ablation ladder + cross-condition analysis
+
+The headline dissertation comparison is a five-rung ablation ladder where each adjacent delta isolates one factor:
+
+| Rung | Condition | How served / benchmarked | Isolates |
+|---|---|---|---|
+| C0 | `vanilla_base` | base model, `4_benchmark.py --tool_mode xml` (base ignores the XML tool instructions → tools effectively off) | floor |
+| C1 | `vanilla_tools` | base model, `4_benchmark.py --tool_mode native` (base can emit Hermes tool calls) | value of tool access |
+| C2 | `sft_template` | Exp 1 template-SFT (native), `--tool_mode native` | value of SFT format scaffolding |
+| C3 | `sft_constitution` | Exp 2 constitutional-SFT, `--tool_mode native` | value of constitutional content (H1) |
+| C4 | `thinker_executor` | dual model: `3_infererence.py --thinker … --executor …`, then `4_benchmark.py --tool_mode native` against that server | value of the architecture (H2) |
+
+**All three SFT rungs use the native `<tool_call>` format**, so they are benchmarked with `--tool_mode native` and are directly comparable. C0 alone uses `--tool_mode xml`: the untrained base ignores the XML tool instructions, so tools never fire — that is the deliberate "tools-off" floor (C1 is the same weights with `--tool_mode native`). Generate the native Exp 1 dataset with `python 1_dataset_generator.py --variant interleaved --tool_format native --train_size N` → `data/train_interleaved_native.jsonl` (emits `<tool_call>` JSON, stamps `native_tools`, and remaps the few legacy tools not in the served registry, e.g. `get_exchange_rate`→`web_search`); train Exp 2 on its existing native `data/train_sft_v3.jsonl`.
+
+> Note: with Exp 1 regenerated native, the C2→C3 delta is **no longer confounded by tool format**. The remaining differences between C2 and C3 are *training content*, *system prompt*, *tool inventory*, and *generation method* (template vs constitutional), so report C2→C3 as "template-SFT vs constitutional-SFT", not a strict single-variable isolation.
+
+All five conditions produce identical-schema `4_benchmark.py` reports (the dual is served on the same `/v1/chat/completions` endpoint). Generate each fresh with `--temperature 0`, `BENCH_MOCK_SEARCH=1`, all five suites (`--probe --categories --drift --adversarial --persona`), the per-condition `--tool_mode` above, and `--output_dir reports/<label>`. Then judge them all locally in one pass with `5_judgement_day.py` and consolidate with `analyze_experiments.py`. Step-by-step: `pipeline/ABLATION_LADDER_RUNBOOK.md`.
+
+Then consolidate offline (no GPU) with `analyze_experiments.py`:
+
+```bash
+python analyze_experiments.py \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
+```
+
+It pairs the latest report of each suite per label, prints the ladder with the four **isolating deltas** (bootstrap 95% CIs where item-level data exists), keeps the constitution suite as **rule-based (primary) and combined (secondary) rows separately** to avoid LLM-judge circularity, and writes `experiment_ladder_<ts>.csv`, `experiment_ladder_<ts>.tex` (dissertation table), and `experiment_h3_failures_<ts>.csv` (probes the top rung still fails or regresses on — the H3 limits evidence).
 
 ---
 
@@ -901,7 +967,7 @@ python pipeline/alignment_metrics.py reports/constitution_probe_<ts>.json
 BENCH_MOCK_SEARCH=1 python pipeline/3_infererence.py ...    # then run the benchmark as usual
 ```
 
-LLM judge: enabled by default (`--judge_model`, disable with `--no_judge`). A failed judge call is now excluded from the average (not silently scored 0.5), and `_batch_judge` warns when the judge did not run.
+LLM judge: a **separate offline step**, `5_judgement_day.py` (API-only, no GPU). `4_benchmark.py` generates responses and embeds each item's judge spec; the judge fills the scores afterwards. A failed judge call is excluded from the average (not silently scored 0.5).
 
 See `pipeline/TRUSTWORTHINESS_SCRUTABILITY_REVIEW.md` for the full analysis.
 

@@ -194,7 +194,6 @@ python 4_benchmark.py \
     --probe_only \
     --save_as_baseline \
     --model_label vanilla \
-    --no_judge \
     --output_dir reports
 ```
 
@@ -229,7 +228,6 @@ python 4_benchmark.py \
     --probe_only \
     --baseline reports/constitution_baseline.json \
     --model_label sft \
-    --no_judge \
     --output_dir reports
 ```
 
@@ -269,7 +267,6 @@ python 4_benchmark.py \
     --probe_only \
     --with_harness \
     --model_label sft_with_harness \
-    --no_judge \
     --output_dir reports
 ```
 
@@ -315,21 +312,19 @@ Each probe records: `rule_score` (deterministic), `llm_score` (judge, optional),
 
 ---
 
-## 8. Running with LLM Judge (optional, costs API credits)
+## 8. Running with LLM Judge — `5_judgement_day.py` (separate step, costs API credits)
 
-Add `--judge_model` to any probe run for semantic scoring on top of rule checks:
+`4_benchmark.py` no longer judges; it only generates responses (GPU) and embeds each item's
+judge spec into the report. Score the saved reports afterwards, API-only (no GPU), with the
+dedicated judge — so you can release the GPU first and re-judge locally for free:
 
 ```bash
-python 4_benchmark.py \
-    --probe_only \
-    --model_label sft \
-    --judge_model nvidia_nim/moonshotai/kimi-k2.6 \
-    --output_dir reports
+python 5_judgement_day.py --judge_model nvidia_nim/moonshotai/kimi-k2.6 --reports_dir reports
 ```
 
-Each probe question gets an LLM score (0–1) in addition to the regex rule check.
-`combined_score = (rule_score + llm_score) / 2`.
-Use `--no_judge` for fast rule-only runs during iteration.
+Each probe question gets an LLM score (0–1) added to the regex rule check
+(`combined_score = (rule_score + llm_score) / 2`); the persona suite gets a six-dimension
+conversation score. A failed judge call is excluded from the average (never a silent 0.5).
 
 ---
 
@@ -370,7 +365,8 @@ python 3_infererence.py \
     --port 8000
 # /health then reports  "mode": "dual",  "architecture": "thinker_executor".
 # Benchmark it exactly like any single model (apples-to-apples, harness on both arms):
-#   python 4_benchmark.py --probe_only --model_label thinker_executor --no_judge --output_dir reports
+#   python 4_benchmark.py --probe_only --model_label thinker_executor --output_dir reports
+#   (then judge offline:  python 5_judgement_day.py --judge_model <model> --reports_dir reports)
 # Optional: --max_steps N caps the Thinker↔Executor cycles per turn (default 6).
 
 # ── Smoke-test the dual model BEFORE the full benchmark ──────────────────────

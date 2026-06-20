@@ -216,7 +216,10 @@ Bare CPU sanity (no harness, local checkpoints): `thinker_executor_orchestrator.
 ## 10. Benchmark
 
 ```bash
-python 4_benchmark.py --probe_only --model_label thinker_executor --no_judge --output_dir reports
+# 1. Generate (GPU): no LLM judge here — 4_benchmark.py only produces responses
+python 4_benchmark.py --probe_only --model_label thinker_executor --output_dir reports
+# 2. Judge (local, no GPU):
+python 5_judgement_day.py --judge_model <model> --reports_dir reports
 # then: compare_runs.py vanilla.json thinker_executor.json → CSV   (see pipeline.md §6C)
 ```
 The dual model is benchmarked exactly like a single model (apples-to-apples, harness on both arms).
