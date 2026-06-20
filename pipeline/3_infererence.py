@@ -379,6 +379,7 @@ _USE_GGUF = False
 _GGUF_MODEL = None   # llama_cpp.Llama instance — populated when --gguf is passed
 _DEFAULT_TOOL_MODE = "native"   # overridden by --tool_mode at startup
 _HF_USERNAME = "AjinkyaTaranekar"  # overridden by --hf_username at startup
+_DEFAULT_MODEL_DIR = "./models/checkpoint_sft"  # untouched default ⇒ user wants the plain --base_model
 
 # Thinker–Executor dual-adapter experiment state. When --thinker and --executor are passed,
 # _DUAL_MODE is True and _THINKER_EXECUTOR holds the orchestration loop (sharing this server's
@@ -494,12 +495,17 @@ def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
         return None
     try:
         obj = json.loads(m.group(1), strict=False)
+
+        if isinstance(obj, list):       # some models emit a JSON array of calls — take the first
+            obj = next((o for o in obj if isinstance(o, dict)), None)
+        if not isinstance(obj, dict):   # bare string/number/null is not a tool call — ignore it
+            return None
         name = obj.get("name", "")
         args = obj.get("arguments", {})
         if isinstance(args, str):       # some models serialise args as a JSON string
             args = json.loads(args, strict=False)
         return {"function": name, "kwargs": args if isinstance(args, dict) else {}}
-    except (json.JSONDecodeError, KeyError, TypeError):
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None
 
 
@@ -1496,10 +1502,11 @@ def get_config() -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Trustworthy AI Inference Server")
-    parser.add_argument("--model_dir", default="./models/checkpoint_sft",
+    parser.add_argument("--model_dir", default=_DEFAULT_MODEL_DIR,
                         help="Path to fine-tuned LoRA checkpoint")
     parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
-                        help="HuggingFace model ID used when --model_dir does not exist and name does not match checkpoint_ convention")
+                        help="HuggingFace model ID used when --model_dir is left at its default (vanilla) or "
+                             "does not exist and its name matches neither the checkpoint_ convention nor a repo id")
     parser.add_argument("--hf_username", default="AjinkyaTaranekar",
                         help="HuggingFace username for auto-downloading checkpoints by name")
     parser.add_argument("--gguf", default=None,
@@ -1595,16 +1602,24 @@ def main() -> None:
         if model_path.exists():
             source = str(model_path)
             print(f"Loading LoRA checkpoint: {source}")
+        elif args.model_dir == _DEFAULT_MODEL_DIR:
+            # User left --model_dir at its default and it isn't present ⇒ they want the plain
+            # base model (the C0/C1 vanilla case), NOT an auto-resolved trustworthy-ai-sft repo.
+            source = args.base_model
+            print(f"No checkpoint at default {model_path}; using base model: {source}")
         else:
             ckpt_name = model_path.name
-            if "/" in args.model_dir:
-                # treat as a direct HuggingFace repo ID (e.g. username/repo-name)
-                source = args.model_dir
-                print(f"Loading from HF repo: {source}")
-            elif ckpt_name.startswith("checkpoint_"):
+            if ckpt_name.startswith("checkpoint_"):
+                # convention: checkpoint_<name> (incl. relative paths like models/checkpoint_<name>)
+                # → {user}/trustworthy-ai-<name>. Must be checked BEFORE the "/"-as-repo heuristic,
+                # else a relative path's slash makes it mis-resolve as a literal HF repo id (404).
                 suffix = ckpt_name.replace("checkpoint_", "").replace("_", "-")
                 source = f"{_HF_USERNAME}/trustworthy-ai-{suffix}"
                 print(f"Model dir not found ({model_path}); downloading from HF: {source}")
+            elif "/" in args.model_dir:
+                # treat as a direct HuggingFace repo ID (e.g. username/repo-name)
+                source = args.model_dir
+                print(f"Loading from HF repo: {source}")
             else:
                 source = args.base_model
                 print(f"Model dir not found ({model_path}); using base model: {source}")
