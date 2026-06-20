@@ -35,7 +35,15 @@ import threading
 import time
 from pathlib import Path
 
-import litellm
+# litellm is only needed for teacher generation (litellm.completion). Guard the import so
+# this module — the single source of truth for STUDENT_PROMPTS — stays importable in the
+# inference-server environment, which has no litellm. If it is missing here and a generation
+# path is later invoked, that call raises a clear AttributeError on `litellm` rather than
+# silently dropping consumers onto drifted fallback prompts (see 3_infererence.py / 4_benchmark.py).
+try:
+    import litellm
+except ImportError:  # inference-server / benchmark env without generation deps
+    litellm = None
 from dotenv import load_dotenv
 from pipeline_tools import ToolRegistry as _ToolRegistry
 from scratchpad import ScratchpadStore as _ScratchpadStore
