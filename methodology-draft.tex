@@ -102,13 +102,18 @@
 % report's \texttt{run\_metadata.judged\_by}; (iv) generation and judging are separate stages,
 % so re-scoring with a different assessor never requires re-running the model; (v) every
 % scored item carries its own principle and rubric in the saved report, making each report
-% self-describing and auditable; (vi) web tools are stubbed to a fixed corpus during scoring so
-% grounding is deterministic.
+% self-describing and auditable. The one input we do not freeze is live web search: tool-using
+% probes call a real search provider, so the handful of web-grounded items reflect the live web
+% and are not byte-reproducible across runs (a fixed-corpus mode exists for exact replication
+% when required).
 %
 % \subsection{Threats to validity}
 % The main threat is assessor circularity, mitigated by the rule-based anchor and the
 % cross-family judge above. Small sample sizes limit statistical power; we therefore lead with
-% effect sizes and intervals, not significance alone. The persona library, though spanning
-% distinct user types (including a deliberately error-prone "incompetent" user), is not a
-% representative population, and any external survey we cite for motivation should be read with
-% its own demographic scope in mind (e.g.\ US-centric trust surveys).
+% effect sizes and intervals, not significance alone. Live web search makes the few web-grounded
+% probes non-deterministic; we treat those items as a current-events spot-check rather than a
+% reproducible metric, and rely on the offline alignment metrics for grounded-fabrication
+% evidence. The persona library, though spanning distinct user types (including a deliberately
+% error-prone "incompetent" user), is not a representative population, and any external survey we
+% cite for motivation should be read with its own demographic scope in mind (e.g.\ US-centric
+% trust surveys).

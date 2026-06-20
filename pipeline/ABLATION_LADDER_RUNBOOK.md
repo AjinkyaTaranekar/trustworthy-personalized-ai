@@ -30,7 +30,8 @@ pip install -r pipeline/requirements.txt
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" peft
 pip install -U "fastapi>=0.110" "starlette>=0.37" "pydantic>=2"
 cd pipeline
-# pipeline/.env needs: HF_TOKEN, NVIDIA_NIM_API_KEYS (judge), EXA_API_KEY (web_search)
+# pipeline/.env needs: HF_TOKEN (publish), EXA_API_KEY (live web_search), and a judge key
+#   (NVIDIA_NIM_API_KEYS, or ANTHROPIC_API_KEY for a frontier judge) used later in §4
 ```
 
 Use two terminals (server + benchmark):
@@ -98,64 +99,89 @@ python composed_loop_eval.py --thinker models/checkpoint_thinker --executor mode
 
 ---
 
+## 2b. Publish the checkpoints to HuggingFace (save the models)
+
+Training above used `--no_publish`. Publish once afterwards (needs `HF_TOKEN` with write access).
+Each command merges the LoRA into 16-bit safetensors and pushes to a repo
+`{hf_username}/trustworthy-ai-{suffix}` (suffix = output name minus `checkpoint_`, underscores → hyphens):
+
+```bash
+python 2_model_trainer.py --mode publish --output_name checkpoint_sft_template     --hf_username AjinkyaTaranekar
+python 2_model_trainer.py --mode publish --output_name checkpoint_sft_constitution --hf_username AjinkyaTaranekar
+python 2_model_trainer.py --mode publish --output_name checkpoint_thinker          --hf_username AjinkyaTaranekar
+python 2_model_trainer.py --mode publish --output_name checkpoint_executor         --hf_username AjinkyaTaranekar
+```
+
+**Four repos are created** (the vanilla base needs none — it is `unsloth/Qwen3-0.6B`):
+
+| Checkpoint | HuggingFace repo |
+|---|---|
+| `checkpoint_sft_template`     | `AjinkyaTaranekar/trustworthy-ai-sft-template` |
+| `checkpoint_sft_constitution` | `AjinkyaTaranekar/trustworthy-ai-sft-constitution` |
+| `checkpoint_thinker`          | `AjinkyaTaranekar/trustworthy-ai-thinker` |
+| `checkpoint_executor`         | `AjinkyaTaranekar/trustworthy-ai-executor` |
+
+Add `--no_skip_gguf` to also export a GGUF (needs llama.cpp). Publishing is decoupled from training and from serving — benchmarking works fine from the local `models/checkpoint_*` dirs, so this step is for saving/sharing the weights. Do it on the GPU box before teardown.
+
+---
+
 ## 3. Benchmark each condition (GPU — generation only, no LLM judge)
 
 `4_benchmark.py` only GENERATES responses and saves self-contained reports; **LLM judging is a
-separate local step (§5)** so you can release the GPU first. Same recipe for all conditions:
-`--temperature 0`, all five suites, the condition's `--tool_mode`, and a per-condition
-`--output_dir reports/<label>`. Start every server with `BENCH_MOCK_SEARCH=1` so web grounding is
-reproducible.
+separate local step (§5)** so you can release the GPU first. Every run uses the same flags: all
+five suites, `--temperature 0`, the condition's `--tool_mode`, and a per-condition
+`--output_dir reports/<label>`. `web_search`/`read_url` hit **live Exa** (set `EXA_API_KEY`) — see
+the reproducibility caveat in Notes.
 
-Reusable benchmark command:
+### C0 + C1 — vanilla base (one server, two benchmark runs)
 ```bash
-run_bench() {   # usage: run_bench <tool_mode> <label>   (generation only)
-  python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode "$1" --model_label "$2" --output_dir "reports/$2"
-}
+# server (terminal 1)
+python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 ```
+```bash
+# bench (terminal 2) — C0: tools effectively off (base ignores XML tool instructions)
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+    --temperature 0 --tool_mode xml --model_label vanilla_base --output_dir reports/vanilla_base
 
-### C0 + C1 — vanilla base (one server, two runs)
-```bash
-# server
-BENCH_MOCK_SEARCH=1 python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
+# C1: tools on
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+    --temperature 0 --tool_mode native --model_label vanilla_tools --output_dir reports/vanilla_tools
 ```
-```bash
-# bench
-run_bench xml    vanilla_base      # C0 — tools off
-run_bench native vanilla_tools     # C1 — tools on
-```
-Stop the server (`tmux send-keys -t server C-c`) before the next model.
+Stop the server (`tmux send-keys -t server C-c`) before loading the next model.
 
 ### C2 — Exp 1 template
 ```bash
 # server
-BENCH_MOCK_SEARCH=1 python 3_infererence.py --model_dir models/checkpoint_sft_template --port 8000
+python 3_infererence.py --model_dir models/checkpoint_sft_template --port 8000
 ```
 ```bash
 # bench
-run_bench native sft_template
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+    --temperature 0 --tool_mode native --model_label sft_template --output_dir reports/sft_template
 ```
 
 ### C3 — Exp 2 constitutional
 ```bash
 # server
-BENCH_MOCK_SEARCH=1 python 3_infererence.py --model_dir models/checkpoint_sft_constitution --port 8000
+python 3_infererence.py --model_dir models/checkpoint_sft_constitution --port 8000
 ```
 ```bash
 # bench
-run_bench native sft_constitution
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+    --temperature 0 --tool_mode native --model_label sft_constitution --output_dir reports/sft_constitution
 ```
 
 ### C4 — Exp 3 Thinker–Executor
 ```bash
 # server  (/health must report "mode":"dual")
-BENCH_MOCK_SEARCH=1 python 3_infererence.py \
+python 3_infererence.py \
     --thinker models/checkpoint_thinker --executor models/checkpoint_executor \
     --base_model unsloth/Qwen3-0.6B --port 8000
 ```
 ```bash
 # bench
-run_bench native thinker_executor
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+    --temperature 0 --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor
 ```
 
 Each run writes `reports/<label>/{constitution_probe,category_probes,context_drift,adversarial,persona_conversations}_<ts>.json` (rule scores only; `llm_score` is null until §5).
@@ -213,6 +239,7 @@ git add pipeline/reports/ && git commit -m "results: five-condition ablation lad
 - **Generation (GPU) and judging (API) are separate steps on purpose** — `4_benchmark.py` makes no LLM calls, so you pay GPU only for model inference and judge locally afterwards (and re-judge for free).
 - **Judge must be identical across all 5 conditions** (recorded in `run_metadata.judged_by`). A strong frontier judge (e.g. `claude-opus-4-8`) gives more reliable Suite E conversation scores — if you switch, switch for every condition and re-run §4.
 - **Scoring discipline:** `analyze_experiments.py` reports constitution as rule-based (primary) and combined (secondary) separately. For judge-independent anchors run `alignment_metrics.py` and `rescore_report.py` on the saved reports.
-- **Determinism:** the scripts are deterministic; `--temperature 0` removes the only other source of variance. Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
+- **Determinism:** scripts + `--temperature 0` make decoding deterministic; the one remaining nondeterministic input is live web search (next bullet). Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
+- **Web search is live (Exa), not mocked.** `web_search`/`read_url` use your `EXA_API_KEY`, so the few web-grounded items (P5/P19, `real_time_data`) reflect current results and are **not byte-reproducible** across runs — everything else is deterministic. If you ever need exact web reproduction (e.g. to re-run a result months later), restart that server with `BENCH_MOCK_SEARCH=1` to swap in the fixed offline corpus.
 - **Persona suite (Suite E)** runs 8 scripted personas including an error-prone "incompetent" user (states wrong facts + self-contradicts) — the conversation judge scores six dimensions; the correlation CSV above is how you defend those dimensions as non-redundant.
 - **Write-up:** the methodology section (justifying scripted users + LLM assessor with literature, plus the reproducibility protocol and threats to validity) is drafted as `%`-commented LaTeX in `methodology-draft.tex` at the repo root — uncomment what you accept.
