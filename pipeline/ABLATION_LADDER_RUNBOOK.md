@@ -25,7 +25,7 @@ C0 and C1 are the **same base weights** — only `--tool_mode` differs. C2/C3/C4
 cd /workspace
 git clone https://github.com/AjinkyaTaranekar/trustworthy-personalized-ai.git
 cd trustworthy-personalized-ai
-git checkout feat/thinker-executor-sft && git pull
+git checkout feat/thinker-executor-sft
 pip install -r pipeline/requirements.txt
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" peft
 pip install -U "fastapi>=0.110" "starlette>=0.37" "pydantic>=2"
@@ -129,7 +129,7 @@ Add `--no_skip_gguf` to also export a GGUF (needs llama.cpp). Publishing is deco
 
 `4_benchmark.py` only GENERATES responses and saves self-contained reports; **LLM judging is a
 separate local step (§5)** so you can release the GPU first. Every run uses the same flags: all
-five suites, `--temperature 0`, the condition's `--tool_mode`, and a per-condition
+five suites, ``, the condition's `--tool_mode`, and a per-condition
 `--output_dir reports/<label>`. `web_search`/`read_url` hit **live Exa** (set `EXA_API_KEY`) — see
 the reproducibility caveat in Notes.
 
@@ -141,11 +141,11 @@ python 3_infererence.py --base_model unsloth/Qwen3-0.6B --port 8000
 ```bash
 # bench (terminal 2) — C0: tools effectively off (base ignores XML tool instructions)
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode xml --model_label vanilla_base --output_dir reports/vanilla_base
+     --tool_mode xml --model_label vanilla_base --output_dir reports/vanilla_base
 
 # C1: tools on
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode native --model_label vanilla_tools --output_dir reports/vanilla_tools
+     --tool_mode native --model_label vanilla_tools --output_dir reports/vanilla_tools
 ```
 Stop the server (`tmux send-keys -t server C-c`) before loading the next model.
 
@@ -157,7 +157,7 @@ python 3_infererence.py --model_dir models/checkpoint_sft_template --port 8000
 ```bash
 # bench
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode native --model_label sft_template --output_dir reports/sft_template
+     --tool_mode native --model_label sft_template --output_dir reports/sft_template
 ```
 
 ### C3 — Exp 2 constitutional
@@ -168,7 +168,7 @@ python 3_infererence.py --model_dir models/checkpoint_sft_constitution --port 80
 ```bash
 # bench
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode native --model_label sft_constitution --output_dir reports/sft_constitution
+     --tool_mode native --model_label sft_constitution --output_dir reports/sft_constitution
 ```
 
 ### C4 — Exp 3 Thinker–Executor
@@ -181,7 +181,7 @@ python 3_infererence.py \
 ```bash
 # bench
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-    --temperature 0 --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor
+     --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor
 ```
 
 Each run writes `reports/<label>/{constitution_probe,category_probes,context_drift,adversarial,persona_conversations}_<ts>.json` (rule scores only; `llm_score` is null until §5).
@@ -239,7 +239,7 @@ git add pipeline/reports/ && git commit -m "results: five-condition ablation lad
 - **Generation (GPU) and judging (API) are separate steps on purpose** — `4_benchmark.py` makes no LLM calls, so you pay GPU only for model inference and judge locally afterwards (and re-judge for free).
 - **Judge must be identical across all 5 conditions** (recorded in `run_metadata.judged_by`). A strong frontier judge (e.g. `claude-opus-4-8`) gives more reliable Suite E conversation scores — if you switch, switch for every condition and re-run §4.
 - **Scoring discipline:** `analyze_experiments.py` reports constitution as rule-based (primary) and combined (secondary) separately. For judge-independent anchors run `alignment_metrics.py` and `rescore_report.py` on the saved reports.
-- **Determinism:** scripts + `--temperature 0` make decoding deterministic; the one remaining nondeterministic input is live web search (next bullet). Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
+- **Determinism:** scripts + `` make decoding deterministic; the one remaining nondeterministic input is live web search (next bullet). Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
 - **Web search is live (Exa), not mocked.** `web_search`/`read_url` use your `EXA_API_KEY`, so the few web-grounded items (P5/P19, `real_time_data`) reflect current results and are **not byte-reproducible** across runs — everything else is deterministic. If you ever need exact web reproduction (e.g. to re-run a result months later), restart that server with `BENCH_MOCK_SEARCH=1` to swap in the fixed offline corpus.
 - **Persona suite (Suite E)** runs 8 scripted personas including an error-prone "incompetent" user (states wrong facts + self-contradicts) — the conversation judge scores six dimensions; the correlation CSV above is how you defend those dimensions as non-redundant.
 - **Write-up:** the methodology section (justifying scripted users + LLM assessor with literature, plus the reproducibility protocol and threats to validity) is drafted as `%`-commented LaTeX in `methodology-draft.tex` at the repo root — uncomment what you accept.

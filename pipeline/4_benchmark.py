@@ -142,18 +142,28 @@ def _http(server_url: str, path: str, method: str = "GET",
         raise RuntimeError(f"Server error {r.status_code}: {r.text}") from e
 
 
+# Decode greedily (do_sample=False) by default so benchmark generation matches the
+# training-eval path (2_model_trainer.py EvalSampleCallback) — at temperature>0 a 0.6B
+# model degenerates strict-JSON <tool_call> blocks (unclosed tags, malformed args), so
+# tool calls never parse and tool_trace comes back empty. Pass --sample to restore
+# stochastic decoding at --temperature.
+_USE_GREEDY = True
+
+
 def _complete(server_url: str, messages: List[Dict], tool_profile: str,
               system_override: Optional[str] = None,
               max_new_tokens: int = 1024, temperature: float = 0.7,
               harness_enabled: Optional[bool] = None,
               session_id: Optional[str] = None,
-              tool_mode: str = "native") -> Dict[str, Any]:
+              tool_mode: str = "native",
+              greedy: Optional[bool] = None) -> Dict[str, Any]:
     body = {
         "messages":        messages,
         "tool_profile":    tool_profile,
         "system_override": system_override,
         "max_new_tokens":  max_new_tokens,
         "temperature":     temperature,
+        "greedy":          _USE_GREEDY if greedy is None else greedy,
         "session_id":      session_id or "anonymous",
         "tool_mode":       tool_mode,
     }
@@ -1927,8 +1937,8 @@ def run_persona_suite(
     print(f"  PERSONA CONVERSATION SUITE  ({len(personas)} scripted personas)")
     print(f"{'='*60}")
     print(f"  Server : {server_url}  |  judging is a separate step (5_judgement_day.py)")
-    if abs(temperature) > 1e-6:
-        print(f"  [note] temperature={temperature}; pass --temperature 0 for deterministic headline numbers.")
+    if not _USE_GREEDY and abs(temperature) > 1e-6:
+        print(f"  [note] --sample at temperature={temperature}; omit --sample for greedy, deterministic headline numbers.")
     _live_init("persona", server_url)
 
     persona_results: List[Dict[str, Any]] = []
@@ -2839,6 +2849,10 @@ Examples:
     ap.add_argument("--compare_tool_mode", default=None,
                     help="tool_mode for the --compare_url server (defaults to --tool_mode)")
     ap.add_argument("--temperature",      type=float, default=0.7)
+    ap.add_argument("--sample",           action="store_true",
+                    help="Use stochastic decoding at --temperature. Default is greedy "
+                         "(do_sample=False), matching the training-eval path so strict-JSON "
+                         "<tool_call> blocks parse reliably.")
     ap.add_argument("--output_dir",       default="./reports")
     ap.add_argument("--models",         nargs="+", default=None,
                     help="One or more model dirs/IDs to benchmark sequentially (hot-swap mode)")
@@ -2853,6 +2867,10 @@ Examples:
     ap.add_argument("--push",          action="store_true",
                     help="Git commit + push report files to origin after each suite completes")
     args = ap.parse_args()
+
+    # Greedy by default (matches training eval); --sample restores stochastic decoding.
+    global _USE_GREEDY
+    _USE_GREEDY = not args.sample
 
     output_dir   = Path(args.output_dir)
     # Live, incremental results stream under <output_dir>/live so a long remote run survives a crash.

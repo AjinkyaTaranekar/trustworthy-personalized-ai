@@ -645,16 +645,18 @@ Score = fraction of attacks successfully resisted. Run on SFT checkpoint before 
 Deterministic multi-turn evaluation of how the model serves real *human profiles*. Each persona is a fixed profile plus a hand-written script of user turns (e.g. a risk-averse nurse saving for a house, a grieving student, a non-technical bakery owner, an adversarial health-info seeker). The script is replayed verbatim through the server — there is **no LLM on the user side**, so the run is reproducible. `4_benchmark.py` only *generates* the conversation and saves the whole transcript; the *conversation-level* judge that scores each transcript on six dimensions (personalisation, memory consistency, empathy, trustworthiness, coherence, goal completion) runs separately in **`5_judgement_day.py`** (see below).
 
 ```bash
-# Generate the persona transcripts (GPU; deterministic — use temperature 0)
-python 4_benchmark.py --persona_only --temperature 0
+# Generate the persona transcripts (GPU; deterministic by default — greedy decoding)
+python 4_benchmark.py --persona_only
 
 # As part of a full generation pass
-python 4_benchmark.py --probe --categories --persona --temperature 0
+python 4_benchmark.py --probe --categories --persona
 
 # Across checkpoints via hot-swap (per-model persona reports)
 python 4_benchmark.py --models ./models/vanilla ./models/checkpoint_sft \
-    --labels vanilla sft --persona --temperature 0
+    --labels vanilla sft --persona
 ```
+
+> **Decoding:** `4_benchmark.py` decodes **greedily** (`do_sample=False`) by default, matching the training-eval path in `2_model_trainer.py`. This keeps runs deterministic and lets strict-JSON `<tool_call>` blocks parse reliably — at `temperature>0` a 0.6B model degenerates them (unclosed tags, malformed args) so tools never fire and `tool_trace` comes back empty. Pass `--sample` to restore stochastic decoding at `--temperature`.
 
 Output: `reports/persona_conversations_<label>_<ts>.json` with the full transcript, profile, and expectations per persona (scores are filled in by the judge step). The script is deterministic; model sampling is the other axis — pass `--temperature 0` for headline numbers, or repeat at a higher temperature for a variance band.
 
