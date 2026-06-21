@@ -77,7 +77,12 @@ def _prompt_messages(row):
 
 
 def _load_rows(path, kind, n):
-    """First n rows whose first assistant turn carries the expected marker for this kind."""
+    """First n rows whose first assistant turn carries the expected marker for this kind.
+
+    Thinker rows delegate via <act> and carry NO native_tools — don't require them.
+    For single/executor, skip no_tools rows so the expected call is a substantive tool
+    (python_execute), not a memory/scratchpad call — a cleaner tool-calling signal.
+    """
     marker = "<act>" if kind == "thinker" else "<tool_call>"
     rows = []
     try:
@@ -90,12 +95,16 @@ def _load_rows(path, kind, n):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            meta = row.get("metadata", {})
             msgs = row.get("messages", [])
             asst = next((m for m in msgs if m.get("role") == "assistant"), None)
             if not asst or marker not in (asst.get("content") or ""):
                 continue
-            if not row.get("metadata", {}).get("native_tools"):
-                continue
+            if kind != "thinker":
+                if not meta.get("native_tools"):
+                    continue
+                if meta.get("tool_profile") == "no_tools":
+                    continue
             rows.append(row)
             if len(rows) >= n:
                 break
@@ -136,7 +145,7 @@ def test_model(repo_id, data_file, kind, label, args, STUDENT_PROMPTS):
     else:
         passed = 0
         for i, row in enumerate(rows, 1):
-            native_tools = row["metadata"]["native_tools"]
+            native_tools = row.get("metadata", {}).get("native_tools")  # None for thinker
             gen = generate(_prompt_messages(row), native_tools)
             if kind == "thinker":
                 ok = "<act>" in gen or "<ask>" in gen or "<answer>" in gen
@@ -185,7 +194,9 @@ def main() -> int:
     ap.add_argument("--profile", default="compute_only", choices=["all_tools", "compute_only", "compute_and_search", "no_tools"])
     ap.add_argument("--question", default="What is 9847 * 23.5 + 1284? Compute it exactly.")
     ap.add_argument("--n", type=int, default=3, help="Replay rows per model")
-    ap.add_argument("--max_new_tokens", type=int, default=512)
+    ap.add_argument("--max_new_tokens", type=int, default=1024,
+                    help="Generation budget. Bump higher (e.g. 2048) if a verbose model reasons "
+                         "past the budget before emitting <tool_call>.")
     args = ap.parse_args()
 
     # Importing STUDENT_PROMPTS IS the fix under test — must succeed in the no-litellm env.

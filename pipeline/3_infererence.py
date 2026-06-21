@@ -688,9 +688,13 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
         gen_kwargs["do_sample"] = False
     else:
         # role == "thinker" → mild penalty, no n-gram ban (it quotes code/numbers in <act>).
-        # role is None (single model) → legacy 1.3 / 3 defaults, unchanged.
-        _default_rep = "1.1" if role == "thinker" else "1.3"
-        _default_ngr = "0"   if role == "thinker" else "3"
+        # role is None (single model) → ALSO emits tool-call JSON + python_execute code, which
+        # repeat 3-grams by nature (same reason the Executor disables anti-repetition above). A
+        # hard no_repeat_ngram_size mangles the tool call so it never parses (empty tool_trace);
+        # repetition_penalty 1.3 likewise distorts structured JSON. Use the Thinker's mild 1.1 /
+        # no-ban defaults for both. (Was legacy 1.3 / 3 — root cause of empty tool_trace at serving.)
+        _default_rep = "1.1"
+        _default_ngr = "0"
         _rep_pen = float(os.environ.get("PIPELINE_REPETITION_PENALTY", _default_rep))
         _no_rep  = int(os.environ.get("PIPELINE_NO_REPEAT_NGRAM", _default_ngr))
         if _rep_pen and _rep_pen != 1.0:
