@@ -479,6 +479,43 @@ def _to_openai_schemas(active_tools: set) -> List[Dict[str, Any]]:
     return _TOOL_REGISTRY.to_openai_schemas(active_tools)
 
 
+def _repair_double_escaped_code(code: str) -> str:
+    """Repair python_execute code that was double-escaped during training-data generation.
+
+    The published sft-template checkpoint trained on train_interleaved_native.jsonl, whose
+    python_execute code arguments carry escaped newlines/tabs as two literal characters
+    (backslash + n) plus doubled f-string braces — artifacts of
+    1_dataset_generator._parse_xml_tool re-serialising the XML tool body without first decoding
+    its escapes (the assembler decodes them; that path does not). After json.loads those become a
+    literal backslash-n, so ast.parse raises "unexpected character after line continuation
+    character" and the call never executes (empty/errored tool_trace at benchmark time).
+
+    Serving-side stopgap — the corrupt data is NOT regenerated and the checkpoint is NOT retrained.
+    PARSE-GATED for safety: code that already compiles is returned unchanged, so a clean model
+    whose source legitimately contains an escaped-newline string literal is never altered. Only
+    when the original fails to compile do we try the de-escaped (and brace-undoubled) variant, and
+    only adopt it if it then compiles — otherwise the original is returned so behaviour is
+    identical to before for any unrelated syntax error.
+    """
+    import ast
+
+    def _compiles(src: str) -> bool:
+        try:
+            ast.parse(src)
+            return True
+        except SyntaxError:
+            return False
+
+    if _compiles(code):
+        return code
+    unescaped = code.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+    unbraced = unescaped.replace("{{", "{").replace("}}", "}")
+    for candidate in (unbraced, unescaped):
+        if _compiles(candidate):
+            return candidate
+    return code
+
+
 def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
     """Parse Qwen3 Hermes-style <tool_call>{"name":…,"arguments":{…}}</tool_call>.
 
@@ -504,7 +541,14 @@ def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
         args = obj.get("arguments", {})
         if isinstance(args, str):       # some models serialise args as a JSON string
             args = json.loads(args, strict=False)
-        return {"function": name, "kwargs": args if isinstance(args, dict) else {}}
+        if not isinstance(args, dict):
+            args = {}
+        # Serving-side stopgap: the published sft-template checkpoint emits double-escaped
+        # python_execute code (literal "\n" + doubled braces) it learned from corrupt training
+        # data, which dies in ast.parse. Repair it here; parse-gated so clean models are untouched.
+        if name == "python_execute" and isinstance(args.get("code"), str):
+            args["code"] = _repair_double_escaped_code(args["code"])
+        return {"function": name, "kwargs": args}
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None
 
