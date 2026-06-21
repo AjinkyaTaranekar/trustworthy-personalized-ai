@@ -125,11 +125,37 @@ Add `--no_skip_gguf` to also export a GGUF (needs llama.cpp). Publishing is deco
 
 ---
 
+## 2c. Sanity-check serving BEFORE benchmarking (5 min — saves hours)
+
+Three serving bugs were fixed (2026-06-21) — make sure the box has **all three** (`git pull`) before any long run, or the tool dimension comes back empty:
+- `3_infererence.py` — single-model anti-repetition no longer hard-bans 3-grams (the ban mangled tool-call JSON so it never parsed).
+- `sft_v3_generator.py` — `litellm` is now a guarded import, so the server loads the **canonical** student prompt instead of a drifted fallback.
+- `4_benchmark.py` — decodes **greedy** by default (was temp 0.7, which degraded the JSON).
+
+**(a) Do the weights call tools at all?** Loads each published model, replays its own training rows greedy, checks for a parseable `<tool_call>` (or `<act>` for the thinker):
+```bash
+python test_tool_calling.py                                         # all published models
+python test_tool_calling.py --only constitution --n 8 --max_new_tokens 2048
+```
+PASS across the fine-tuned models = weights are good; any empty `tool_trace` later is serving plumbing.
+
+**(b) Per-condition server check.** For each condition's server, confirm the canonical-prompt log line, then one curl proves tools fire end-to-end:
+```bash
+# server startup MUST log: [INFO] Student prompts loaded from sft_v3_generator.py (canonical source)
+#   (if it logs "[WARN] ... using built-in fallback prompts", the litellm guard didn't reach the box — stop)
+curl -s http://localhost:8000/health
+curl -s -X POST http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What is 9847 times 23.5?"}],"tool_profile":"compute_only","greedy":true}'
+```
+Look for `"tool_trace"` containing `"tool":"python_execute"`. Empty `tool_trace` with a `<tool_call>` still in the response → the box is missing a fix; re-pull before benchmarking.
+
+---
+
 ## 3. Benchmark each condition (GPU — generation only, no LLM judge)
 
 `4_benchmark.py` only GENERATES responses and saves self-contained reports; **LLM judging is a
 separate local step (§5)** so you can release the GPU first. Every run uses the same flags: all
-five suites, ``, the condition's `--tool_mode`, and a per-condition
+five suites, greedy decoding (the benchmark default — pass `--sample` only to opt out), the condition's `--tool_mode`, and a per-condition
 `--output_dir reports/<label>`. `web_search`/`read_url` hit **live Exa** (set `EXA_API_KEY`) — see
 the reproducibility caveat in Notes.
 
@@ -226,6 +252,25 @@ Outputs:
 
 ---
 
+## 5b. Side-by-side comparison + comparative judge (offline, no GPU)
+
+`analyze_experiments.py` gives the **numbers**; `compare_report.py` gives the **answers** — every condition's response to the same question, aligned side by side in one HTML page (think / answer / tools / score per column, across all five suites). Because the questions are shared, you read each row across conditions and see exactly where they diverge.
+
+```bash
+# side-by-side HTML only (no API key needed)
+python compare_report.py \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
+
+# + comparative LLM judge: ranks the answers head-to-head per question, builds a win leaderboard
+python compare_report.py \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
+    --judge --judge_model claude-opus-4-8
+```
+
+Output: `reports/comparison_<ts>.html` (open in a browser). The comparative judge is **relative** (which answer is best for this question) and complements `5_judgement_day.py`, which scores each answer in **isolation** against a fixed rubric — use both: the absolute scores for the ladder table, the head-to-head wins + leaderboard for "which condition actually answers better".
+
+---
+
 ## 6. Commit results
 
 ```bash
@@ -239,7 +284,7 @@ git add pipeline/reports/ && git commit -m "results: five-condition ablation lad
 - **Generation (GPU) and judging (API) are separate steps on purpose** — `4_benchmark.py` makes no LLM calls, so you pay GPU only for model inference and judge locally afterwards (and re-judge for free).
 - **Judge must be identical across all 5 conditions** (recorded in `run_metadata.judged_by`). A strong frontier judge (e.g. `claude-opus-4-8`) gives more reliable Suite E conversation scores — if you switch, switch for every condition and re-run §4.
 - **Scoring discipline:** `analyze_experiments.py` reports constitution as rule-based (primary) and combined (secondary) separately. For judge-independent anchors run `alignment_metrics.py` and `rescore_report.py` on the saved reports.
-- **Determinism:** scripts + `` make decoding deterministic; the one remaining nondeterministic input is live web search (next bullet). Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
+- **Determinism:** scripts + greedy decoding (the benchmark default; the server applies `do_sample=False` on the `greedy` request flag) make decoding deterministic; the one remaining nondeterministic input is live web search (next bullet). Re-running a step overwrites nothing destructive (timestamped files; the judge keeps a `.prejudge.bak`; `analyze_experiments.py` picks the latest per `reports/<label>/`).
 - **Web search is live (Exa), not mocked.** `web_search`/`read_url` use your `EXA_API_KEY`, so the few web-grounded items (P5/P19, `real_time_data`) reflect current results and are **not byte-reproducible** across runs — everything else is deterministic. If you ever need exact web reproduction (e.g. to re-run a result months later), restart that server with `BENCH_MOCK_SEARCH=1` to swap in the fixed offline corpus.
 - **Persona suite (Suite E)** runs 8 scripted personas including an error-prone "incompetent" user (states wrong facts + self-contradicts) — the conversation judge scores six dimensions; the correlation CSV above is how you defend those dimensions as non-redundant.
 - **Write-up:** the methodology section (justifying scripted users + LLM assessor with literature, plus the reproducibility protocol and threats to validity) is drafted as `%`-commented LaTeX in `methodology-draft.tex` at the repo root — uncomment what you accept.

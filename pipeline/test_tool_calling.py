@@ -31,6 +31,15 @@ import json
 import re
 import sys
 
+# Always-on tools (get_datetime, scratchpad_*, user_memory_*) are callable in every profile
+# but are NOT always listed in a row's metadata.native_tools — so a clean call to one must
+# still count as PASS. Pull the canonical set; fall back to a literal if tool_io is unavailable.
+try:
+    from tool_io import ALWAYS_ON_TOOLS as _ALWAYS_ON
+except Exception:  # noqa: BLE001
+    _ALWAYS_ON = {"get_datetime", "scratchpad_sections", "scratchpad_read", "scratchpad_update",
+                  "user_memory_sections", "user_memory_read", "user_memory_update"}
+
 # repo_id, data_file, kind, label
 PUBLISHED = [
     ("unsloth/Qwen3-0.6B",                              "data/train_sft_v3.jsonl",                 "single",   "vanilla_base"),
@@ -122,6 +131,7 @@ def test_model(repo_id, data_file, kind, label, args, STUDENT_PROMPTS):
         tok = AutoTokenizer.from_pretrained(repo_id)
         model = AutoModelForCausalLM.from_pretrained(repo_id, torch_dtype=torch.bfloat16, device_map="auto")
         model.eval()
+        model.generation_config.max_length = None  # silence the harmless max_new_tokens/max_length warning
         rec["loaded"] = True
     except Exception as e:  # noqa: BLE001
         rec["note"] = f"load failed: {type(e).__name__}: {str(e)[:120]}"
@@ -152,7 +162,8 @@ def test_model(repo_id, data_file, kind, label, args, STUDENT_PROMPTS):
                 tag = "<act>/<ask>/<answer>" if ok else "none of <act>/<ask>/<answer>"
             else:
                 call = parse_native_tool_call(gen)
-                ok = bool(call and call["name"] in set(_tool_names(native_tools)))
+                known = set(_tool_names(native_tools)) | _ALWAYS_ON
+                ok = bool(call and call["name"] in known)
                 tag = f"{call['name']}(...)" if call else ("<tool_call> unparseable" if "<tool_call>" in gen else "no <tool_call>")
             passed += ok
             print(f"  replay {i}/{len(rows)}: {'PASS' if ok else 'FAIL'}  → {tag}")
@@ -169,7 +180,7 @@ def test_model(repo_id, data_file, kind, label, args, STUDENT_PROMPTS):
             gen = generate([{"role": "system", "content": sys_prompt},
                             {"role": "user", "content": args.question}], native_tools)
             call = parse_native_tool_call(gen)
-            ok = bool(call and call["name"] in set(_tool_names(native_tools)))
+            ok = bool(call and call["name"] in (set(_tool_names(native_tools)) | _ALWAYS_ON))
             rec["fresh"] = "PASS" if ok else "FAIL"
             print(f"  FRESH (canonical {args.profile} + new question): {rec['fresh']}"
                   + (f"  → {call['name']}(...)" if call else ""))
