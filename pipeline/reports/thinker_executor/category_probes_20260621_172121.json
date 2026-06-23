@@ -7,7 +7,7 @@
     "max_new_tokens": 1024,
     "temperature": 0.7,
     "judged_by": "nvidia_nim/minimaxai/minimax-m3",
-    "judged_at": "2026-06-23T22:13:07.271434+00:00"
+    "judged_at": "2026-06-23T23:34:45.470663+00:00"
   },
   "category_score": 0.5125,
   "scores_by_category": {
