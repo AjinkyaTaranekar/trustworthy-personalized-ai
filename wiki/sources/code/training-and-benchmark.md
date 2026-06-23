@@ -289,10 +289,25 @@ Dependency rules enforced by `cfg.validate()`:
 - [[queries/grpo-and-personalisation-master-plan]] — detailed module design rationale
 - [[queries/full-pipeline-implementation-plan]] — phase-by-phase build plan for all modules
 
+## Analysis & dissertation assets (offline, no GPU)
+
+The five-rung ablation ladder is consolidated and visualised by a small judge-free stack (added 2026-06-21):
+
+- `pipeline/experiment_metrics.py` — single source of truth for the *new* judge-free metrics over `4_benchmark.py` reports: per-family/framing compliance (via `principle_families.py`), reasoning depth (`<think>` length, `<think>`-empty rate), the **reasoning-externalisation ratio** (share of generated text in `<think>` vs the answer body — quantifies that constitutional SFT relocates reasoning out of `<think>`), clarification rate (`<ask>`), **hollow-pass rate** (rule passes but answer body empty), and tool behaviour (calls/response, failure rate, **decoy-bait rate** = a tool called that is not in `tool_io.TOOL_PROFILES`∪`ALWAYS_ON_TOOLS`). Structural proxies, not semantic quality.
+- `pipeline/experiment_figures.py` — renders nine dissertation figures (matplotlib, vector PDF) to `reports/dissertation_assets/` with `fig_ladder_*` names so they never clash with `export_assets.py`. Families: compliance ladder + per-family + bootstrap-CI delta forest; `<think>` distribution + reasoning-location stacked bar + depth-vs-cost scatter; tool usage; drift-over-turns + category heatmap.
+- `pipeline/analyze_experiments.py` — extended to emit the depth/tool rows in the ladder table/CSV/LaTeX (with bootstrap CIs where item-level vectors exist) and to call the figures via `--figures`.
+- `pipeline/5_judgement_day.py` — response-judge truncation raised 2000→4000 chars so the relocated reasoning in the answer body is not cut before scoring.
+
+**Robust judge for long unattended runs** (2026-06-22): the judge (`5_judgement_day.py`) was rebuilt on a new shared `pipeline/llm_pool.py` (the proven `sft_v3_generator.py` pattern, packaged): `RobustPool` = key rotation across all `NVIDIA_NIM_API_KEYS` + adaptive worker reduction under 429s + token-bucket pacing + near-unlimited retries. The judge is now **resumable** (skips items already judged), **checkpoints every N items** (incremental writes; killing/restarting loses almost nothing), shows the judge the **tool log** (`tool_trace`) so tool-discipline principles are scored correctly, and defaults to **latest-report-only**. `pipeline/run_judge_loop.py` loops the judge until complete, committing+pushing checkpoints each pass (VM runner). Judge model: NVIDIA `kimi-k2.6` is too rate-limited; **`minimax-m3`** validated as a strong judge.
+
+Runbook: `pipeline/ABLATION_LADDER_RUNBOOK.md` §4 (judge) and §5 (consolidate).
+
 ## Raw
 
 - `pipeline/config.py`, `pipeline/user_modelling.py`, `pipeline/empathy.py`
 - `pipeline/appraisal_labeller.py`, `pipeline/ontology_verifier.py`
 - `pipeline/2_model_trainer.py`, `3_infererence.py`, `4_benchmark.py`, `5_context_degradation.py`
+- `pipeline/experiment_metrics.py`, `experiment_figures.py`, `analyze_experiments.py`, `5_judgement_day.py`, `principle_families.py`
+- `pipeline/llm_pool.py`, `run_judge_loop.py` (robust judging infra)
 - `pipeline/experiment0_reasoning_comparison.py`, `run_all.sh`, `preflight_check.sh`
 - `docker-compose.yml`, `README.md`

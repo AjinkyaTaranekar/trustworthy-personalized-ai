@@ -201,7 +201,7 @@ python 4_benchmark.py --probe --categories --drift --adversarial --persona \
 ```bash
 # server  (/health must report "mode":"dual")
 python 3_infererence.py \
-    --thinker models/checkpoint_thinker --executor models/checkpoint_executor \
+    --thinker ajinkyataranekar/trustworthy-ai-thinker --executor ajinkyataranekar/trustworthy-ai-executor \
     --base_model unsloth/Qwen3-0.6B --port 8000
 ```
 ```bash
@@ -218,37 +218,62 @@ Each run writes `reports/<label>/{constitution_probe,category_probes,context_dri
 
 ## 4. Judge (local machine — LLM API only, no GPU)
 
-Copy `reports/` to your machine and run the judge once over all conditions. It fills in
+Copy `reports/` to your machine (or a VM) and run the judge over all conditions. It fills in
 `llm_score` / `combined_score` / `persona_score` and recomputes the blended aggregates, editing
 each report in place (keeps a `.prejudge.bak`).
 
+The judge is built for long unattended runs (`llm_pool.py`): it **rotates across all
+`NVIDIA_NIM_API_KEYS`**, **auto-reduces workers** under sustained 429s (and recovers when quiet),
+paces to `--rpm` per key, and retries rate-limit/network errors **near-indefinitely** — so it
+keeps going no matter what. It is **resumable** (skips items already judged) and writes a
+**mini-checkpoint every `--checkpoint_every` items**, so killing/restarting it loses almost nothing.
+
 ```bash
+# one pass (resumes automatically; minimax-m3 has a generous NIM limit, unlike kimi-k2.6)
 python 5_judgement_day.py \
-    --judge_model claude-opus-4-8 \
+    --judge_model nvidia_nim/minimaxai/minimax-m3 \
     --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
-    --report
+    --workers 4 --rpm 36 --checkpoint_every 10 --report
+```
+
+**Unattended VM runner** — loops until everything is judged, committing+pushing checkpoints
+after each pass (safe to kill/restart at any time):
+
+```bash
+nohup python run_judge_loop.py --push > judge_loop.log 2>&1 &
+#   env overrides: JUDGE_MODEL=...  (flags: --workers --rpm --checkpoint_every --max_passes)
 ```
 
 The judge model must be **identical across all conditions** (recorded in each report's
-`run_metadata.judged_by`). Use a strong frontier judge — it tracks facts across the persona
-transcripts far better than a small one. Re-judging is free (no GPU); to compare judges, re-run
-with `--out_suffix .kimi` etc. instead of editing in place.
+`run_metadata.judged_by`). Use a strong judge — it tracks facts across the persona transcripts
+far better than a small one (validated: minimax-m3 cites turn numbers, catches fabrication/memory
+lapses, and agrees with the deterministic rule on the sample). Notes: NVIDIA `kimi-k2.6` is too
+rate-limited for the full run; the judge needs the tool log (it appends `tool_trace` so
+tool-discipline principles like P4 are judged correctly); re-judging is free — use `--force` to
+re-judge or `--out_suffix .alt` to compare judges without overwriting.
 
 ---
 
-## 5. Consolidate — the ladder table (offline, no GPU)
+## 5. Consolidate — the ladder table + figures (offline, no GPU)
 
 ```bash
 python analyze_experiments.py \
     --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
-    --reports_dir reports --output_dir reports
+    --reports_dir reports --output_dir reports --figures
 ```
 
+`--figures` renders the dissertation figures (needs matplotlib). Drop it for the table only.
+
 Outputs:
-- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs.
+- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs. Now also includes **judge-free depth/tool rows** (from `experiment_metrics.py`): `<think>` length, `<think>`-empty rate, **reasoning externalisation ratio** (in-think vs answer-body), clarification rate, hollow-pass rate, tool calls/response, tool-failure rate, decoy-bait rate.
 - `reports/experiment_h3_failures_<ts>.csv` — probes the top rung still fails or regresses on (H3 limits).
 - `reports/persona_dimension_correlation_<ts>.csv` — 6×6 Pearson matrix over the judged personas; flags any distinct dimension pair with |r| ≥ 0.9 as near-redundant (the "are the trust/empathy metrics overlapping?" check). Needs ≥3 judged personas.
+- `reports/dissertation_assets/fig_ladder_*.pdf`, `fig_think_distribution.pdf`, `fig_reasoning_location.pdf`, `fig_depth_vs_cost.pdf`, `fig_tool_usage.pdf`, `fig_drift_curve.pdf`, `fig_category_heatmap.pdf` — the nine ladder figures (when `--figures`).
 - Console also prints the persona dimension means per condition.
+
+**Quick metric dry-run (no figures, no consolidation):** `python experiment_metrics.py --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor` prints the per-condition judge-free metrics for a fast sanity check. Standalone figures: `python experiment_figures.py --labels …`.
+
+> Note: the depth metrics (`<think>` length/empty, externalisation, clarification, hollow-pass) are **structural proxies** computed from the constitution report's per-response fields — they measure *where/how much* the model reasons, not semantic quality (that is the §4 judge's job). `decoy-bait` = a tool was called that is **not** in the real registry (`tool_io.TOOL_PROFILES` ∪ `ALWAYS_ON_TOOLS`), sourced live so it can never drift.
 
 ---
 

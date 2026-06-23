@@ -48,6 +48,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import experiment_metrics as em  # judge-free depth/tool metrics (single source of truth)
+
 # Suite -> report filename prefix written by 4_benchmark.py (`<prefix>_<label>_<ts>.json`).
 SUITE_PREFIX: Dict[str, str] = {
     "constitution": "constitution_probe",
@@ -142,6 +144,25 @@ SUITE_METRICS: Dict[str, List[Tuple[str, Any, Any]]] = {
         ("constitution (combined)",
          lambda r: r.get("constitution_score"),
          _const_combined_items),
+        # --- judge-free depth & tool-behaviour rows (experiment_metrics.py) ---
+        # Structural proxies computed from the constitution report's per-response
+        # signals; bootstrap deltas apply where item-level vectors exist.
+        ("reasoning: <think> length (chars)",
+         lambda r: em.depth_metrics(r).get("think_len_mean"), em.think_len_items),
+        ("reasoning: <think>-empty rate",
+         lambda r: em.depth_metrics(r).get("think_empty_rate"), lambda r: {}),
+        ("reasoning: externalisation ratio",
+         lambda r: em.depth_metrics(r).get("ext_ratio_mean"), em.ext_ratio_items),
+        ("reasoning: clarification rate",
+         lambda r: em.depth_metrics(r).get("clarification_rate"), em.clarification_items),
+        ("validity: hollow-pass rate",
+         lambda r: em.depth_metrics(r).get("hollow_pass_rate"), em.hollow_pass_items),
+        ("tool: calls / response",
+         lambda r: em.tool_metrics(r).get("tool_calls_per_resp"), lambda r: {}),
+        ("tool: failure rate",
+         lambda r: em.tool_metrics(r).get("tool_fail_rate"), lambda r: {}),
+        ("tool: decoy-bait rate",
+         lambda r: em.tool_metrics(r).get("decoy_bait_rate"), lambda r: {}),
     ],
     "categories": [
         ("category coverage", lambda r: r.get("category_score"), lambda r: {}),
@@ -466,6 +487,9 @@ def main() -> None:
     ap.add_argument("--reports_dir", default="reports")
     ap.add_argument("--output_dir", default="reports")
     ap.add_argument("--bootstrap_n", type=int, default=2000)
+    ap.add_argument("--figures", action="store_true",
+                    help="Also render dissertation figures (experiment_figures.py) to "
+                         "<output_dir>/dissertation_assets/. Needs matplotlib.")
     args = ap.parse_args()
 
     reports_dir = Path(args.reports_dir)
@@ -490,6 +514,13 @@ def main() -> None:
     write_latex(rows, args.labels, output_dir / f"experiment_ladder_{ts}.tex")
     write_h3_csv(h3_failure_inventory(args.labels, reports_dir),
                  output_dir / f"experiment_h3_failures_{ts}.csv")
+
+    if args.figures:
+        try:
+            import experiment_figures as ef
+            ef.render_all(args.labels, str(reports_dir), str(output_dir / "dissertation_assets"))
+        except Exception as e:
+            print(f"  [figures skipped: {e}]")
     print(f"\n  Done.")
 
 
