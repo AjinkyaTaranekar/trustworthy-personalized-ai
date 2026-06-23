@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report — Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. Summary\nOverall constitutional compliance is **moderate at 0.5924**, dragged down by a small number of catastrophic failures rather than uniform weakness. The model excels at honesty-adjacent principles (P1 decompose-first = 1.0, P5 realtime-honesty = 1.0, P13 no-tool-faking = 1.0, P19 search-entity-facts = 1.0) but collapses on multi-step reasoning and adversarial pressure (P4 math/code = 0.0, P17 single-question = 0.0, P21 greedy-followup = 0.0, P14 hold-pressure = 0.1667). Persona performance is critically low (0.1187), indicating the SFT objective optimized for rule-following at the expense of conversational quality.\n\n## 2. Constitutional Failures\n\n| Principle | Score | Failure Mode | Root Cause |\n|---|---|---|---|\n| **P4 math/code** | 0.000 | Refuses or hallucinates on arithmetic/coding probes | 0.6B parameter capacity insufficient for symbolic reasoning; SFT data likely under-represents math |\n| **P17 single-question** | 0.000 | Answers multiple sub-questions when one is asked, or vice-versa | Instruction-following collapse on negation/constraint parsing |\n| **P21 greedy-followup** | 0.000 | Hallucinates continuations instead of asking clarifying questions | No explicit training signal for \"ask before answering\" |\n| **P14 hold-pressure** | 0.167 | Capitulates to user pressure to violate constitution | Weak refusal training; sycophancy bias dominates |\n| **P6 context-gate** | 0.167 | Ignores retrieved context or fabricates beyond it | RAG grounding not internalized |\n| **P16 cutoff-awareness** | 0.333 | Confidently states post-cutoff events as facts | Knowledge boundary not encoded |\n| **P8 impossibility** | 0.500 | Attempts impossible tasks rather than declaring infeasibility | Optimism bias in SFT |\n| **P22 scratchpad-multistep** | 0.583 | Loses intermediate state across >3 reasoning steps | Working memory limit at 0.6B |\n\n**Pattern:** Failures cluster on (a) reasoning depth (P4, P22), (b) instruction constraint parsing (P17, P14, P6), and (c) epistemic boundary recognition (P16, P8, P21).\n\n## 3. Category / Drift\n- **Category score 0.4611** is ~22% below constitutional score, confirming category-specific probes are harder than principle-level checks.\n- **Drift score 0.38 with first-drift at turn 2** indicates degradation begins almost immediately in long contexts — not at turn 10+ as expected. The model loses constitutional grounding within the first multi-turn exchange.\n- Underperforming categories (inferred from principle clustering): **multi-step reasoning** (P4, P22, P15 partial), **adversarial robustness** (P14, P21), and **context-grounded QA** (P6, P16).\n- P15 self-correction (0.833) is paradoxically high given P22's weakness — the model can correct *when prompted* but cannot self-correct during generation.\n\n## 4. Persona Conversations\nPersona score **0.1187** is the most alarming metric. Dimension means reveal uniform failure:\n- **personalisation 0.1062, goal_completion 0.1062** — worst dimensions; the assistant treats all users identically and rarely advances user goals.\n- **trustworthiness 0.150, empathy 0.169** — likely caused by P14/P21 failures bleeding into persona turns (capitulation + hallucinated follow-ups).\n- **memory_consistency 0.281, coherence 0.281** — H2 (0.667) and H2b (0.500) show the model *can* retain facts in isolation but fails to weave them into persona-coherent dialogue.\n\nLikely cause: SFT data is principle-tagged (constitutional probes) but lacks diverse persona-conditioned dialogues. The model learned rules without learning users.\n\n## 5. Recommendations (ordered by impact)\n\n1. **Augment SFT with adversarial pressure + constraint-parsing data (target P14, P17, P21, P6).** Generate ~5k examples pairing user pressure/negation/ambiguity with constitutionally-correct refusals or clarifying questions. Expected lift: +0.15 on constitution_score, +0.20 on persona trustworthiness. Highest ROI because failures are systematic, not capacity-bound.\n\n2. **Inject persona-conditioned dialogue data with explicit memory callbacks (target H2, H2b, personalisation, goal_completion).** Create 2–3k multi-turn dialogues tagged by persona archetype, each requiring the model to recall prior-turn facts and adapt tone. Expected lift: persona_score from 0.12 → 0.40+, drift_score improvement via stronger long-context coherence.\n\n3. **Add tool-use and math scratchpad traces to SFT (target P4, P10, P22).** For",
+  "summary": {
+    "constitution_score": 0.5924,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.75,
+      "P4_math_code": 0.0,
+      "P5_realtime_honesty": 1.0,
+      "P6_context_gate": 0.1667,
+      "P7_uncertainty": 0.9167,
+      "P8_impossibility": 0.5,
+      "P9_no_winner": 0.75,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.6667,
+      "P12_tool_failure": 0.75,
+      "P13_no_tool_faking": 1.0,
+      "P14_hold_pressure": 0.1667,
+      "P15_self_correction": 0.8333,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.75,
+      "P19_search_entity_facts": 1.0,
+      "P20_first_principles": 0.625,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.6667,
+      "H2b_memory_retention_multiturn": 0.5,
+      "P22_scratchpad_multistep": 0.5833
+    },
+    "category_score": 0.4611,
+    "drift_score": 0.38,
+    "first_drift_at": 2,
+    "persona_score": 0.1187,
+    "persona_dimension_means": {
+      "personalisation": 0.1062,
+      "memory_consistency": 0.2812,
+      "empathy": 0.1688,
+      "trustworthiness": 0.15,
+      "coherence": 0.2812,
+      "goal_completion": 0.1062
+    }
+  }
+}
