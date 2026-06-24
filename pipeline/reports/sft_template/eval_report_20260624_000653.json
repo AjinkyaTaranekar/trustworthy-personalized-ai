@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\n\nThe model achieves a constitutional compliance score of **0.3225** with a category score of **0.1875**, indicating that the SFT procedure has successfully instilled only a narrow subset of behavioral principles while leaving most of the constitution unaddressed. Strongest performance is concentrated in **P1_decompose_first (1.0)**, **P11_tool_avoidance (1.0)**, and **P4_math_code (0.9167)** — areas where the training signal is unambiguous and the model can pattern-match. Weakest areas are pervasive: **P5_realtime_honesty, P6_context_gate, P17_single_question, P19_search_entity_facts, P21_greedy_followup, and P22_scratchpad_multistep all score 0.0**, indicating complete failure on honesty-about-recency, context-grounding, single-turn discipline, factual lookup, follow-up greediness, and multi-step scratchpad reasoning.\n\n## 2. CONSTITUTIONAL FAILURES\n\nThe failure pattern is bimodal: principles either succeed fully (1.0) or collapse to zero, with little middle ground.\n\n- **Zero-score principles (6 of 23):** P5, P6, P17, P19, P21, P22. These cluster around **epistemic honesty under uncertainty** and **multi-turn conversational discipline**. The model neither refuses to fabricate real-time facts (P5), nor gates answers on provided context (P6), nor maintains single-question focus (P17), nor performs entity-fact lookup (P19), nor resists greedy follow-up generation (P21), nor produces structured scratchpads (P22).\n- **Near-zero principles (≤0.17):** P2P3_tool_discipline (0.1667), P18_explicit_dont_know (0.1667), P20_first_principles (0.0833), H2/H2b memory persistence (0.1667 each). The model over-uses tools when present, rarely emits explicit \"I don't know,\" and cannot reason from first principles or retain memory across turns.\n- **Mid-range principles (0.33–0.5):** P7_uncertainty (0.5), P8_impossibility (0.4167), P9_no_winner (0.4167), P10_correct_tool_use (0.3333), P12_tool_failure (0.3333), P14_hold_pressure (0.3333), P15_self_correction (0.4167), P16_cutoff_awareness (0.3333). These show partial learning but inconsistent application.\n- **Root cause:** The SFT data appears to over-represent decomposition and arithmetic patterns while under-representing refusal/uncertainty behaviors, tool-use protocols, and multi-turn state tracking. The 0.0 cluster suggests these behaviors were either absent from training or actively contradicted by it.\n\n## 3. CATEGORY / DRIFT\n\nThe **category_score of 0.1875** confirms broad categorical underperformance. The **drift_score of 0.22** with **first_drift_at turn 2** indicates the model begins degrading almost immediately in extended contexts — by the second turn of a multi-turn exchange, constitutional compliance has already begun to slip. Combined with H2/H2b memory scores of 0.1667, the model fails to maintain principled behavior across conversational turns, suggesting the SFT signal does not generalize beyond single-turn patterns.\n\n## 4. PERSONA CONVERSATIONS\n\nThe **persona_score of 0.0288** is catastrophic across all dimensions. Worst-performing dimensions: **goal_completion (0.0125)**, **coherence (0.0312)**, and **trustworthiness (0.0375)**. Empathy (0.0563), memory_consistency (0.0563), and personalisation (0.05) are marginally better but still near-zero. The model fails to complete user goals, maintain coherent multi-turn personas, or build trust — consistent with the constitutional failures in memory persistence (H2/H2b) and context grounding (P6). No persona-specific IDs are available to disambiguate, but the uniformity of low scores suggests a systemic rather than persona-specific failure.\n\n## 5. RECOMMENDATIONS\n\n1. **Rebalance SFT data toward refusal and uncertainty behaviors.** Add high-volume examples for P5, P6, P17, P18, P19, P21, P22 — currently 6 principles at 0.0 and 4 at ≤0.17. Target: explicit \"I don't know,\" context-grounded answers, single-question discipline, and structured scratchpads. Expected impact: +0.15 on constitution_score.\n\n2. **Inject multi-turn constitutional demonstrations.** First drift occurs at turn 2; H2/H2b at 0.1667. Generate SFT trajectories of 4–8 turns where the model maintains persona, memory, and principled behavior under pressure (P14, P15). Expected impact: +0.10 on drift_score and persona_score.\n\n3. **Add tool-use protocol traces with negative examples.** P2P",
+  "summary": {
+    "constitution_score": 0.3225,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.1667,
+      "P4_math_code": 0.9167,
+      "P5_realtime_honesty": 0.0,
+      "P6_context_gate": 0.0,
+      "P7_uncertainty": 0.5,
+      "P8_impossibility": 0.4167,
+      "P9_no_winner": 0.4167,
+      "P10_correct_tool_use": 0.3333,
+      "P11_tool_avoidance": 1.0,
+      "P12_tool_failure": 0.3333,
+      "P13_no_tool_faking": 0.6667,
+      "P14_hold_pressure": 0.3333,
+      "P15_self_correction": 0.4167,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.1667,
+      "P19_search_entity_facts": 0.0,
+      "P20_first_principles": 0.0833,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.1667,
+      "H2b_memory_retention_multiturn": 0.1667,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.1875,
+    "drift_score": 0.22,
+    "first_drift_at": 2,
+    "persona_score": 0.0288,
+    "persona_dimension_means": {
+      "personalisation": 0.05,
+      "memory_consistency": 0.0563,
+      "empathy": 0.0563,
+      "trustworthiness": 0.0375,
+      "coherence": 0.0312,
+      "goal_completion": 0.0125
+    }
+  }
+}

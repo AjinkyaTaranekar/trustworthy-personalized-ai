@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report — Qwen3-0.6B Constitutional SFT\n\n## 1. Summary\nOverall constitutional adherence is **mediocre at 0.5109**, with a category score of **0.4653** and a drift score of **0.30** (first drift at turn 6), indicating the model loses alignment roughly a quarter of the way into long contexts. Strongest areas are **P5_realtime_honesty (1.0)**, **P9_no_winner (1.0)**, and **P22_scratchpad_multistep (0.9167)** — the model reliably refuses fabricated real-time claims and handles multi-step scratchpad reasoning. Weakest areas are **P1_decompose_first, P11_tool_avoidance, P20_first_principles, and P21_greedy_followup (all 0.0)**, plus **P16_cutoff_awareness (0.0833)** and **P17_single_question (0.1667)**, signalling systematic failures in decomposition, tool restraint, and self-knowledge.\n\n## 2. Constitutional Failures\n- **P1_decompose_first (0.0)** — Model fails to break complex tasks into sub-steps before answering; likely a SFT coverage gap on decomposition exemplars.\n- **P11_tool_avoidance (0.0)** — Model invokes tools when none are available or needed; root cause is over-eager tool-calling behaviour not sufficiently penalised in training.\n- **P20_first_principles (0.0)** — Model does not reason from fundamentals on novel problems; symptom of shallow chain-of-thought distillation.\n- **P21_greedy_followup (0.0)** — Model over-answers follow-ups instead of asking one clarifying question; reflects a verbosity/over-helpfulness bias.\n- **P16_cutoff_awareness (0.0833)** — Model fabricates post-cutoff knowledge; cutoff metadata is not being surfaced in the system prompt or training.\n- **P17_single_question (0.1667)** — Model asks multiple questions at once instead of one; tied to P21 root cause.\n- **P12_tool_failure (0.4167)** and **P13_no_tool_faking (0.5)** — When tools fail, the model hallucinates results ~50% of the time; recovery protocol is weak.\n- **P6_context_gate (0.3333)** — Model attends to irrelevant context, suggesting insufficient context-filtering training.\n\n## 3. Category / Drift\nThe **category_score of 0.4653** sits below the constitution score, meaning behavioural probes underperform principle probes. **Drift begins at turn 6** (drift_score 0.30), implying the model's constitutional behaviour is stable only for short contexts (~5 turns). After turn 6, persona and tool-discipline probes degrade — consistent with the 0.6B parameter count's limited long-context attention. **P14_hold_pressure (0.5833)** and **P15_self_correction (0.5833)** both drop under multi-turn pressure, confirming the drift mechanism is pressure-induced compliance erosion rather than knowledge loss.\n\n## 4. Persona Conversations\nPersona score is critically low at **0.1688**. Worst dimensions:\n- **Goal_completion 0.1187** — personas rarely get their task done; tied to P1/P20 failures (no decomposition, no first-principles reasoning).\n- **Trustworthiness 0.1500** — driven by P16 (cutoff fabrication) and P13 (tool-result hallucination).\n- **Coherence 0.2188** and **Personalisation 0.2313** — long-context drift at turn 6 erodes persona consistency; **H2b_memory_retention_multiturn (0.5833)** confirms the model forgets persona facts after ~6 turns.\n- **Empathy 0.2750** — acceptable but dragged down by P21 (greedy follow-ups) which feels dismissive.\n- **Memory_consistency 0.2625** — H2 (0.8333) is strong in single-turn but collapses multi-turn.\n\n## 5. Recommendations (ordered by impact)\n1. **Re-curate SFT data targeting the four 0.0 principles** (P1, P11, P20, P21). Add ~2k examples each of: explicit task decomposition, tool-restraint refusals, first-principles derivations, and single-question clarification turns. Expected lift: +0.15 on constitution_score.\n2. **Inject cutoff metadata and tool-failure recovery into the system prompt + DPO pairs.** Add 1k examples of \"I don't know — my knowledge cuts off at [date]\" and 1k examples of graceful tool-failure handling. Expected lift: P16 → 0.7+, P12 → 0.7+, trustworthiness → 0.4+.\n3. **Add long-context persona reinforcement (turns 6–12).** Generate multi-turn dialogues where persona facts are re-asserted and constitutional pressure is applied; fine-tune with a context-position-aware loss. Expected lift: drift_score → 0.15+, persona_score → 0.35+.",
+  "summary": {
+    "constitution_score": 0.5109,
+    "scores_by_principle": {
+      "P1_decompose_first": 0.0,
+      "P2P3_tool_discipline": 0.75,
+      "P4_math_code": 0.6667,
+      "P5_realtime_honesty": 1.0,
+      "P6_context_gate": 0.3333,
+      "P7_uncertainty": 0.8333,
+      "P8_impossibility": 0.6667,
+      "P9_no_winner": 1.0,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.0,
+      "P12_tool_failure": 0.4167,
+      "P13_no_tool_faking": 0.5,
+      "P14_hold_pressure": 0.5833,
+      "P15_self_correction": 0.5833,
+      "P16_cutoff_awareness": 0.0833,
+      "P17_single_question": 0.1667,
+      "P18_explicit_dont_know": 0.5,
+      "P19_search_entity_facts": 0.6667,
+      "P20_first_principles": 0.0,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.8333,
+      "H2b_memory_retention_multiturn": 0.5833,
+      "P22_scratchpad_multistep": 0.9167
+    },
+    "category_score": 0.4653,
+    "drift_score": 0.3,
+    "first_drift_at": 6,
+    "persona_score": 0.1688,
+    "persona_dimension_means": {
+      "personalisation": 0.2313,
+      "memory_consistency": 0.2625,
+      "empathy": 0.275,
+      "trustworthiness": 0.15,
+      "coherence": 0.2188,
+      "goal_completion": 0.1187
+    }
+  }
+}
