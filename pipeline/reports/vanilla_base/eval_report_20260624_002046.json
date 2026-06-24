@@ -1,0 +1,43 @@
+{
+  "narrative": "Report generation failed: litellm.RateLimitError: RateLimitError: Nvidia_nimException - Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}",
+  "summary": {
+    "constitution_score": 0.5163,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.75,
+      "P4_math_code": 0.0,
+      "P5_realtime_honesty": 0.3333,
+      "P6_context_gate": 0.1667,
+      "P7_uncertainty": 0.9583,
+      "P8_impossibility": 0.3333,
+      "P9_no_winner": 0.8333,
+      "P10_correct_tool_use": 0.1667,
+      "P11_tool_avoidance": 1.0,
+      "P12_tool_failure": 0.75,
+      "P13_no_tool_faking": 1.0,
+      "P14_hold_pressure": 0.1667,
+      "P15_self_correction": 0.8333,
+      "P16_cutoff_awareness": 0.5,
+      "P17_single_question": 0.3333,
+      "P18_explicit_dont_know": 0.5833,
+      "P19_search_entity_facts": 0.1667,
+      "P20_first_principles": 0.75,
+      "P21_greedy_followup": 0.1667,
+      "H2_memory_persistence": 0.5,
+      "H2b_memory_retention_multiturn": 0.5833,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.4222,
+    "drift_score": 0.3,
+    "first_drift_at": 2,
+    "persona_score": 0.1125,
+    "persona_dimension_means": {
+      "personalisation": 0.1562,
+      "memory_consistency": 0.2812,
+      "empathy": 0.1562,
+      "trustworthiness": 0.2,
+      "coherence": 0.2437,
+      "goal_completion": 0.075
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\nOverall constitutional adherence is weak at **0.3225**, with category performance at **0.1875** and persona coherence at **0.0288** — indicating the model fails to generalize constitutional behavior beyond narrow instruction-following. The strongest area is **P1_decompose_first (1.0)** and **P11_tool_avoidance (1.0)**, showing the SFT successfully taught structured reasoning and restraint when tools are unnecessary. The weakest areas are **P6_context_gate, P17_single_question, P19_search_entity_facts, P21_greedy_followup, P22_scratchpad_multistep (all 0.0)**, revealing near-total failure on context-sensitive gating, single-turn discipline, factual lookup, and multi-step scratchpad reasoning.\n\n## 2. CONSTITUTIONAL FAILURES\n\n**Tool discipline collapse (P2P3: 0.1667, P10: 0.3333, P12: 0.3333):** The model invokes tools when not needed and fails to gracefully handle tool failures. Combined with P11 = 1.0 (correctly avoids tools when unnecessary), this asymmetry suggests the SFT taught a binary \"use tool / don't use tool\" heuristic rather than conditional gating.\n\n**Realtime honesty & epistemic grounding (P5: 0.0, P19: 0.0, P16: 0.3333):** Complete failure on realtime honesty probes — the model fabricates current information rather than admitting ignorance. P19 (search-entity-facts) at 0.0 confirms it does not attempt retrieval when it should.\n\n**Context & single-question discipline (P6: 0.0, P17: 0.0, P21: 0.0):** The model fails to respect context boundaries, answers multi-part questions as if they were single, and greedily follows up rather than waiting. This is a structural attention/formatting failure, not a knowledge gap.\n\n**Uncertainty & self-correction (P7: 0.5, P15: 0.4167, P18: 0.1667, P20: 0.0833):** The model rarely emits explicit \"I don't know\" (P18) and rarely reasons from first principles (P20). When wrong, it doubles down rather than correcting (P15).\n\n**Multi-step scratchpad (P22: 0.0):** Zero capability on chain-of-thought persistence across steps — the model cannot maintain intermediate state.\n\n**Memory persistence (H2: 0.1667, H2b: 0.1667):** Severe degradation across turns; the model loses user-stated facts within 1–2 exchanges.\n\n## 3. CATEGORY / DRIFT\n**Category score 0.1875** indicates broad underperformance across evaluation categories. **Drift score 0.22 with first_drift_at turn 2** is the most actionable finding: behavioral degradation begins almost immediately in long contexts, not at the tail. This points to a context-length generalization failure rather than a cumulative drift problem — the model likely never learned to maintain constitutional posture beyond short prompts. The early drift onset (turn 2) suggests the SFT distribution was heavily skewed toward single-turn, short-context examples.\n\n## 4. PERSONA CONVERSATIONS\nPersona performance is near-uniformly catastrophic (**0.0288** overall). Worst dimensions:\n- **goal_completion: 0.0125** — the model fails to actually accomplish what users ask across all personas.\n- **coherence: 0.0312** and **trustworthiness: 0.0375** — responses contradict prior turns and state unverified claims.\n- **personalisation: 0.05**, **memory_consistency: 0.0563**, **empathy: 0.0563** — all clustered near zero.\n\nThe flat distribution across dimensions (range 0.0125–0.0563) indicates no persona is served well; failures are systemic rather than persona-specific. Likely cause: the 0.6B parameter budget is insufficient to simultaneously maintain persona state, constitutional rules, and task completion — the SFT signal for persona behavior was likely drowned out by instruction-following data.\n\n## 5. RECOMMENDATIONS\n\n1. **Rebalance SFT data toward multi-turn, context-heavy constitutional examples (highest impact).** First drift at turn 2 and P22 = 0.0 indicate the training distribution lacks long-context, multi-step scratchpad data. Generate or curate 5–10x more multi-turn dialogues (8+ turns) that explicitly demonstrate P6, P17, P21, P22 compliance. Target: push first_drift_at beyond turn 6 and P22 above 0.4.\n\n2. **Add targeted negative examples for tool gating and realtime honesty.** P5 = 0.0 and P2P3 = 0.1667 are the highest-leverage failures. Include contrastive pairs where the correct response is *refusal to use a tool* or *explicit \"I don't have current information\"* — current SFT appears to teach tool-use as a default rather than",
+  "summary": {
+    "constitution_score": 0.3225,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.1667,
+      "P4_math_code": 0.9167,
+      "P5_realtime_honesty": 0.0,
+      "P6_context_gate": 0.0,
+      "P7_uncertainty": 0.5,
+      "P8_impossibility": 0.4167,
+      "P9_no_winner": 0.4167,
+      "P10_correct_tool_use": 0.3333,
+      "P11_tool_avoidance": 1.0,
+      "P12_tool_failure": 0.3333,
+      "P13_no_tool_faking": 0.6667,
+      "P14_hold_pressure": 0.3333,
+      "P15_self_correction": 0.4167,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.1667,
+      "P19_search_entity_facts": 0.0,
+      "P20_first_principles": 0.0833,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.1667,
+      "H2b_memory_retention_multiturn": 0.1667,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.1875,
+    "drift_score": 0.22,
+    "first_drift_at": 2,
+    "persona_score": 0.0288,
+    "persona_dimension_means": {
+      "personalisation": 0.05,
+      "memory_consistency": 0.0563,
+      "empathy": 0.0563,
+      "trustworthiness": 0.0375,
+      "coherence": 0.0312,
+      "goal_completion": 0.0125
+    }
+  }
+}
