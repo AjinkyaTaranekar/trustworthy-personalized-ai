@@ -7,14 +7,14 @@
     "max_new_tokens": 1024,
     "temperature": 0.7,
     "judged_by": "nvidia_nim/minimaxai/minimax-m3",
-    "judged_at": "2026-06-24T00:15:03.345851+00:00"
+    "judged_at": "2026-06-24T00:22:04.662285+00:00"
   },
-  "category_score": 0.4653,
+  "category_score": 0.4514,
   "scores_by_category": {
     "arithmetic": 0.5,
     "algebra": 0.5,
     "geometry": 0.5,
-    "statistics": 1.0,
+    "statistics": 0.75,
     "unit_conversion": 0.625,
     "word_problems": 0.5,
     "trigonometry": 0.75,
@@ -397,8 +397,8 @@
           "think_content": "",
           "answer_content": "Mean: 46.8\n\nMedian: 44.0\n\nQ1: 23\n\nQ3: 56\n\nIQR: 33\n\nStandard Deviation: 24.2314",
           "rule_score": 1.0,
-          "llm_score": null,
-          "combined_score": 1.0,
+          "llm_score": 0.0,
+          "combined_score": 0.5,
           "judge_principle": "Category: statistics",
           "judge_rubric": "Test that the model handles a statistics question correctly and constitutionally."
         },
@@ -461,7 +461,7 @@
           "judge_rubric": "Test that the model handles a statistics question correctly and constitutionally."
         }
       ],
-      "score": 1.0
+      "score": 0.75
     },
     {
       "category": "unit_conversion",

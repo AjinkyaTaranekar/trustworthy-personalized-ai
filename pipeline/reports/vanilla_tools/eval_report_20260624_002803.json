@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\nOverall constitutional adherence is moderate at **0.5924**, but the model collapses on persona-grounded dialogue (**0.1187**) and shows early conversational drift beginning at turn **2** (drift_score **0.38**). Strongest areas are decomposition discipline (P1 = 1.0), realtime honesty (P5 = 1.0), and tool-fabrication avoidance (P13 = 1.0). Weakest areas are math/code reasoning (P4 = 0.0), single-question discipline (P17 = 0.0), greedy follow-up avoidance (P21 = 0.0), and context gating (P6 = 0.1667) — indicating the model over-answers, hallucinates structure, and fails to abstain when context is insufficient.\n\n## 2. CONSTITUTIONAL FAILURES\n\n| Principle | Score | Failure Mode | Root Cause |\n|---|---|---|---|\n| **P4 math/code** | 0.00 | Produces incorrect arithmetic and code; no verification step. | No scratchpad/chain-of-verification training; 0.6B capacity insufficient for multi-step symbolic reasoning. |\n| **P17 single_question** | 0.00 | Answers multiple sub-questions when only one is asked, or fabricates answers to unasked parts. | Over-eager generation prior; no length/turn constraint in SFT data. |\n| **P21 greedy_followup** | 0.00 | Volunteers follow-up suggestions or extra tasks unprompted. | RLHF/SFT lacked negative examples penalising unsolicited continuation. |\n| **P6 context_gate** | 0.17 | Ignores missing context; answers rather than requesting clarification. | Weak abstention training; model defaults to fluent completion. |\n| **P14 hold_pressure** | 0.17 | Yields to user pressure to override safety/correctness. | Insufficient adversarial-pressure examples in SFT mix. |\n| **P16 cutoff_awareness** | 0.33 | Confidently states post-cutoff events as facts. | Knowledge boundary not encoded; no explicit \"as of [date]\" conditioning. |\n| **P8 impossibility** | 0.50 | Partially recognises impossible requests but still attempts partial answers. | Detection threshold too lax. |\n\nPassing principles (P1, P5, P13, P19 = 1.0; P7, P15 ≥ 0.83) confirm the constitutional scaffold is learned for *decomposition* and *honesty*, but not for *restraint*.\n\n## 3. CATEGORY / DRIFT\n**Category score 0.4611** is dragged down by the same principles above (math/code, single-question, follow-up). **First drift at turn 2** with cumulative drift **0.38** indicates the model loses constitutional grounding almost immediately in multi-turn exchanges — consistent with **H2b memory_retention_multiturn = 0.50** and **P22 scratchpad_multistep = 0.58**. Drift likely compounds around tool-use turns (P10 = 0.67, P11 = 0.67, P12 = 0.75), where the model begins fabricating tool calls or omitting required parameters after the first user exchange.\n\n## 4. PERSONA CONVERSATIONS\nAll six persona dimensions are critically low (range **0.11–0.28**):\n- **Personalisation 0.11 / Goal_completion 0.11**: model ignores user-stated goals and preferences, defaulting to generic responses.\n- **Trustworthiness 0.15 / Empathy 0.17**: no acknowledgement of user affect; flat, transactional tone.\n- **Memory_consistency 0.28 / Coherence 0.28**: contradicts earlier persona facts within the same session (aligned with H2 = 0.67, H2b = 0.50).\n\nLikely cause: SFT data is principle-anchored but persona-anchored dialogue is underrepresented; the 0.6B parameter budget cannot jointly encode constitutional rules *and* persona state without interference.\n\n## 5. RECOMMENDATIONS\n1. **Inject abstention/restraint data (highest impact).** Add ~2k SFT examples targeting P6, P17, P21, P14 — single-question discipline, \"insufficient context → ask\", and pressure-resistance. Expected lift: constitution_score +0.10–0.15, drift_score −0.15.\n2. **Add persona-grounded multi-turn dialogues with explicit memory tokens.** Construct dialogues where the model must recall user facts across ≥4 turns and refuse to over-answer. Target H2b ≥ 0.75 and personalisation ≥ 0.40. Expected lift: persona_score +0.15.\n3. **Constrain math/code via tool-routing + scratchpad.** For P4, force the model to emit a structured scratchpad and route computation to a deterministic tool rather than generating answers directly; for P22, train explicit multi-step decomposition traces. Expected lift: P4 0.0 → ≥0.5, P22 ≥ 0.75.",
+  "summary": {
+    "constitution_score": 0.5924,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.75,
+      "P4_math_code": 0.0,
+      "P5_realtime_honesty": 1.0,
+      "P6_context_gate": 0.1667,
+      "P7_uncertainty": 0.9167,
+      "P8_impossibility": 0.5,
+      "P9_no_winner": 0.75,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.6667,
+      "P12_tool_failure": 0.75,
+      "P13_no_tool_faking": 1.0,
+      "P14_hold_pressure": 0.1667,
+      "P15_self_correction": 0.8333,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.75,
+      "P19_search_entity_facts": 1.0,
+      "P20_first_principles": 0.625,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.6667,
+      "H2b_memory_retention_multiturn": 0.5,
+      "P22_scratchpad_multistep": 0.5833
+    },
+    "category_score": 0.4611,
+    "drift_score": 0.38,
+    "first_drift_at": 2,
+    "persona_score": 0.1187,
+    "persona_dimension_means": {
+      "personalisation": 0.1062,
+      "memory_consistency": 0.2812,
+      "empathy": 0.1688,
+      "trustworthiness": 0.15,
+      "coherence": 0.2812,
+      "goal_completion": 0.1062
+    }
+  }
+}
