@@ -146,7 +146,15 @@ def parse_thinker(text: str) -> tuple[Optional[str], str]:
 
 def extract_think(text: str) -> str:
     m = _THINK_RE.search(text)
-    return m.group(1).strip() if m else ""
+    if m:
+        return m.group(1).strip()
+    # Tolerate an UNCLOSED <think> (generation truncated before </think>): keep everything
+    # after <think>, minus any later tag, so the reasoning is still recorded rather than lost.
+    om = re.search(r"<think>(.*)", text, re.DOTALL | re.IGNORECASE)
+    if om:
+        body = re.split(r"<(?:answer|ask|act)>", om.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+        return body.strip()
+    return ""
 
 
 def default_sanitiser(raw: str, tool_name: str = "") -> str:
@@ -399,6 +407,40 @@ class ThinkerExecutor:
             "is_error": is_error, "gen_ms": gen_ms, "tool_ms": tool_ms,
         }
 
+    def _read_user_memory(self, session_id: str, query: str) -> str:
+        """Read the session's file-based user memory (data/user_memory/<id>.json) so it can be
+        injected as the [USER MEMORY] block the Thinker is trained to consume. No graph/FalkorDB.
+        Returns '' if the store is unavailable or empty-only."""
+        store = getattr(self.registry, "_user_memory", None)
+        if store is None:
+            return ""
+        try:
+            data = store._load(session_id)   # {section: content}
+            parts = [f"[{k.upper()}] {v.strip()}" for k, v in data.items()
+                     if v and not v.strip().startswith("(empty")]   # populated sections only
+            return "=== USER MEMORY ===\n" + "\n".join(parts) if parts else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _remember_user_turn(self, session_id: str, user_text: str) -> None:
+        """SIMPLE write: accumulate each user turn verbatim into the file store's `facts` section
+        so later turns can recall it. The dual Executor has no memory tool by design, so the
+        orchestrator owns persistence here (file-based; mirrors the single model's user_memory)."""
+        store = getattr(self.registry, "_user_memory", None)
+        if store is None or not (user_text or "").strip():
+            return
+        try:
+            data = store._load(session_id)
+            prior = (data.get("facts", "") or "").strip()
+            if prior.startswith("(empty"):
+                prior = ""
+            entry = f"- {user_text.strip()}"
+            if entry in prior:           # idempotent across retries / re-runs of the same turn
+                return
+            store.update(session_id, "facts", (prior + "\n" + entry).strip() if prior else entry)
+        except Exception:  # noqa: BLE001
+            pass
+
     def run(self, question: str, memory_text: str = "", history: Optional[list] = None,
             session_id: str = "anonymous") -> dict:
         """Run one user turn through the loop.
@@ -410,10 +452,15 @@ class ThinkerExecutor:
         ('answer'|'ask'), answer (the tag content), think_content, tool_trace, steps, conversation.
         """
         self.registry.session_id = session_id
+        # File-based personalisation (no graph): persist this user turn, then inject the
+        # accumulated memory as the [USER MEMORY] block. An explicit memory_text from the caller
+        # (e.g. a probe injecting custom context) takes precedence over the auto-read.
+        self._remember_user_turn(session_id, question)
+        mem = memory_text if (memory_text or "").strip() else self._read_user_memory(session_id, question)
         msgs: list[dict] = [{"role": "system", "content": THINKER_STUDENT_PROMPT}]
         if history:
             msgs.extend(history)
-        msgs.append({"role": "user", "content": prepend_memory(question, memory_text)})
+        msgs.append({"role": "user", "content": prepend_memory(question, mem)})
 
         tool_trace: list[dict] = []
         final_text = ""
@@ -537,6 +584,7 @@ def _serve(orch: ThinkerExecutor, host: str, port: int, model_label: str) -> Non
         # Prior turns (everything before the final user message) continue the Thinker context.
         history = [m for m in msgs[:-1] if m.get("role") in ("user", "assistant", "tool")] if len(msgs) > 1 else None
         orch.temperature = req.temperature
+        orch.tmax = req.max_new_tokens   # honour the request's Thinker token budget
         res = orch.run(last_user, memory_text=req.memory_text or "",
                        history=history, session_id=req.session_id or "anonymous")
         think = res["think_content"]

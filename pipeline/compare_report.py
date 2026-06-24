@@ -76,6 +76,8 @@ def _cell(rec: Dict[str, Any]) -> Dict[str, Any]:
         "answer": rec.get("answer_content") or rec.get("answer") or "",
         "response": rec.get("response") or "",
         "tools":  rec.get("tools_called") or [],
+        "tool_trace": rec.get("tool_trace") or [],   # actual calls + inputs
+        "response_type": rec.get("response_type") or "",
         "score":  score,
     }
 
@@ -170,16 +172,39 @@ def _score_badge(s):
 
 
 def _render_cell(label, cell, is_winner):
-    think = html.escape(cell["think"])[:4000]
+    think = html.escape(cell["think"])
     body = cell["answer"] or cell["response"]
-    tools = ", ".join(cell["tools"]) if cell["tools"] else "—"
-    think_html = f'<details><summary>think ({len(cell["think"])} chars)</summary><div class="resp">{think}</div></details>' if cell["think"] else ""
+    rtype = f' <span class="rtype">[{html.escape(cell.get("response_type",""))}]</span>' if cell.get("response_type") else ""
+
+    # Tool calls WITH their arguments (from tool_trace), not just names.
+    trace = cell.get("tool_trace") or []
+    if trace:
+        import json as _json
+        rows = []
+        for s in trace:
+            tname = html.escape(str(s.get("tool", "?")))
+            inp = html.escape(_json.dumps(s.get("input", {}), default=str)[:160])
+            rows.append(f"<li><b>{tname}</b>(<code>{inp}</code>)</li>")
+        tools_html = f'<details open><summary>tool calls ({len(trace)})</summary><ul class="tools">{"".join(rows)}</ul></details>'
+    elif cell["tools"]:
+        tools_html = f'<div class="tools">tools: {html.escape(", ".join(cell["tools"]))}</div>'
+    else:
+        tools_html = '<div class="tools">tools: —</div>'
+
+    # Full <think> trace, open by default so it is visible at a glance.
+    think_html = (f'<details open><summary>&lt;think&gt; ({len(cell["think"])} chars)</summary>'
+                  f'<div class="resp think">{think}</div></details>') if cell["think"] else ""
+    # Raw response (think + answer + any inline tool markers) as a fallback view.
+    raw = html.escape(cell["response"])
+    raw_html = (f'<details><summary>raw response ({len(cell["response"])} chars)</summary>'
+                f'<div class="resp">{raw}</div></details>') if cell["response"] and cell["response"] != body else ""
     return (
         f'<div class="col{" win" if is_winner else ""}">'
-        f'<span class="lbl">{html.escape(label)}</span>{_score_badge(cell["score"])}'
-        f'<div class="tools">tools: {html.escape(tools)}</div>'
+        f'<span class="lbl">{html.escape(label)}</span>{_score_badge(cell["score"])}{rtype}'
+        f'{tools_html}'
         f'{think_html}'
-        f'<div class="resp">{html.escape(body)[:6000]}</div>'
+        f'<div class="resp">{html.escape(body)}</div>'
+        f'{raw_html}'
         f'</div>'
     )
 

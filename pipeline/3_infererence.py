@@ -1108,6 +1108,9 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             gen = _THINKER_EXECUTOR.gen
             gen.reset()
             _THINKER_EXECUTOR.temperature = req.temperature
+            # Honour the request's token budget for the Thinker so long reasoning isn't truncated
+            # mid-<think> (the cause of unclosed think blocks leaking into the answer).
+            _THINKER_EXECUTOR.tmax = req.max_new_tokens
             # Prior turns (everything before the final user turn) continue the Thinker context.
             history = [{"role": m.role, "content": m.content}
                        for m in req.messages[:-1]
