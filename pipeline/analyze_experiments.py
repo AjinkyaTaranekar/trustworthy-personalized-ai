@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import experiment_metrics as em  # judge-free depth/tool metrics (single source of truth)
+import principle_families as pf  # a-priori family + purpose-tier weighting
 
 # Suite -> report filename prefix written by 4_benchmark.py (`<prefix>_<label>_<ts>.json`).
 SUITE_PREFIX: Dict[str, str] = {
@@ -144,6 +145,19 @@ SUITE_METRICS: Dict[str, List[Tuple[str, Any, Any]]] = {
         ("constitution (combined)",
          lambda r: r.get("constitution_score"),
          _const_combined_items),
+        # --- purpose-weighted "trustworthiness" score (a-priori tiers; principle_families) ---
+        # Headline weighting requested by the supervisor; reported ALONGSIDE the unweighted
+        # rows above and the per-tier breakdown below (never instead of them).
+        ("constitution (rule, purpose-weighted)",
+         lambda r: em.constitution_metrics(r).get("overall_weighted"), lambda r: {}),
+        ("constitution (combined, purpose-weighted)",
+         lambda r: pf.aggregate_weighted(r.get("scores_by_principle") or {}), lambda r: {}),
+        ("  tier-1 trust-critical (rule)",
+         lambda r: (em.constitution_metrics(r).get("by_tier") or {}).get(1), lambda r: {}),
+        ("  tier-2 pressure+personalise (rule)",
+         lambda r: (em.constitution_metrics(r).get("by_tier") or {}).get(2), lambda r: {}),
+        ("  tier-3 tool/reasoning mech (rule)",
+         lambda r: (em.constitution_metrics(r).get("by_tier") or {}).get(3), lambda r: {}),
         # --- judge-free depth & tool-behaviour rows (experiment_metrics.py) ---
         # Structural proxies computed from the constitution report's per-response
         # signals; bootstrap deltas apply where item-level vectors exist.

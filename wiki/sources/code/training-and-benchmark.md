@@ -302,6 +302,8 @@ The five-rung ablation ladder is consolidated and visualised by a small judge-fr
 
 Runbook: `pipeline/ABLATION_LADDER_RUNBOOK.md` §4 (judge) and §5 (consolidate).
 
+**Purpose-weighting (2026-06-25, supervisor note "not all principles are equal"):** `principle_families.py` now carries an a-priori `PRINCIPLE_TIER` map (Tier-1 ×3 = ask-right-question / no-fabrication / deny-unknown; Tier-2 ×2 = trust-under-pressure + personalisation/memory; Tier-3 ×1 = tool/reasoning mechanism) + `aggregate_weighted`/`aggregate_by_tier`/`weight_of`. `experiment_metrics.py` exposes `overall_weighted` + `by_tier`; `analyze_experiments.py` prints a **purpose-weighted "trustworthiness" score** (rule + combined) and the per-tier breakdown alongside the unweighted mean. Weights are fixed from the model's purpose, never tuned to results. Under this weighting, thinker_executor leads the trained models on Tier-1 (trust-critical). Dissertation home: methodology §3.2.1 (`tab:tiers`).
+
 ## Raw
 
 - `pipeline/config.py`, `pipeline/user_modelling.py`, `pipeline/empathy.py`

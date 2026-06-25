@@ -233,9 +233,11 @@ def constitution_metrics(report: Dict[str, Any]) -> Dict[str, Any]:
             by_principle[g.get("id", "?")] = sum(rule) / len(rule)
     return {
         "overall_rule": _mean(by_principle.values()),
+        "overall_weighted": pf.aggregate_weighted(by_principle),   # purpose-weighted headline
         "by_principle": by_principle,
         "by_family": {f: round(m, 4) for f, (m, _n) in pf.aggregate_by_family(by_principle).items()},
         "by_framing": {fr: round(m, 4) for fr, (m, _n) in pf.aggregate_by_framing(by_principle).items()},
+        "by_tier": {t: round(m, 4) for t, (m, _n) in pf.aggregate_by_tier(by_principle).items()},
     }
 
 

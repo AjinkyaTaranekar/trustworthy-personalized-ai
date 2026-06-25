@@ -1117,7 +1117,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                        if m.role in ("user", "assistant", "tool")] or None
             te = _THINKER_EXECUTOR.run(
                 user_turn, memory_text=req.memory_text or "",
-                history=history, session_id=session_id,
+                history=history, session_id=session_id, greedy=req.greedy,
             )
             conv = te["conversation"]          # starts with THINKER_STUDENT_PROMPT system turn
             final = te["response"]

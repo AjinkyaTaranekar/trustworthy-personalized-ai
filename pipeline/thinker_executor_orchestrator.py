@@ -442,7 +442,7 @@ class ThinkerExecutor:
             pass
 
     def run(self, question: str, memory_text: str = "", history: Optional[list] = None,
-            session_id: str = "anonymous") -> dict:
+            session_id: str = "anonymous", greedy: bool = False) -> dict:
         """Run one user turn through the loop.
 
         history — prior Thinker messages (user/assistant/tool dicts), WITHOUT the system turn,
@@ -467,7 +467,7 @@ class ThinkerExecutor:
         final_kind = "answer"
 
         for step in range(1, self.max_steps + 1):
-            out = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=False)
+            out = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
             kind, content = parse_thinker(out)
             msgs.append({"role": "assistant", "content": out})
             self._log(f"[thinker {step}] kind={kind} :: {content[:140]}")
@@ -502,7 +502,7 @@ class ThinkerExecutor:
             # Loop exhausted without an answer — force one final resolution.
             msgs.append({"role": "user",
                          "content": "Enough information has been gathered. Provide your final <answer> now."})
-            final_text = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=False)
+            final_text = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
             msgs.append({"role": "assistant", "content": final_text})
             k, _ = parse_thinker(final_text)
             final_kind = k or "answer"
@@ -568,6 +568,7 @@ def _serve(orch: ThinkerExecutor, host: str, port: int, model_label: str) -> Non
         tool_mode: Optional[str] = "native"
         harness_enabled: Optional[bool] = None
         memory_text: Optional[str] = None
+        greedy: Optional[bool] = True   # deterministic by default (benchmark/repro)
 
     @app.get("/health")
     def health():
@@ -586,7 +587,8 @@ def _serve(orch: ThinkerExecutor, host: str, port: int, model_label: str) -> Non
         orch.temperature = req.temperature
         orch.tmax = req.max_new_tokens   # honour the request's Thinker token budget
         res = orch.run(last_user, memory_text=req.memory_text or "",
-                       history=history, session_id=req.session_id or "anonymous")
+                       history=history, session_id=req.session_id or "anonymous",
+                       greedy=bool(req.greedy))
         think = res["think_content"]
         return {
             "response": res["response"],

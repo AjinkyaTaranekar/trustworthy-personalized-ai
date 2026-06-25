@@ -205,10 +205,14 @@ python 3_infererence.py \
     --base_model unsloth/Qwen3-0.6B --port 8000
 ```
 ```bash
-# bench
+# bench  (--max_new_tokens 2048 so the Thinker's reasoning is not truncated; the
+#         default 1024 is too small for the dual model)
 python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-     --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor
+     --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor \
+     --max_new_tokens 2048
 ```
+
+> **Determinism for the dual model (fixed 2026-06-25):** the orchestrator previously hard-coded the Thinker to sample (`greedy=False`), so Thinker–Executor ran stochastically at temp 0.7 while the single-model conditions ran greedy — an unfair, noisy comparison (T-E numbers wobbled run-to-run). The orchestrator + dual endpoint now honour the request's `greedy` flag, so the standard (greedy-default) benchmark command is deterministic for T-E too. **For the final comparison, re-run ALL five conditions greedy with the same `--max_new_tokens` (e.g. 2048)** so every condition is decoded identically.
 
 Each run writes `reports/<label>/{constitution_probe,category_probes,context_drift,adversarial,persona_conversations}_<ts>.json` (rule scores only; `llm_score` is null until §5).
 
@@ -265,7 +269,7 @@ python analyze_experiments.py \
 `--figures` renders the dissertation figures (needs matplotlib). Drop it for the table only.
 
 Outputs:
-- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs. Now also includes **judge-free depth/tool rows** (from `experiment_metrics.py`): `<think>` length, `<think>`-empty rate, **reasoning externalisation ratio** (in-think vs answer-body), clarification rate, hollow-pass rate, tool calls/response, tool-failure rate, decoy-bait rate.
+- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs. Now also includes **judge-free depth/tool rows** (from `experiment_metrics.py`): `<think>` length, `<think>`-empty rate, **reasoning externalisation ratio** (in-think vs answer-body), clarification rate, hollow-pass rate, tool calls/response, tool-failure rate, decoy-bait rate. Plus the **purpose-weighted "trustworthiness" score** (a-priori tiers from `principle_families.py`: Tier-1 ×3 ask/no-fabrication/deny-unknown, Tier-2 ×2 pressure+personalisation, Tier-3 ×1 tool/reasoning mechanism) for rule and combined, with the **per-tier breakdown** — reported alongside the unweighted mean, never instead of it.
 - `reports/experiment_h3_failures_<ts>.csv` — probes the top rung still fails or regresses on (H3 limits).
 - `reports/persona_dimension_correlation_<ts>.csv` — 6×6 Pearson matrix over the judged personas; flags any distinct dimension pair with |r| ≥ 0.9 as near-redundant (the "are the trust/empathy metrics overlapping?" check). Needs ≥3 judged personas.
 - `reports/dissertation_assets/fig_ladder_*.pdf`, `fig_think_distribution.pdf`, `fig_reasoning_location.pdf`, `fig_depth_vs_cost.pdf`, `fig_tool_usage.pdf`, `fig_drift_curve.pdf`, `fig_category_heatmap.pdf` — the nine ladder figures (when `--figures`).
