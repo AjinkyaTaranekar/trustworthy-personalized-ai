@@ -696,6 +696,12 @@ def _strip_answer_block(text: str, use_native: bool) -> str:
     return cleaned.strip()
 
 
+# Fixed seed for the dual Thinker's stochastic decoding (see _generate). Keeps headline numbers
+# reproducible across runs WITHOUT reverting the Thinker to argmax, which collapses a 0.6B onto a
+# single canned synthesis sentence. Mirrors thinker_executor_orchestrator._THINKER_SEED.
+_THINKER_SEED = int(os.environ.get("PIPELINE_THINKER_SEED", "1234"))
+
+
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
               greedy: bool = False,
               tools: Optional[List[Dict[str, Any]]] = None,
@@ -745,7 +751,21 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
             gen_kwargs["repetition_penalty"] = _rep_pen
         if _no_rep and _no_rep > 0:
             gen_kwargs["no_repeat_ngram_size"] = _no_rep
-        if greedy:
+        if role == "thinker":
+            # The dual-model Thinker is ALWAYS sampled, even when the caller passes greedy=True
+            # (the benchmark does). Pure argmax collapses a 0.6B trained on low-diversity teacher
+            # reasoning onto ONE canned synthesis sentence on ~60% of questions and suppresses tool
+            # delegation — a mode-collapse artifact, not real reasoning. Reproducibility is kept via
+            # the fixed seed below instead of argmax. The SINGLE model (role is None) deliberately
+            # keeps greedy: it needs determinism and strict-JSON tool-call parsing, and changing it
+            # would move the vanilla/sft baselines. Env override: PIPELINE_THINKER_TEMPERATURE.
+            _t_env = os.environ.get("PIPELINE_THINKER_TEMPERATURE", "")
+            _temp = float(_t_env) if _t_env else temperature
+            if not _temp or _temp <= 0:
+                _temp = 0.7                    # never 0 — that is argmax, the collapse we are fixing
+            gen_kwargs.update(do_sample=True, temperature=_temp, top_p=0.9)
+            torch.manual_seed(_THINKER_SEED)
+        elif greedy:
             gen_kwargs["do_sample"] = False   # deterministic — required for reproducible context degradation study
         else:
             gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)

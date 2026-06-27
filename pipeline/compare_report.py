@@ -79,6 +79,7 @@ def _cell(rec: Dict[str, Any]) -> Dict[str, Any]:
         "tool_trace": rec.get("tool_trace") or [],   # actual calls + inputs
         "response_type": rec.get("response_type") or "",
         "score":  score,
+        "judge_reason": rec.get("llm_reason") or "",  # why the judge gave this score (scrutability)
     }
 
 
@@ -103,8 +104,9 @@ def _iter(suite: str, report: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, 
         for r in report.get("persona_results", []):
             q = f"{r.get('profile', '')} — goal: {r.get('goal', '')}"
             cell = {"think": "", "answer": "", "response": r.get("transcript", ""),
-                    "tools": r.get("tools_called", []),
-                    "score": (r.get("judge") or {}).get("overall")}
+                    "tools": r.get("tools_called", []), "tool_trace": [], "response_type": "",
+                    "score": (r.get("judge") or {}).get("overall"),
+                    "judge_reason": (r.get("judge") or {}).get("summary", "")}
             out.append((r.get("persona_id", ""), q, cell))
     return out
 
@@ -141,34 +143,67 @@ def judge_compare(question: str, answers: Dict[str, str], model: str) -> Optiona
 
 # --------------------------------------------------------------------------- html
 _CSS = """
-body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1115;color:#e6e6e6}
-header{position:sticky;top:0;background:#11151c;padding:12px 18px;border-bottom:1px solid #2a2f3a;z-index:5}
-h1{font-size:18px;margin:0 0 4px} h2{margin:26px 18px 6px;color:#9ecbff;border-bottom:1px solid #2a2f3a;padding-bottom:4px}
-.q{margin:14px 18px;border:1px solid #2a2f3a;border-radius:8px;overflow:hidden}
-.qh{background:#171c25;padding:8px 12px;font-weight:600;color:#ffd479}
-.grid{display:grid;gap:0}
-.col{padding:10px 12px;border-top:1px solid #2a2f3a;border-left:1px solid #2a2f3a;vertical-align:top}
-.lbl{font-weight:700;color:#7ee787;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-.badge{float:right;font-weight:700;padding:1px 7px;border-radius:10px;font-size:12px}
-.tools{font-size:12px;color:#79c0ff;margin:4px 0}
-.resp{white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;background:#0c0e13;padding:8px;border-radius:6px;margin-top:4px}
-details>summary{cursor:pointer;color:#8b949e;font-size:12px}
-.win{outline:2px solid #f0c000}
-.jud{margin:6px 12px 12px;padding:8px 12px;background:#14181f;border-radius:6px;font-size:13px}
-.rank{color:#ffd479;font-weight:600}
-table.lead{margin:8px 18px;border-collapse:collapse} table.lead td,table.lead th{border:1px solid #2a2f3a;padding:4px 10px;text-align:center}
+:root{--ink:#1c1e21;--muted:#6b7280;--faint:#9aa0a6;--line:#e7e9ec;--bg:#fff;
+      --panel:#fafbfc;--accent:#33485a;--pass:#2e7d51;--part:#9a6a00;--fail:#b23b3b}
+*{box-sizing:border-box}
+body{font:15px/1.62 Charter,Georgia,"Times New Roman",serif;color:var(--ink);background:var(--bg);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px 72px}
+header{border-bottom:2px solid var(--ink);padding:30px 0 16px;margin-bottom:6px}
+h1{font-size:23px;font-weight:600;margin:0 0 5px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:12.5px}
+h2{font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);
+   margin:40px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+h2 .n{color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0}
+table.lead{border-collapse:collapse;font-size:13px;margin:6px 0 10px;width:100%}
+table.lead th,table.lead td{border-bottom:1px solid var(--line);padding:8px 12px;text-align:center}
+table.lead th{font-weight:600;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.06em}
+table.lead td.lbl,table.lead th.lbl{text-align:left}
+table.lead td.tot{font-weight:700}
+.q{border:1px solid var(--line);border-radius:5px;margin:18px 0;overflow:hidden;break-inside:avoid}
+.qh{background:var(--panel);padding:11px 15px;font-weight:600;font-size:14.5px;border-bottom:1px solid var(--line)}
+.grid{display:grid}
+.col{padding:13px 15px;border-left:1px solid var(--line);min-width:0}
+.col:first-child{border-left:none}
+.col.win{box-shadow:inset 3px 0 0 var(--accent);background:#fcfdfe}
+.col.empty{color:var(--faint);font-size:13px}
+.lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;font-weight:600;
+     letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+.rtype{color:var(--faint);font-size:10.5px}
+.badge{float:right;font-weight:600;font-size:12px;padding:1px 9px;border-radius:11px;border:1px solid var(--line);color:var(--muted)}
+.badge.pass{color:var(--pass);border-color:#d2e7da} .badge.part{color:var(--part);border-color:#ecdcb6}
+.badge.fail{color:var(--fail);border-color:#eccccc}
+.answer{font-size:13.5px;margin-top:8px;white-space:pre-wrap;word-break:break-word}
+.resp{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:11.5px;line-height:1.5;background:var(--panel);border:1px solid var(--line);
+      border-radius:4px;padding:8px 10px;margin-top:6px;max-height:340px;overflow:auto}
+details{margin-top:8px} details>summary{cursor:pointer;color:var(--muted);font-size:10.5px;
+      text-transform:uppercase;letter-spacing:.05em;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\\25B8 ";color:var(--faint)} details[open]>summary::before{content:"\\25BE "}
+.trace{margin-top:6px}
+.tstep{border-left:2px solid var(--line);margin:7px 0;padding:1px 0 3px 11px}
+.tstep .sn{font-size:10.5px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.trow{font-size:12px;line-height:1.5;margin:2px 0;white-space:pre-wrap;word-break:break-word}
+.tlabel{display:inline-block;min-width:62px;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;
+        color:var(--faint);font-weight:600;vertical-align:top}
+.tcode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.why{font-size:11.5px;color:var(--muted);line-height:1.5;margin:8px 0 2px;padding:6px 9px;
+     background:var(--panel);border-left:2px solid var(--accent);border-radius:0 3px 3px 0}
+.jud{padding:10px 15px;background:var(--panel);border-top:1px solid var(--line);font-size:12.5px;color:var(--ink)}
+.rank{font-weight:600;color:var(--accent)}
+@media print{body{font-size:11px}.col,.q{break-inside:avoid}.resp{max-height:none}header{position:static}}
 """
 
 
 def _score_badge(s):
     if s is None:
-        return '<span class="badge" style="background:#30363d;color:#8b949e">–</span>'
+        return '<span class="badge">–</span>'
     try:
         v = float(s)
     except (TypeError, ValueError):
         return ""
-    col = "#1a7f37" if v >= 0.75 else ("#9e6a03" if v >= 0.4 else "#a40e26")
-    return f'<span class="badge" style="background:{col};color:#fff">{v:.2f}</span>'
+    cls = "pass" if v >= 0.75 else ("part" if v >= 0.4 else "fail")
+    return f'<span class="badge {cls}">{v:.2f}</span>'
 
 
 def _render_cell(label, cell, is_winner):
@@ -176,34 +211,57 @@ def _render_cell(label, cell, is_winner):
     body = cell["answer"] or cell["response"]
     rtype = f' <span class="rtype">[{html.escape(cell.get("response_type",""))}]</span>' if cell.get("response_type") else ""
 
-    # Tool calls WITH their arguments (from tool_trace), not just names.
+    # Full per-step trace (from tool_trace): the Thinker's reasoning, its plan, the tool call WITH
+    # arguments, and the execution result — so the chain think -> plan -> act -> tool -> result is
+    # fully scrutable (trustworthiness via traceability), not just a list of tool names.
     trace = cell.get("tool_trace") or []
     if trace:
         import json as _json
-        rows = []
+        steps = []
         for s in trace:
             tname = html.escape(str(s.get("tool", "?")))
-            inp = html.escape(_json.dumps(s.get("input", {}), default=str)[:160])
-            rows.append(f"<li><b>{tname}</b>(<code>{inp}</code>)</li>")
-        tools_html = f'<details open><summary>tool calls ({len(trace)})</summary><ul class="tools">{"".join(rows)}</ul></details>'
+            inp = html.escape(_json.dumps(s.get("input", {}), default=str)[:300])
+            reasoning = html.escape(str(s.get("think_before_call", "") or "").strip())
+            plan = html.escape(str(s.get("act", "") or "").strip())
+            out = html.escape(str(s.get("output_model") or s.get("result") or "").strip()[:300])
+            seg = [f'<div class="tstep"><span class="sn">step {html.escape(str(s.get("step", "?")))}</span>']
+            if reasoning:
+                seg.append(f'<div class="trow"><span class="tlabel">reasoning</span>{reasoning}</div>')
+            if plan:
+                seg.append(f'<div class="trow"><span class="tlabel">plan</span>{plan}</div>')
+            seg.append(f'<div class="trow"><span class="tlabel">call</span>'
+                       f'<span class="tcode">{tname}({inp})</span></div>')
+            if out:
+                seg.append(f'<div class="trow"><span class="tlabel">result</span>'
+                           f'<span class="tcode">{out}</span></div>')
+            seg.append('</div>')
+            steps.append("".join(seg))
+        nstep = len(trace)
+        tools_html = (f'<details open><summary>reasoning &amp; tool trace '
+                      f'({nstep} step{"s" if nstep != 1 else ""})</summary>'
+                      f'<div class="trace">{"".join(steps)}</div></details>')
     elif cell["tools"]:
-        tools_html = f'<div class="tools">tools: {html.escape(", ".join(cell["tools"]))}</div>'
+        tools_html = f'<details><summary>tools: {html.escape(", ".join(cell["tools"]))}</summary></details>'
     else:
-        tools_html = '<div class="tools">tools: —</div>'
+        tools_html = ""
 
-    # Full <think> trace, open by default so it is visible at a glance.
-    think_html = (f'<details open><summary>&lt;think&gt; ({len(cell["think"])} chars)</summary>'
-                  f'<div class="resp think">{think}</div></details>') if cell["think"] else ""
+    # The model's own <think> (final turn), collapsed by default to keep the answer prominent.
+    think_html = (f'<details><summary>&lt;think&gt; ({len(cell["think"])} chars)</summary>'
+                  f'<div class="resp">{think}</div></details>') if cell["think"] else ""
     # Raw response (think + answer + any inline tool markers) as a fallback view.
     raw = html.escape(cell["response"])
     raw_html = (f'<details><summary>raw response ({len(cell["response"])} chars)</summary>'
                 f'<div class="resp">{raw}</div></details>') if cell["response"] and cell["response"] != body else ""
+    why = cell.get("judge_reason") or ""
+    why_html = (f'<div class="why"><span class="tlabel">judge</span>{html.escape(why)}</div>'
+                if why else "")
     return (
         f'<div class="col{" win" if is_winner else ""}">'
         f'<span class="lbl">{html.escape(label)}</span>{_score_badge(cell["score"])}{rtype}'
+        f'<div class="answer">{html.escape(body)}</div>'
         f'{tools_html}'
         f'{think_html}'
-        f'<div class="resp">{html.escape(body)}</div>'
+        f'{why_html}'
         f'{raw_html}'
         f'</div>'
     )
@@ -211,34 +269,39 @@ def _render_cell(label, cell, is_winner):
 
 def build_html(labels, data, judged, leaderboard, args) -> str:
     n = len(labels)
-    parts = [f"<html><head><meta charset='utf-8'><style>{_CSS}</style></head><body>"]
-    parts.append("<header><h1>Ablation comparison — answers side by side</h1>"
-                 f"<div>{' · '.join(html.escape(l) for l in labels)} &nbsp;|&nbsp; generated {datetime.now():%Y-%m-%d %H:%M}"
-                 f"{' · comparative judge: ' + html.escape(args.judge_model) if args.judge else ''}</div></header>")
+    parts = [f"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
+             f"<title>Ablation comparison</title><style>{_CSS}</style></head><body><div class='wrap'>"]
+    sub = " · ".join(html.escape(l) for l in labels) + f" &nbsp;|&nbsp; generated {datetime.now():%Y-%m-%d %H:%M}"
+    if args.judge:
+        sub += " · comparative judge: " + html.escape(args.judge_model)
+    parts.append("<header><h1>Constitutional ablation — answers side by side</h1>"
+                 f"<div class='sub'>{sub}</div></header>")
     if leaderboard:
-        parts.append("<h2>Win leaderboard (comparative judge, #1 ranks)</h2><table class='lead'><tr><th>condition</th>"
+        parts.append("<h2>Win leaderboard <span class='n'>(comparative judge, #1 ranks)</span></h2>"
+                     "<table class='lead'><tr><th class='lbl'>condition</th>"
                      + "".join(f"<th>{html.escape(s)}</th>" for s in SUITES) + "<th>total</th></tr>")
         for lbl in labels:
             row = leaderboard.get(lbl, {})
             tot = sum(row.values())
             parts.append("<tr><td class='lbl'>" + html.escape(lbl) + "</td>"
-                         + "".join(f"<td>{row.get(s, 0)}</td>" for s in SUITES) + f"<td><b>{tot}</b></td></tr>")
+                         + "".join(f"<td>{row.get(s, 0)}</td>" for s in SUITES) + f"<td class='tot'>{tot}</td></tr>")
         parts.append("</table>")
 
     for suite in SUITES:
         items = data.get(suite)
         if not items:
             continue
-        parts.append(f"<h2>{suite}  ({len(items)} questions)</h2>")
+        parts.append(f"<h2>{html.escape(suite)} <span class='n'>({len(items)} questions)</span></h2>")
         for key, (question, cells) in items.items():
             verdict = judged.get((suite, key)) if judged else None
             winner = verdict.get("best") if verdict and not verdict.get("error") else None
             parts.append(f'<div class="q"><div class="qh">{html.escape(question or key)}</div>')
-            parts.append(f'<div class="grid" style="grid-template-columns:repeat({n},1fr)">')
+            parts.append(f'<div class="grid" style="grid-template-columns:repeat({n},minmax(0,1fr))">')
             for lbl in labels:
                 cell = cells.get(lbl)
                 if cell is None:
-                    parts.append('<div class="col" style="color:#8b949e">— no report —</div>')
+                    parts.append('<div class="col empty">— no report —</div>')
                 else:
                     parts.append(_render_cell(lbl, cell, lbl == winner))
             parts.append('</div>')
@@ -249,7 +312,7 @@ def build_html(labels, data, judged, leaderboard, args) -> str:
                     rank = " &gt; ".join(html.escape(x) for x in verdict.get("ranking", []))
                     parts.append(f'<div class="jud"><span class="rank">{rank}</span> — {html.escape(verdict.get("rationale", ""))}</div>')
             parts.append('</div>')
-    parts.append("</body></html>")
+    parts.append("</div></body></html>")
     return "".join(parts)
 
 

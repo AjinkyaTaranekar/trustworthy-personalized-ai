@@ -657,6 +657,8 @@ python 4_benchmark.py --models ./models/vanilla ./models/checkpoint_sft \
 ```
 
 > **Decoding:** `4_benchmark.py` decodes **greedily** (`do_sample=False`) by default, matching the training-eval path in `2_model_trainer.py`. This keeps runs deterministic and lets strict-JSON `<tool_call>` blocks parse reliably — at `temperature>0` a 0.6B model degenerates them (unclosed tags, malformed args) so tools never fire and `tool_trace` comes back empty. Pass `--sample` to restore stochastic decoding at `--temperature`.
+>
+> **Thinker–Executor exception:** decoding is **role-determined** in `thinker_executor_orchestrator.py`, so the benchmark's greedy flag does *not* fully apply. The **Executor** stays greedy (it is a deterministic instruction→one-tool-call transducer). The **Thinker** is **always sampled** (`temperature 0.7`, `top_p 0.9`): under pure argmax a 0.6B trained on low-diversity teacher reasoning collapses onto a single canned synthesis sentence on ~60% of questions, which also suppresses tool delegation. Reproducibility is preserved via a fixed seed (`PIPELINE_THINKER_SEED`, default `1234`); override the temperature with `PIPELINE_THINKER_TEMPERATURE`.
 
 Output: `reports/persona_conversations_<label>_<ts>.json` with the full transcript, profile, and expectations per persona (scores are filled in by the judge step). The script is deterministic; model sampling is the other axis — pass `--temperature 0` for headline numbers, or repeat at a higher temperature for a variance band.
 
@@ -676,6 +678,44 @@ python 5_judgement_day.py --judge_model claude-opus-4-8 \
 ```
 
 It fills `llm_score` / `combined_score` / `persona_score` (+ the six persona `dimension_means`) and recomputes the blended aggregates. Two upgraded prompts (both system+user, reasoning-before-score, calibrated anchors): a per-response judge for Suites A–C and a whole-transcript conversation judge for Suite E. A failed judge call scores `None` (excluded from the average), never a silent 0.5. Keep the judge model identical across conditions (recorded in `run_metadata.judged_by`); adversarial (Suite D) is rule-only and never judged.
+
+**Judge-primary, substance lens (default).** The headline `combined_score` is now the **LLM judge** score (substance-based, validated against humans via `--meta_eval`); the brittle single-keyword `rule_score` from `4_benchmark.py`'s regex checks is kept only as a diagnostic, not blended in — so a model is no longer marked wrong because one exact word failed to appear. The judge grades **behaviour, not vocabulary**, and explicitly credits an appropriate clarifying question (`<ask>`) on an underspecified/personal query as correct, high-scoring behaviour (while penalising clarification of a fully-answerable question). Pass `--blend_rule` to restore the old `(rule+judge)/2`. The mode is recorded in `run_metadata.combine_mode`. To re-score **existing** reports with this lens (no GPU needed), re-judge with `--force` (resume otherwise skips already-judged items).
+
+**Self-consistency (`--k`).** Pass `--k 3` (with `--sc_temperature`, default 0.3) to sample the judge K times per item and use the **mean** score — mean-of-K aggregation tracks human ratings better than a single greedy call (arXiv 2506.13639). The per-item spread is persisted as `llm_score_std` and `run_metadata.judge_k_samples`. `--k 1` (default) is the original single near-greedy call.
+
+**Enriched rubrics (`judge_rubrics.py`).** Each constitution principle has an instance-grounded spec — a behaviour rubric, **endpoint score anchors** (what 1.0 vs 0.0 concretely look like) and a **reference exemplar** — the two design choices that most raise judge–human agreement (Prometheus; BiGGen Bench; arXiv 2506.13639). These are applied automatically at judge time (no GPU; re-judge existing reports with `--force`) and to `--meta_eval`/`--preview` so validity is measured on the same lens.
+
+**Neutral assessor ablation (Phase 3).** `--judge_constitution_mode {full,bare,none}` controls how much of the constitution the judge sees. `--ablate_judge` re-judges the constitution suite under all three modes with responses fixed and tabulates per-model `full / bare / none / (full−none)` — separating "the model genuinely complies" from "the judge rewards constitution-shaped text". Writes `reports/ablate_judge_<ts>.json`, modifies nothing.
+
+```bash
+# re-judge reports_jun24 constitution with the enriched lens (offline, no GPU)
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 \
+    --reports_dir reports_jun24 --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
+    --suites constitution --force
+# does the constitution help the model, or just bias the judge?
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 \
+    --reports_dir reports_jun24 --labels vanilla_base sft_constitution thinker_executor --ablate_judge
+```
+
+### Validating the judge: meta-evaluation against a human-anchored gold set
+
+Before trusting the judge's scores, measure how well they agree with **human ground truth** — the judge's validity is an empirical claim, not an assumption. This is the answer to "how do you know the marking scheme is right?".
+
+```bash
+# 1. Build a BLIND gold-annotation template (stratified by principle; no judge score shown,
+#    so your annotation is not anchored to the model's). Needs no API keys.
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 --make_gold \
+    --labels vanilla_base sft_constitution thinker_executor --suites constitution \
+    --n_per_principle 2 --gold reports/gold/gold_set.jsonl
+
+# 2. Hand-score each line: set human_score to 0.0 / 0.5 / 1.0 (optionally human_note).
+
+# 3. Measure judge-vs-human agreement (+ judge self-consistency), overall and per principle.
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 --meta_eval \
+    --gold reports/gold/gold_set.jsonl --k 3
+```
+
+Reports **Krippendorff's α** (interval; target ≥ 0.67), **Gwet's AC1** and Cohen's κ on the pass/fail decision (AC1 is robust to the skew that distorts κ on high-pass-rate probes), Pearson/Spearman correlation, MAE, judge bias (lenient/strict), and self-consistency (mean within-item std + verdict-flip rate) — broken down per principle and per AbstentionBench answerability type (unknown · underspecified · false-premise · subjective · stale). Writes `reports/meta_eval_<judge>_<ts>.json`. See [`judge_reliability.py`](pipeline/judge_reliability.py) and the wiki [human-evaluation rubric](wiki/experiments/human-evaluation-rubric.md), which supplies the human ground truth.
 
 ---
 

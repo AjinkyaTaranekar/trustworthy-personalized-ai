@@ -1,0 +1,7 @@
+dimension,personalisation,memory_consistency,empathy,trustworthiness,coherence,goal_completion
+personalisation,1.0,0.7037,0.7265,0.4696,0.6225,0.6846
+memory_consistency,0.7037,1.0,0.6561,0.6348,0.7497,0.5781
+empathy,0.7265,0.6561,1.0,0.5139,0.6651,0.5617
+trustworthiness,0.4696,0.6348,0.5139,1.0,0.6307,0.3927
+coherence,0.6225,0.7497,0.6651,0.6307,1.0,0.761
+goal_completion,0.6846,0.5781,0.5617,0.3927,0.761,1.0

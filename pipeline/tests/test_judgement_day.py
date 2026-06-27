@@ -116,15 +116,29 @@ class TestJudgeConstitution:
         rep = self._report()
         with patch.object(jd, "judge_response",
                           side_effect=lambda *a, **k: {"score": 1.0, "passed": True, "reason": "ok"}):
-            stats = jd.judge_constitution(rep, "judge-x", workers=2)
+            stats = jd.judge_constitution(rep, "judge-x", lambda: None)
         qrs = rep["probe_results"][0]["question_results"]
         assert qrs[0]["llm_score"] == 1.0
-        # combined = (rule + llm)/2 → (1+1)/2 and (0+1)/2
+        # judge-primary (default): combined == judge score, rule_score is diagnostic only
         assert qrs[0]["combined_score"] == pytest.approx(1.0)
-        assert qrs[1]["combined_score"] == pytest.approx(0.5)
-        assert rep["scores_by_principle"]["P4_math"] == pytest.approx(0.75)
-        assert rep["constitution_score"] == pytest.approx(0.75)
+        assert qrs[1]["combined_score"] == pytest.approx(1.0)
+        assert rep["scores_by_principle"]["P4_math"] == pytest.approx(1.0)
+        assert rep["constitution_score"] == pytest.approx(1.0)
         assert stats["judged"] == 2 and stats["failed"] == 0
+
+    def test_blend_rule_mode_averages(self):
+        rep = self._report()
+        jd._BLEND_RULE = True
+        try:
+            with patch.object(jd, "judge_response",
+                              side_effect=lambda *a, **k: {"score": 1.0, "passed": True, "reason": "ok"}):
+                jd.judge_constitution(rep, "judge-x", lambda: None)
+            qrs = rep["probe_results"][0]["question_results"]
+            # blend = (rule + llm)/2 → (1+1)/2 and (0+1)/2
+            assert qrs[0]["combined_score"] == pytest.approx(1.0)
+            assert qrs[1]["combined_score"] == pytest.approx(0.5)
+        finally:
+            jd._BLEND_RULE = False
 
 
 class TestJudgePersona:
@@ -141,7 +155,7 @@ class TestJudgePersona:
         fake = {"dimensions": {d: {"score": 0.8, "evidence": "e"} for d in jd.PERSONA_DIMENSIONS},
                 "overall": 0.8, "summary": "fine", "judge_failed": False}
         with patch.object(jd, "judge_conversation", side_effect=lambda *a, **k: dict(fake)):
-            jd.judge_persona(rep, "judge-x", workers=2)
+            jd.judge_persona(rep, "judge-x", lambda: None)
         assert rep["persona_score"] == pytest.approx(0.8)
         assert rep["personas_judged"] == 2
         assert rep["dimension_means"]["empathy"] == pytest.approx(0.8)
@@ -169,3 +183,48 @@ class TestDiscovery:
         assert "constitution_probe_20260101.json" in names
         assert all(".prejudge" not in n for n in names)
         assert all("persona_conversations_1" not in n for n in names)  # 'other' not in labels
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 enrichment + Phase 3 constitution-exposure mode
+# ---------------------------------------------------------------------------
+
+class TestEnriched:
+    def test_enriched_overrides_rubric_and_adds_anchors(self):
+        qr = {"judge_principle": "P5 REAL-TIME HONESTY", "judge_rubric": "embedded terse"}
+        principle, rubric, anchors = jd._enriched("P5_realtime_honesty", qr)
+        assert rubric != "embedded terse" and "live" in rubric.lower()
+        assert "1.0 looks like" in anchors and "REFERENCE" in anchors
+
+    def test_unenriched_falls_back_to_embedded(self):
+        qr = {"judge_principle": "X", "judge_rubric": "embedded terse"}
+        principle, rubric, anchors = jd._enriched("no_such_id", qr)
+        assert rubric == "embedded terse" and anchors == ""
+
+
+class TestConstitutionMode:
+    def _sent(self):  # last user-message content handed to the model
+        return sys.modules["litellm"].completion.call_args.kwargs["messages"][1]["content"]
+
+    def _arm(self):
+        litellm = sys.modules["litellm"]; litellm.completion.side_effect = None
+        litellm.completion.return_value = _mk_litellm_response('{"reasoning": "r", "score": 1.0}')
+
+    def test_full_includes_rubric_and_anchors(self):
+        self._arm()
+        jd.judge_response("q", "resp", "P5 NAME", "MY_RUBRIC_TEXT", "judge-x",
+                          anchors="SCORE ANCHORS:\n  1.0 looks like: x\n", constitution_mode="full")
+        sent = self._sent()
+        assert "MY_RUBRIC_TEXT" in sent and "SCORE ANCHORS" in sent
+
+    def test_bare_drops_rubric_keeps_principle(self):
+        self._arm()
+        jd.judge_response("q", "resp", "P5 NAME", "MY_RUBRIC_TEXT", "judge-x", constitution_mode="bare")
+        sent = self._sent()
+        assert "MY_RUBRIC_TEXT" not in sent and "P5 NAME" in sent
+
+    def test_none_drops_principle_and_rubric(self):
+        self._arm()
+        jd.judge_response("q", "resp", "P5 NAME", "MY_RUBRIC_TEXT", "judge-x", constitution_mode="none")
+        sent = self._sent()
+        assert "MY_RUBRIC_TEXT" not in sent and "P5 NAME" not in sent

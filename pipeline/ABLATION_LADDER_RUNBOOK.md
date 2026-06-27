@@ -207,9 +207,6 @@ python 3_infererence.py \
 ```bash
 # bench  (--max_new_tokens 2048 so the Thinker's reasoning is not truncated; the
 #         default 1024 is too small for the dual model)
-python 4_benchmark.py --probe --categories --drift --adversarial --persona \
-     --tool_mode native --model_label thinker_executor --output_dir reports/thinker_executor \
-     --max_new_tokens 2048
 ```
 
 > **Determinism for the dual model (fixed 2026-06-25):** the orchestrator previously hard-coded the Thinker to sample (`greedy=False`), so Thinker–Executor ran stochastically at temp 0.7 while the single-model conditions ran greedy — an unfair, noisy comparison (T-E numbers wobbled run-to-run). The orchestrator + dual endpoint now honour the request's `greedy` flag, so the standard (greedy-default) benchmark command is deterministic for T-E too. **For the final comparison, re-run ALL five conditions greedy with the same `--max_new_tokens` (e.g. 2048)** so every condition is decoded identically.

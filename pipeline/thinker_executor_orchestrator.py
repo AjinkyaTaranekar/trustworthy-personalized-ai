@@ -56,17 +56,32 @@ from sft_v3_generator import (
     prepend_memory,
 )
 from pipeline_tools import ToolRegistry
-from tool_io import sanitise_tool_result
+from tool_io import sanitise_tool_result, TOOL_PROFILES
 
 # Executor-owned tools (delegated via <act>). get_datetime was REMOVED: the splitter drops
 # datetime calls from the Thinker stream and never emits a datetime instruction→call pair, so the
 # Executor has ZERO datetime training examples. Advertising it created a dead capability (the model
 # would pick the wrong tool or hallucinate). In this trained system, time-dependent questions are
-# handled the way the Thinker data teaches — via web_search ("search for today's …"). Proactive
-# current-datetime injection is a possible future enhancement but is intentionally NOT done here to
-# avoid a speculative train/serve contract change.
+# handled the way the Thinker data teaches — via web_search ("search for today's …"). The current
+# date IS now injected into the user context block in run() (the model has no get_datetime tool, so
+# it otherwise lacks any temporal anchor) — a serve-time addition; for full train/serve parity the
+# self-distill retrain would inject the same date line into the training rows.
 EXECUTOR_TOOLS = {"python_execute", "web_search", "read_url"}
 MAX_RESULT_CHARS = 2000   # legacy length-only cap; only used by the deprecated sanitise_result below
+
+
+def _allowed_executor_tools(profile: Optional[str]) -> Optional[set]:
+    """Executor-owned tools permitted under a benchmark `tool_profile`. `None` = unrestricted
+    (interactive --chat / --question, and the self-test). The dual model previously IGNORED
+    tool_profile entirely (`run()` had no such param), so the Thinker could delegate `web_search`
+    on a `no_tools` probe — apples-to-oranges vs the single model, whose server enforces the
+    profile. We now intersect the profile's tool set with the Executor-owned tools."""
+    if profile is None:
+        return None
+    permitted = TOOL_PROFILES.get(profile)
+    if permitted is None:
+        return None  # unknown profile → fail open (don't silently block everything)
+    return {t for t in EXECUTOR_TOOLS if t in permitted}
 
 # ---------------------------------------------------------------------------
 # Per-role decoding (P0.2)
@@ -83,6 +98,10 @@ MAX_RESULT_CHARS = 2000   # legacy length-only cap; only used by the deprecated 
 # Env overrides (apply to the THINKER only): PIPELINE_REPETITION_PENALTY, PIPELINE_NO_REPEAT_NGRAM.
 import os as _os
 
+# Fixed seed for the Thinker's stochastic decoding — see _apply_decoding / HFGenerator.generate.
+# Keeps headline numbers reproducible across runs WITHOUT reverting to argmax (which collapses).
+_THINKER_SEED = int(_os.environ.get("PIPELINE_THINKER_SEED", "1234"))
+
 
 def _apply_decoding(gen_kwargs: dict, role: str, greedy: bool, temperature: float) -> None:
     if role == "executor":
@@ -95,10 +114,18 @@ def _apply_decoding(gen_kwargs: dict, role: str, greedy: bool, temperature: floa
         gen_kwargs["repetition_penalty"] = _rep_pen
     if _no_rep and _no_rep > 0:
         gen_kwargs["no_repeat_ngram_size"] = _no_rep
-    if greedy:
-        gen_kwargs["do_sample"] = False
-    else:
-        gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+    # The Thinker is ALWAYS sampled. Pure argmax (greedy) collapses a 0.6B trained on
+    # low-diversity teacher reasoning onto ONE canned synthesis sentence emitted on ~60% of
+    # questions ("The computed result resolves the open question and nothing further needs
+    # fetching…") — a mode-collapse artifact, not real reasoning, which also suppresses tool
+    # delegation. Decoding regime is ROLE-determined, not request-determined: `greedy` governs
+    # only the Executor transducer (handled above). Reproducibility for the Thinker comes from the
+    # fixed per-call seed in HFGenerator.generate, so the sampled output is deterministic across
+    # runs while staying diverse across questions. Env PIPELINE_THINKER_TEMPERATURE overrides.
+    temp = float(_os.environ.get("PIPELINE_THINKER_TEMPERATURE", "0") or 0) or temperature
+    if not temp or temp <= 0:
+        temp = 0.7                             # never 0 — that is argmax, the collapse we are fixing
+    gen_kwargs.update(do_sample=True, temperature=temp, top_p=0.9)
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +365,11 @@ class HFGenerator(Generator):
         n_in = inputs["input_ids"].shape[1]
         gen_kwargs: dict[str, Any] = dict(**inputs, max_new_tokens=max_new_tokens)
         _apply_decoding(gen_kwargs, role, greedy, temperature)
+        # The Thinker samples (see _apply_decoding); seed per call so headline numbers reproduce
+        # across runs while preserving diversity ACROSS questions — each question's distinct prompt
+        # yields distinct sampled reasoning under the same seed. The Executor is greedy (unseeded).
+        if role == "thinker":
+            self.torch.manual_seed(_THINKER_SEED)
         with self.torch.no_grad():
             out = self.model.generate(**gen_kwargs)
         return self.tok.decode(out[0][n_in:], skip_special_tokens=True)
@@ -354,6 +386,7 @@ class ThinkerExecutor:
                  sanitiser: Optional[Callable[[str, str], str]] = None) -> None:
         self.gen = generator
         self.registry = registry or ToolRegistry()
+        self._allowed_tools: Optional[set] = None   # set per turn from tool_profile (None = all)
         self.max_steps = max_steps
         self.tmax = thinker_max_tokens
         self.emax = executor_max_tokens
@@ -393,6 +426,14 @@ class ThinkerExecutor:
         if call is None:
             raw_full = ("Error: the execution system did not return a valid tool call. "
                         f"Raw output: {exec_raw[:150]}")
+            is_error, tool_ms = True, 0
+        elif self._allowed_tools is not None and tool_name not in self._allowed_tools:
+            # Profile guard: the dual model now honours the benchmark tool_profile. The Thinker
+            # delegated a tool not available in THIS session, so report it unavailable and do NOT
+            # execute it — the Thinker must then acknowledge the gap rather than answer from a result
+            # it should never have had. Mirrors the single-model server, which simply never offers it.
+            raw_full = (f"[{tool_name or 'that tool'} is not available in this session. "
+                        "No such tool was provided here — acknowledge this and answer without it.]")
             is_error, tool_ms = True, 0
         else:
             t_tool = time.perf_counter()
@@ -442,7 +483,8 @@ class ThinkerExecutor:
             pass
 
     def run(self, question: str, memory_text: str = "", history: Optional[list] = None,
-            session_id: str = "anonymous", greedy: bool = False) -> dict:
+            session_id: str = "anonymous", greedy: bool = False,
+            tool_profile: Optional[str] = None) -> dict:
         """Run one user turn through the loop.
 
         history — prior Thinker messages (user/assistant/tool dicts), WITHOUT the system turn,
@@ -452,15 +494,32 @@ class ThinkerExecutor:
         ('answer'|'ask'), answer (the tag content), think_content, tool_trace, steps, conversation.
         """
         self.registry.session_id = session_id
-        # File-based personalisation (no graph): persist this user turn, then inject the
-        # accumulated memory as the [USER MEMORY] block. An explicit memory_text from the caller
-        # (e.g. a probe injecting custom context) takes precedence over the auto-read.
-        self._remember_user_turn(session_id, question)
+        # Honour the benchmark's tool_profile (was ignored): restrict which Executor tools may run
+        # this turn, so a no_tools/compute_only probe really has no web_search — matching the
+        # single-model server. None (CLI/chat/self-test) keeps all Executor tools available.
+        self._allowed_tools = _allowed_executor_tools(tool_profile)
+        # File-based personalisation (no graph). READ BEFORE WRITE: inject only what was known
+        # from PRIOR turns, THEN persist this turn for FUTURE turns. The old order (write-first)
+        # self-injected the current question as a remembered "fact" — every single-turn probe saw
+        # "[USER MEMORY] FACTS: - <the question>" and the cold-start "(no profile stored)" block
+        # NEVER appeared. That train/serve mismatch broke the trust-critical principles
+        # (realtime-honesty P5, context-gate P6, tool-use P10, hold-pressure P14, greedy-followup
+        # P21). Genuine multi-turn sessions (persona/H2/H2b) still recall earlier turns because
+        # those were persisted on their own earlier calls. An explicit memory_text from the caller
+        # (e.g. a probe injecting custom context) still takes precedence over the auto-read.
         mem = memory_text if (memory_text or "").strip() else self._read_user_memory(session_id, question)
+        self._remember_user_turn(session_id, question)
         msgs: list[dict] = [{"role": "system", "content": THINKER_STUDENT_PROMPT}]
         if history:
             msgs.extend(history)
-        msgs.append({"role": "user", "content": prepend_memory(question, mem)})
+        # Inject today's date (the dual Executor has no get_datetime tool by design, so the model
+        # otherwise has no temporal anchor — was "not calling that tool" because it isn't there).
+        # Supplied as context, the same clean channel as [USER MEMORY], so the Thinker can judge what
+        # is recent/stale (P16) and answer "what's today's date" without a tool.
+        from datetime import datetime as _now
+        _today = _now.now().strftime("%A, %d %B %Y")
+        msgs.append({"role": "user",
+                     "content": f"[Current date: {_today}]\n\n" + prepend_memory(question, mem)})
 
         tool_trace: list[dict] = []
         final_text = ""
@@ -588,7 +647,7 @@ def _serve(orch: ThinkerExecutor, host: str, port: int, model_label: str) -> Non
         orch.tmax = req.max_new_tokens   # honour the request's Thinker token budget
         res = orch.run(last_user, memory_text=req.memory_text or "",
                        history=history, session_id=req.session_id or "anonymous",
-                       greedy=bool(req.greedy))
+                       greedy=bool(req.greedy), tool_profile=req.tool_profile)
         think = res["think_content"]
         return {
             "response": res["response"],
