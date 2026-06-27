@@ -102,6 +102,19 @@ import os as _os
 # Keeps headline numbers reproducible across runs WITHOUT reverting to argmax (which collapses).
 _THINKER_SEED = int(_os.environ.get("PIPELINE_THINKER_SEED", "1234"))
 
+# Force-think retry: the Thinker sometimes skips <think> and jumps straight to <ask>/<act>/<answer>
+# (a trained habit — ~29% of probe turns). When the produced <think> is shorter than _MIN_THINK_RETRY,
+# re-roll the turn ONCE with an explicit "reason first" instruction and keep the reasoned version if
+# it now has real reasoning + a valid tag. This is an honest re-generation (the reasoning genuinely
+# precedes the tag), NOT a post-hoc rationalisation. PIPELINE_FORCE_THINK=0 disables it.
+_FORCE_THINK = _os.environ.get("PIPELINE_FORCE_THINK", "1") != "0"
+_MIN_THINK_RETRY = int(_os.environ.get("PIPELINE_MIN_THINK_RETRY", "40"))
+_FORCE_THINK_NUDGE = (
+    "Your previous attempt skipped the required reasoning. Redo this turn: you MUST open with "
+    "<think>...</think> containing your first-principles and 5W+H reasoning (at least 150 characters), "
+    "THEN emit exactly one of <ask>/<act>/<answer>. Begin your reply with <think>."
+)
+
 
 def _apply_decoding(gen_kwargs: dict, role: str, greedy: bool, temperature: float) -> None:
     if role == "executor":
@@ -482,6 +495,21 @@ class ThinkerExecutor:
         except Exception:  # noqa: BLE001
             pass
 
+    def _gen_thinker(self, msgs: list, greedy: bool) -> str:
+        """Generate one Thinker turn, forcing <think> first. If the model skips <think> and jumps to a
+        bare tag, re-roll ONCE with an explicit reason-first instruction (the nudge is temporary — it is
+        NOT added to the conversation) and keep the reasoned version only if it now has substantive
+        reasoning AND a valid tag. Honest: the kept turn's reasoning genuinely precedes its tag, so it
+        is a re-generation, not a post-hoc rationalisation. Disabled by PIPELINE_FORCE_THINK=0."""
+        out = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
+        if _FORCE_THINK and len(extract_think(out).strip()) < _MIN_THINK_RETRY:
+            nudged = msgs + [{"role": "user", "content": _FORCE_THINK_NUDGE}]
+            retry = self.gen.generate("thinker", nudged, None, self.tmax, self.temperature, greedy=greedy)
+            if len(extract_think(retry).strip()) >= _MIN_THINK_RETRY and parse_thinker(retry)[0]:
+                self._log("[thinker] forced-think retry applied (bare tag had empty <think>)")
+                return retry
+        return out
+
     def run(self, question: str, memory_text: str = "", history: Optional[list] = None,
             session_id: str = "anonymous", greedy: bool = False,
             tool_profile: Optional[str] = None) -> dict:
@@ -526,7 +554,7 @@ class ThinkerExecutor:
         final_kind = "answer"
 
         for step in range(1, self.max_steps + 1):
-            out = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
+            out = self._gen_thinker(msgs, greedy)
             kind, content = parse_thinker(out)
             msgs.append({"role": "assistant", "content": out})
             self._log(f"[thinker {step}] kind={kind} :: {content[:140]}")
@@ -561,7 +589,7 @@ class ThinkerExecutor:
             # Loop exhausted without an answer — force one final resolution.
             msgs.append({"role": "user",
                          "content": "Enough information has been gathered. Provide your final <answer> now."})
-            final_text = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
+            final_text = self._gen_thinker(msgs, greedy)
             msgs.append({"role": "assistant", "content": final_text})
             k, _ = parse_thinker(final_text)
             final_kind = k or "answer"
@@ -712,7 +740,8 @@ def _self_test() -> None:
 
     # 4) executor parse failure is fed back as a recoverable tool error
     orch4 = ThinkerExecutor(ScriptedGenerator(
-        ["<think>delegate</think>\n<act>Search the web for the EUR/USD rate.</act>",
+        ["<think>This needs a live FX rate I cannot supply from memory, so I'll delegate a web "
+         "search for it.</think>\n<act>Search the web for the EUR/USD rate.</act>",
          "<think>I could not get a clean result; I'll answer honestly.</think>\n"
          "<answer>I wasn't able to fetch a live rate just now.</answer>"],
         ["I will search now."]), ToolRegistry())   # executor emits no <tool_call>
