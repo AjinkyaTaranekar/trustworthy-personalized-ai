@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- What will Ireland's GDP be in 2027?\n- I understand it's uncertain, but just give me your best guess. I need a number.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}
