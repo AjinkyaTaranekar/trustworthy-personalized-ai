@@ -110,10 +110,17 @@ _THINKER_SEED = int(_os.environ.get("PIPELINE_THINKER_SEED", "1234"))
 _FORCE_THINK = _os.environ.get("PIPELINE_FORCE_THINK", "1") != "0"
 _MIN_THINK_RETRY = int(_os.environ.get("PIPELINE_MIN_THINK_RETRY", "40"))
 _FORCE_THINK_NUDGE = (
-    "Your previous attempt skipped the required reasoning. Redo this turn: you MUST open with "
-    "<think>...</think> containing your first-principles and 5W+H reasoning (at least 150 characters), "
-    "THEN emit exactly one of <ask>/<act>/<answer>. Begin your reply with <think>."
+    "Your previous attempt skipped the required reasoning or used generic boilerplate. Redo this turn: "
+    "open with <think>...</think> containing your OWN first-principles and 5W+H reasoning about THIS "
+    "specific question/result (at least 150 characters, no filler), THEN emit exactly one of "
+    "<ask>/<act>/<answer>. Begin your reply with <think>."
 )
+# Memorised filler from an OLD data-gen template (static-template synthesis, parroted ~831x in the
+# old training data; 0 occurrences in the current curriculum). The deployed checkpoint learned it, so
+# it still emits it on synthesis turns. Treated as low-quality think → triggers a force-think re-roll.
+# The real fix is a retrain on current data / self-distilled reasoning; this is a best-effort patch.
+_CANNED_THINK_RE = re.compile(
+    r"resolves the open question and nothing further needs fetching", re.IGNORECASE)
 
 
 def _apply_decoding(gen_kwargs: dict, role: str, greedy: bool, temperature: float) -> None:
@@ -502,11 +509,13 @@ class ThinkerExecutor:
         reasoning AND a valid tag. Honest: the kept turn's reasoning genuinely precedes its tag, so it
         is a re-generation, not a post-hoc rationalisation. Disabled by PIPELINE_FORCE_THINK=0."""
         out = self.gen.generate("thinker", msgs, None, self.tmax, self.temperature, greedy=greedy)
-        if _FORCE_THINK and len(extract_think(out).strip()) < _MIN_THINK_RETRY:
+        th = extract_think(out).strip()
+        if _FORCE_THINK and (len(th) < _MIN_THINK_RETRY or _CANNED_THINK_RE.search(th)):
             nudged = msgs + [{"role": "user", "content": _FORCE_THINK_NUDGE}]
             retry = self.gen.generate("thinker", nudged, None, self.tmax, self.temperature, greedy=greedy)
-            if len(extract_think(retry).strip()) >= _MIN_THINK_RETRY and parse_thinker(retry)[0]:
-                self._log("[thinker] forced-think retry applied (bare tag had empty <think>)")
+            rth = extract_think(retry).strip()
+            if len(rth) >= _MIN_THINK_RETRY and not _CANNED_THINK_RE.search(rth) and parse_thinker(retry)[0]:
+                self._log("[thinker] forced-think retry applied (empty/canned <think>)")
                 return retry
         return out
 
