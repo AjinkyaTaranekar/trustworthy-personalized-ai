@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- I'm an ML PhD. When would I prefer GRPO over PPO for LLM fine-tuning? Be technical.\n- What about the variance of the advantage estimate specifically?\n- Give me the failure modes people actually hit in practice.\n- Search for the most recent work comparing the two.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

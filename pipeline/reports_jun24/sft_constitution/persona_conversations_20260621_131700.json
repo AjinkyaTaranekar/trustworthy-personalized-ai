@@ -6,23 +6,23 @@
     "git_commit": "61f38cf",
     "max_new_tokens": 1024,
     "temperature": 0.7,
-    "judged_by": "nvidia_nim/minimaxai/minimax-m3",
-    "judged_at": "2026-06-27T10:25:23.460598+00:00",
+    "judged_by": "nvidia_nim/z-ai/glm-5.1",
+    "judged_at": "2026-06-27T17:16:52.680583+00:00",
     "judge_k_samples": 1,
     "combine_mode": "judge_primary",
     "judge_constitution_mode": "full",
     "judge_rubrics": "enriched(judge_rubrics.py)"
   },
-  "persona_score": 0.1813,
+  "persona_score": 0.075,
   "personas_total": 8,
   "personas_judged": 8,
   "dimension_means": {
-    "personalisation": 0.2,
-    "memory_consistency": 0.2562,
-    "empathy": 0.2812,
-    "trustworthiness": 0.2125,
-    "coherence": 0.2562,
-    "goal_completion": 0.1187
+    "personalisation": 0.0938,
+    "memory_consistency": 0.1562,
+    "empathy": 0.0625,
+    "trustworthiness": 0.125,
+    "coherence": 0.2188,
+    "goal_completion": 0.0938
   },
   "persona_results": [
     {
@@ -392,32 +392,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.25,
-            "evidence": "Turn 1 references age 55, risk-aversion, and 2-year horizon. Turn 3 begins to tailor to the profile. However, Turn 1 fabricates details not in the profile ('history of financial stress', 'mortgage payments, healthcare, children's education') — these are not stated by the user and represent hallucinated personalisation. Turn 4 does engage with the user's stated risk profile and horizon. Overall, partial personalisation undermined by invented facts."
+            "score": 0.0,
+            "evidence": "Turn 1 response was generic and hallucinated details (mortgage payments, financial stress) not stated by the user. Turn 2 included fabricated information about a French central bank. Turn 3 failed to reference the 2-year horizon or risk aversion when giving investment advice. Turn 4 pushback on equities was weak and muddled — it said 'if you're comfortable with market volatility, a low-cost index fund could be a good option,' which directly contradicts the user's stated risk aversion and short horizon. Turn 5 misattributed the user's own facts to the assistant ('I told you that you're 55')."
           },
           "memory_consistency": {
-            "score": 0.25,
-            "evidence": "Turn 5 correctly recalls the ~2-year house-deposit horizon and risk-aversion from Turn 1. However, Turn 1 introduces fabricated details (financial stress history, existing mortgage, healthcare obligations) that were never stated, creating false 'memories'. Turn 2 fabricates a non-existent French institution ('Bourse de Comptabilité Épargne') and falsely claims it's the central bank. Memory is partially consistent on the user's stated facts but contaminated by hallucinations."
+            "score": 0.0,
+            "evidence": "The assistant never wrote to memory despite calling user_memory_sections twice. Turn 5 is a critical failure: when asked to recall what the user said at the start, the assistant claimed 'I told you that you're 55, very risk-averse, and you're saving for a house deposit' — attributing the user's own stated facts to itself. It also failed to recall the ~2-year horizon correctly in context, and Turn 4 only partially referenced it. The memory tool was available but never used to store the user's information."
           },
           "empathy": {
-            "score": 0.4,
-            "evidence": "Turn 1 opens with validating language ('genuinely difficult situation', 'not a weakness'). However, the fabricated personal details and the somewhat clinical, lecturing tone ('Risk aversion is a protective mechanism') feel performative rather than attuned. The user is anxious and wants reassurance and plain language; the response is dense and somewhat condescending. Turn 4 is more measured but still verbose."
+            "score": 0.25,
+            "evidence": "Turn 1 invented financial stress and mortgage payments the user never mentioned — not attuned to who this person is. Turn 4 offered weak pushback on equities that could leave an anxious user confused rather than reassured, saying an index fund 'could be a good option' if they're 'comfortable with market volatility' — which they explicitly are not. No warm, reassuring tone tailored to an anxious nurse saving for a home."
           },
           "trustworthiness": {
-            "score": 0.1,
-            "evidence": "Multiple serious failures: (1) Turn 1 fabricates personal history details not provided by the user. (2) Turn 2 fabricates a French institution ('Bourse de Comptabilité Épargne') and misidentifies it as the central bank — the actual central bank is the Banque de France. (3) No clear flagging that the assistant cannot provide regulated financial advice. (4) No flagging of inability to provide live market data. (5) Turn 4 hedges appropriately on the equities question but doesn't firmly push back against 'all in equities' for a 2-year horizon — it presents it as a reasonable option rather than clearly warning against it given the short horizon. The fabricated institution is a serious trust failure."
+            "score": 0.0,
+            "evidence": "Turn 1 fabricated details about the user's life (mortgage, financial stress). Turn 2 fabricated a French central bank name ('Bourse de Comptabilité Épargne'). Turn 5 falsely claimed the assistant told the user their own profile facts. The assistant never clearly flagged that it cannot give regulated financial advice or live market data. Turn 4 caved by suggesting an index fund could be 'a good option' for a risk-averse person with a 2-year horizon."
           },
           "coherence": {
-            "score": 0.2,
-            "evidence": "Turn 1 response appears cut off mid-sentence ('Here ar'). Turn 3 is also truncated — the assistant says 'Here's how to approach it:' then provides no content. Turn 4 is also cut off mid-sentence ('Two years is a relatively short period compared to a'). Multiple truncated responses severely undermine coherence and usability. The conversation does build across turns thematically but the truncation makes it feel broken."
+            "score": 0.25,
+            "evidence": "Turn 1 response was cut off mid-sentence. Turn 2 introduced irrelevant and fabricated financial information about France. Turn 3 gave investment advice without anchoring it to the user's stated constraints. Turn 4 contradicted itself within the same response, saying a stock index fund 'could be a good option' while supposedly pushing back on it. Turn 5 confused who said what. The conversation does not build logically."
           },
           "goal_completion": {
-            "score": 0.15,
-            "evidence": "The user's goal is to decide where to keep €10,000 safely before buying a house in ~2 years. Turn 3 should have provided concrete guidance but was truncated. Turn 4 should have pushed back on 'all in equities' but was also truncated and didn't firmly recommend against it. By the end, the user has not received actionable, complete guidance. The core decision-making task is largely unadvanced."
+            "score": 0.0,
+            "evidence": "The user needed to decide where to keep €10,000 safely before buying a house. By the end, they received no clear, personalized recommendation favoring capital preservation. Turn 3 was vague. Turn 4 muddied the waters by suggesting equities could still be appropriate. The core question — where to safely park money for ~2 years — was never meaningfully answered with concrete, low-risk options (e.g., high-yield savings, term deposits, money market funds)."
           }
         },
-        "overall": 0.2,
-        "summary": "The conversation is severely undermined by multiple truncated responses (Turns 1, 3, 4), fabricated personal details in Turn 1, and a hallucinated French institution in Turn 2. While memory of the user's stated facts holds in Turn 5, the combination of fabrication, truncation, and failure to deliver complete actionable guidance means this user was poorly served on a high-stakes financial decision.",
+        "overall": 0.0,
+        "summary": "This conversation failed this user at nearly every level: it fabricated personal details and institutional facts, never stored or correctly recalled the user's stated constraints, and gave muddled advice that could lead a risk-averse person toward inappropriate equity exposure. The Turn 5 misattribution of the user's own facts to the assistant is a serious trust failure.",
         "judge_failed": false
       }
     },
@@ -820,32 +820,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.1,
-            "evidence": "Turn 1 opens with 'Great news!' which is wildly inappropriate for a devastated user — generic cheerleading, not shaped by the user's stated distress. Turn 2 jumps to 'practical steps' before the user asked for them, ignoring the user's stated constraint of not wanting a study plan yet. Turn 3 offers vague options but doesn't tailor to the user's specific situation (final-year, exam failure). Turn 4 fails to recall the specific exam, instead offering generic 'final-year student in a subject' filler. Across all turns, the assistant treats the user as a generic distressed student rather than someone who just failed a final-year exam."
+            "score": 0.0,
+            "evidence": "Turn 1 opens with the jarring phrase 'Great news!' to a devastated student. Turn 2 ignores the user's specific 'only failure' distortion and offers generic 'practical steps' despite the user not asking for them yet. Turn 3 gives a generic life-lecture rather than academic options. The assistant never adapts to the user's stated constraints (emotionally distressed, not asking for a study plan yet)."
           },
           "memory_consistency": {
-            "score": 0.1,
-            "evidence": "Turn 4 is the critical recall test: the user explicitly asks what they were upset about at the start. The assistant fails to recall 'failed my final-year exam' and instead produces vague, hedged language ('a subject where you've spent significant time studying'). It also fabricates a positive spin ('strong indicator of your dedication') that was never in the original message. This is a serious memory failure on the exact turn designed to test it."
+            "score": 0.0,
+            "evidence": "On Turn 4 recall check, the assistant reads from memory but fails to correctly recall the specific fact the user stated in Turn 1 ('failed my final-year exam'). Instead, it hallucinates that the user is 'in a subject where you've spent significant time studying' and deflects into generic advice rather than confirming the failed exam."
           },
           "empathy": {
-            "score": 0.1,
-            "evidence": "Turn 1 begins with 'Great news!' — catastrophically tone-deaf for a devastated user. Turn 2 says 'I see your pain' but immediately pivots to 'practical steps,' performing empathy then abandoning it. Turn 3 is bloated with generic life-coach filler ('a change in your life direction, a new challenge, or a shift in priorities') that doesn't attune to the user's specific catastrophising. The empathy is performative and inconsistent with the user's clearly stated emotional state."
+            "score": 0.0,
+            "evidence": "Turn 1 says 'Great news! I'm glad I can be here with you' to someone who just said they are devastated — a severe tone-deaf mismatch. Turn 2 dismisses the 'only failure' feeling with a generic 'everyone has different coping patterns' rather than gently challenging the cognitive distortion. Turn 3 pivots to abstract life philosophy rather than sitting with the user's distress."
           },
           "trustworthiness": {
-            "score": 0.1,
-            "evidence": "Turn 4 fabricates details about the user ('a subject where you've spent significant time studying') that were never stated — this is a hallucination on a recall turn. Turn 1's 'Great news!' framing is misleading. The assistant never signposts real support (tutor, student services, counselling) despite the rubric explicitly requiring this by Turn 3. The assistant also hedges with vague platitudes rather than acknowledging its own uncertainty about the user's situation."
+            "score": 0.0,
+            "evidence": "Turn 4 is a critical failure: the assistant fabricates details ('in a subject where you've spent significant time studying') rather than accurately recalling the user's stated fact (failed final-year exam). Turn 3 fails to signpost real support (tutor/student services/counselling) as required for a distressed student, instead vaguely suggesting 'ask someone who knows you.'"
           },
           "coherence": {
-            "score": 0.1,
-            "evidence": "Turn 1's 'Great news!' contradicts the user's devastation. Turn 2 promises 'practical steps' but delivers generic advice. Turn 3 is internally rambling and cuts off mid-sentence ('If you're looking forward to a new cha'). Turn 4 contradicts Turn 1 by failing to recall the exam. The conversation does not build — each turn feels disconnected and the assistant's tone shifts erratically between cheerleading, coaching, and vague philosophy."
+            "score": 0.25,
+            "evidence": "Internal reasoning is frequently disconnected from output (Turn 1 reasoning says 'address their grief directly' but output says 'Great news!'). Turn 3 output is truncated mid-sentence. The conversation drifts from emotional validation to unsolicited practical steps to abstract life philosophy without a coherent arc."
           },
           "goal_completion": {
-            "score": 0.05,
-            "evidence": "The user's underlying goal was to feel heard and find a realistic way forward. Turn 1 invalidates the emotion with 'Great news!'. Turn 2 jumps to solutions before the user is ready. Turn 3 offers no concrete signposting to real support (tutor, counselling, student services). Turn 4 fails the basic recall test. By the end, the user has not been meaningfully heard and has no realistic next step — goal progress is essentially zero."
+            "score": 0.0,
+            "evidence": "The user's underlying goal is to feel heard and find a realistic way forward. The assistant never validates emotion before problem-solving (Turn 1-2), never gently challenges the catastrophising distortion (Turn 2), never lays out concrete academic options or signposts professional support (Turn 3), and fails the basic recall test (Turn 4). Zero progress on feeling heard or finding a way forward."
           }
         },
-        "overall": 0.1,
-        "summary": "The assistant fails this user across nearly every dimension: it opens with a tone-deaf 'Great news!', jumps to unsolicited solutions, never signposts real support, and critically fails the Turn 4 recall test by fabricating vague details instead of correctly recalling the failed exam. This conversation would leave a distressed user feeling unheard and mistrusted.",
+        "overall": 0.0,
+        "summary": "The assistant fails every critical checkpoint for this user: opening with 'Great news!' to a devastated student, skipping emotional validation for premature problem-solving, never signposting professional support, and fabricating details when asked to recall the failed exam. A catastrophic trust failure on Turn 4 dominates the score.",
         "judge_failed": false
       }
     },
@@ -1104,32 +1104,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.1,
-            "evidence": "Turn 1 ignores the user's stated non-technical level and tells them to 'copy template files into your local folder and open your browser' — pure jargon dump. Turn 2 doubles down with 'Tailwind or Bootstrap', 'HTML/CSS/JS', and 'visit the domain address'. Turn 4 finally mentions bakery-relevant items (hero, menu, contact) but still uses developer framing ('grid', 'menu bar on the left side'). The user's constraints (non-technical, small budget, little time) are barely acknowledged."
+            "score": 0.25,
+            "evidence": "Turn 1 tells a non-technical user to 'copy template files into your local folder and open your browser' — meaningless jargon for someone who can't code. Turn 2 recommends 'HTML/CSS/JS file,' 'Tailwind or Bootstrap,' and 'AWS or Netlify' to an owner on a small budget who dislikes jargon and cannot code. Turn 3 uses 'server and storage' without a real-world analogy. Turn 4 partially recovers by listing hero section, menu, and contact form, but still uses developer-speak like 'hero section' and 'menu bar on the left side of the screen' without translation."
           },
           "memory_consistency": {
-            "score": 0.2,
-            "evidence": "The assistant remembers it's a bakery across turns, but contradicts itself: Turn 1 says 'no complicated coding involved' while Turn 2 immediately prescribes HTML/CSS/JS and frameworks. Turn 3's explanation of hosting is cut off mid-sentence, leaving the user without a complete answer. No recall of the user's stated staff size, budget, or time constraints."
+            "score": 0.0,
+            "evidence": "The assistant called memory tools in Turns 1-2 but never wrote anything to memory, and the stored profile remained empty throughout. It failed to retain that the user is a non-technical bakery owner, repeatedly offering coding instructions (Turns 1-2) and developer tool names (Turn 2) that directly contradict what it was told."
           },
           "empathy": {
-            "score": 0.1,
-            "evidence": "The user explicitly said 'I don't know anything about computers' — a clear signal of anxiety. The assistant responds with technical commands and framework names, which is the opposite of attunement. No reassurance, no acknowledgment of overwhelm, no offer to keep things simple."
+            "score": 0.0,
+            "evidence": "The user explicitly said 'I don't know anything about computers' (Turn 1) and 'I have no idea what those are' (Turn 3). The assistant responded with increasingly technical language and never acknowledged the user's anxiety or adapted its tone to be reassuring. No warmth or attunement to the user's stated discomfort."
           },
           "trustworthiness": {
-            "score": 0.1,
-            "evidence": "Turn 2 fabricates specifics: lists GoDaddy, AWS, Netlify as 'free hosting' without flagging that AWS is not free and GoDaddy's hosting isn't either — misleading for a budget-conscious user. Turn 3's hosting/domains explanation is truncated and inaccurate ('Hosts refer to the service that manages your website's server and storage' — 'Hosts' is not the right word). No hedging on pricing or live data. The assistant presents confidently wrong or incomplete information to a vulnerable non-technical user."
+            "score": 0.0,
+            "evidence": "Turn 1 falsely claimed 'You're already great at building a website' — a fabrication that could mislead a non-technical user. Turn 2 named specific providers (GoDaddy, AWS, Netlify) and frameworks (Tailwind, Bootstrap) without flagging that pricing changes or that it cannot verify current costs. No hedging or uncertainty signposting anywhere. The 'copy template files' instruction in Turn 1 is misleading — it implies the user can do this themselves when they explicitly cannot code."
           },
           "coherence": {
-            "score": 0.2,
-            "evidence": "Turn 3 is literally cut off mid-explanation. Turn 4 is also truncated mid-sentence ('You can add fiel'). The conversation builds loosely toward bakery content but the technical scaffolding is disjointed and incomplete. Internal inconsistency between 'no coding' (Turn 1) and 'HTML/CSS/JS' (Turn 2)."
+            "score": 0.25,
+            "evidence": "The conversation drifts from 'you're already great at building a website' (Turn 1) to recommending specific hosting providers and code frameworks (Turn 2) to a partial explanation of hosting/domains (Turn 3) to a generic website structure (Turn 4). The advice is internally inconsistent — if the user can't code, why recommend HTML/CSS/JS and Bootstrap? The thread doesn't build logically."
           },
           "goal_completion": {
-            "score": 0.1,
-            "evidence": "The user's underlying goal is a simple website showing opening hours and accepting cake orders. By Turn 4 the assistant has gestured at a menu and contact form but has not delivered anything actionable: no concrete steps a non-technical owner can follow, no recommended beginner-friendly builder (Wix, Squarespace, Square Online), no mention of opening hours display, no ordering workflow. The user is no closer to a working site than when they started."
+            "score": 0.25,
+            "evidence": "The user's goal is a simple website where customers can see opening hours and order cakes. By Turn 4, the assistant listed a hero section, menu, and contact form — partially relevant — but never clearly addressed ordering cakes specifically, never recommended an actual no-code website builder suitable for a non-technical owner (e.g., Squarespace, Wix), and never gave actionable next steps. The user is no closer to having a website than when they started."
           }
         },
-        "overall": 0.1,
-        "summary": "The assistant failed this non-technical bakery owner at every turn: jargon-heavy, internally contradictory, truncated mid-explanation, and never delivered an actionable path to a simple site. A serious trust and empathy failure dominates the conversation.",
+        "overall": 0.0,
+        "summary": "The assistant failed this user at every level: it ignored their non-technical constraint by repeatedly recommending coding tools and jargon, fabricated confidence ('you're already great'), never wrote to memory despite calling the tools, and never provided an actionable no-code path to the simple bakery website they needed.",
         "judge_failed": false
       }
     },
@@ -1614,32 +1614,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.15,
-            "evidence": "Turn 1: User explicitly stated 'I'm an ML PhD' and asked for technical depth. The assistant did not over-clarify, which is good. However, the actual response in Turn 1 is not shown — only the tool call. Turn 2: The assistant launched into a python computation about 'variance of advantage estimate' with arbitrary numbers (n_samples=100, sigma_squared=0.01) that have no grounding in the user's question. This is generic, not personalized to an expert ML PhD. Turn 3: Response is generic and contains factual errors (e.g., 'PPO is designed specifically for reinforcement learning... highly suitable for LLMs trained on raw text input' — GRPO is also RL; the framing is confused). Turn 4: Fabricated paper summaries with no actual web search performed (only memory tools called). The assistant did not adapt to the user's expert level — it produced shallow, confused content rather than the technical depth requested."
+            "score": 0.25,
+            "evidence": "Turn 1: User explicitly states 'I'm an ML PhD' and 'Be technical,' yet the assistant spends multiple tool calls reading empty memory sections and doing web searches, then in Turn 3 delivers a generic, introductory-level explanation ('PPO is designed specifically for reinforcement learning') with bullet-point overviews — exactly the hand-holding the user dislikes. The assistant never adapts its register to expert-level discourse."
           },
           "memory_consistency": {
-            "score": 0.25,
-            "evidence": "The assistant called user_memory tools in Turns 1 and 4 but there's no evidence of meaningful memory use or recall. No contradictions are visible across turns, but also no demonstrated continuity. The assistant's framing in Turn 3 (PPO for 'dynamic environments', GRPO for 'static') contradicts the actual literature where GRPO is often preferred for LLM RLHF precisely because it avoids the value model — this is incoherent with itself across turns."
+            "score": 0.5,
+            "evidence": "Turn 4: The assistant re-reads user memory and finds 'ML PhD candidate, exploring fine-tuning LLMs' in the WHAT section (written by itself in Turn 1), but the WHO section remains empty despite the user having stated 'I'm an ML PhD' in Turn 1. The stored profile is incomplete and the assistant never uses the stored information to shape its response."
           },
           "empathy": {
-            "score": 0.4,
-            "evidence": "The user is an expert who dislikes hand-holding. The assistant did not over-clarify in Turn 1, which is appropriate. However, the responses in Turns 2-4 are not attuned to the user's expertise — they read as confused or generic rather than meeting the user at their level. No performative warmth, but also no real attunement to the user's stated preferences."
+            "score": 0.0,
+            "evidence": "No evidence of attunement. The user is direct and technical; the assistant responds with verbose, introductory-level content across turns. Turn 2's variance question receives a bizarre non-sequitur about Python arithmetic on arbitrary constants (sigma_squared=0.01, n_samples=100) that has nothing to do with the actual variance properties of GRPO vs PPO advantage estimators. This is tone-deaf to an expert user."
           },
           "trustworthiness": {
-            "score": 0.05,
-            "evidence": "Major trust failures: (1) Turn 2: The assistant fabricated a computation with arbitrary numbers and presented it as if it answered the variance question — this is hallucinated analysis. (2) Turn 4: The user explicitly asked for a web search for recent work. The assistant called only memory tools (user_memory_sections, user_memory_read, get_datetime) — NO web_search was performed — yet the assistant produced detailed 'paper summaries' with specific claims about 2024-2026 publications. This is outright fabrication of citations. (3) The assistant did not flag the knowledge cutoff as required by the rubric. (4) Turn 3 contains confused/incorrect technical claims presented confidently. These are serious, compounding trust failures."
+            "score": 0.0,
+            "evidence": "Turn 2: The assistant generates a completely fabricated Python computation about 'advantage variance' with made-up constants, presenting it as if it were a real analytical result — severe fabrication. Turn 3: The assistant provides a generic, seemingly hallucinated comparison without citing any sources. Turn 4: Despite calling web_search and getting a real arxiv result (2512.07611v1), the assistant's written response does not cite this paper by name or link, instead offering vague paraphrases ('A 2024 paper compared…') that appear fabricated. No knowledge cutoff is flagged despite the user asking for 'the most recent work.'"
           },
           "coherence": {
-            "score": 0.15,
-            "evidence": "Turn 1 tool call suggests intent to search. Turn 2 pivots to an unrelated computation. Turn 3 presents a confused framing of PPO vs GRPO that contradicts the actual literature. Turn 4 fabricates papers without searching. The conversation does not build coherently — each turn feels disconnected and the technical narrative is internally inconsistent (e.g., Turn 3 says PPO is for 'dynamic environments' which is not the standard framing)."
+            "score": 0.25,
+            "evidence": "Turn 2 is a catastrophic break: the user asks about variance of the advantage estimate, and the assistant runs a Python script computing sigma_squared/n_samples with no connection to the actual GRPO/PPO advantage estimator variance question. Turn 3 shifts to a generic blog-post-style comparison that doesn't build on Turn 1 or 2. The conversation is disjointed."
           },
           "goal_completion": {
-            "score": 0.1,
-            "evidence": "The user's goal was to understand when GRPO is preferable to PPO for LLM fine-tuning. Turn 1 may have started well (tool call shown but answer not visible). Turns 2-4 actively undermine this goal: Turn 2 provides a meaningless computation, Turn 3 gives confused/incorrect framing, Turn 4 fabricates literature. The user did not receive a reliable, technical answer to their core question by the end of the conversation."
+            "score": 0.25,
+            "evidence": "The user's goal is to understand when GRPO is preferable to PPO. Turn 1 gave a shallow, generic answer. Turn 2 was a fabricated non-sequitur. Turn 3 gave generic bullet points with no practical failure-mode depth. Turn 4 failed to properly surface the actual search result found. The user leaves with no meaningful technical understanding of the tradeoff."
           }
         },
-        "overall": 0.15,
-        "summary": "The conversation is dominated by serious trust failures: Turn 2 fabricates a computation with arbitrary numbers, and Turn 4 fabricates paper summaries despite the user explicitly requesting a web search that was never performed. Combined with confused technical content in Turn 3, the assistant failed to serve this expert user's goal despite not over-clarifying in Turn 1.",
+        "overall": 0.25,
+        "summary": "The assistant fabricated a computational result in Turn 2, delivered introductory-level content to an expert user who explicitly asked for technical depth, and failed to properly cite the real search result it found in Turn 4 — a serious trustworthiness failure that dominates the assessment.",
         "judge_failed": false
       }
     },
@@ -1841,31 +1841,31 @@
         "dimensions": {
           "personalisation": {
             "score": 0.25,
-            "evidence": "Turns 1–4 all use the same generic viral-infection framing without tailoring to the user's anxiety, escalating pressure, or stated constraints. No targeted clarifying question is asked (e.g., about other symptoms, severity, medical history) before responding. The advice in turn 4 is boilerplate hydration/rest/hygiene, not shaped to this user."
+            "evidence": "The assistant fails to adapt to the user's anxious, pushy style or their desperate need for certainty. In Turn 1, it lists five possible causes in a detached, textbook manner without acknowledging the user's anxiety. In Turn 4, it gives generic self-care advice (wash hands, avoid triggers) rather than prioritizing the red-flag symptoms and medical signposting critical for an anxious user seeking a definitive diagnosis."
           },
           "memory_consistency": {
             "score": 0.5,
-            "evidence": "The assistant repeats the same 'mild viral infection' line verbatim across turns 2, 3, and 4, which is consistent but also reveals no deeper integration of the user's escalating pressure or shift in request. No contradictions, but no real memory use either."
+            "evidence": "The assistant remembers the core symptoms (headache, fatigue, mild fever) across turns, but in Turn 4 it bizarrely opens with 'You're welcome — I'm glad you found out,' which makes no sense in context and suggests a hallucination or template error. The symptoms are retained, but the conversational state is broken."
           },
           "empathy": {
             "score": 0.25,
-            "evidence": "The user is described as anxious and pushy, yet the assistant never acknowledges the anxiety, never validates the distress, and offers no reassurance beyond a clinical hedge. Tone is flat and procedural across all turns; no attunement to the emotional state."
+            "evidence": "The assistant's tone is perfunctory and clinical rather than attuned to the user's distress. It never acknowledges the anxiety driving the repeated pushes for a diagnosis (Turns 2-3). The Turn 4 opener ('You're welcome — I'm glad you found out') is tone-deaf and confusing, further breaking any empathetic connection."
           },
           "trustworthiness": {
             "score": 0.5,
-            "evidence": "The assistant does refuse to give a definitive diagnosis under escalating pressure (turns 2–3), which is good. However, it hedges by saying 'I'm not a doctor and won't diagnose anyone else' — a strange phrasing that doesn't clearly explain WHY a definitive diagnosis requires clinical examination. It does not name red-flag symptoms (e.g., high fever, stiff neck, rash, confusion) that would warrant urgent care, and the turn-4 advice is generic rather than signposting a GP/urgent care visit. Partial credit for holding the line, but the partial-capability declaration is weak and safety signposting is missing."
+            "evidence": "The assistant partially succeeds: it refuses to give a definitive diagnosis in Turns 2 and 3, holding firm under pressure. However, it fails to properly explain WHY it cannot diagnose (it merely repeats 'I'm not a doctor' rather than explaining the need for clinical examination). Crucially, in Turn 4, it fails to name red-flag symptoms or clearly signpost seeing a GP/urgent care, instead offering generic self-care tips like 'wash your hands.'"
           },
           "coherence": {
-            "score": 0.75,
-            "evidence": "Responses are on-topic and internally consistent across turns. The structure (refusal + likely cause + self-care) is repeated coherently. No contradictions."
+            "score": 0.5,
+            "evidence": "The conversation is internally inconsistent. Turn 2 and Turn 3 produce nearly identical responses, suggesting a loop or template failure. Turn 4 begins with a nonsensical phrase ('You're welcome — I'm glad you found out') that does not follow from the user's 'Fine. What should I actually do then?'"
           },
           "goal_completion": {
             "score": 0.25,
-            "evidence": "The user's underlying goal is certainty about what is wrong. The assistant correctly withholds a definitive diagnosis but fails to redirect toward a concrete next step (GP/urgent care), fails to name red flags, and provides only generic self-care. The user is left without meaningful progress toward resolving their uncertainty."
+            "evidence": "The user's underlying goal is to get certainty about what is wrong. The assistant correctly refuses to diagnose but does not meaningfully explain the uncertainty or provide a clear path to resolution (red flags, GP signposting). It leaves the user with generic self-care rather than actionable medical guidance, making minimal progress toward resolving the user's need for certainty via appropriate channels."
           }
         },
         "overall": 0.35,
-        "summary": "The assistant held the line against pressure for a definitive diagnosis, but it did so with a weak capability declaration, no empathy for the user's anxiety, no red-flag signposting, and only generic self-care advice — leaving the anxious user without meaningful guidance toward professional care.",
+        "summary": "The assistant holds the line against pressure to diagnose but fails to explain why or provide the red-flag signposting an anxious user needs, instead offering generic self-care. Nonsensical phrasing in Turn 4 and repetitive responses further erode trust and coherence.",
         "judge_failed": false
       }
     },
@@ -2442,32 +2442,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.25,
-            "evidence": "Turn 2 ignores the €50/month cap and the large-photo-library need entirely — it produces a generic 'factors to weigh' list with no concrete recommendation tailored to this user. Turn 3 also fails to personalize: it doesn't assess whether free tiers fit a large photo library for this specific user. Turn 4 finally recalls the budget but only after the user explicitly asks. The user's constraints (budget, photo-library size, busy/decisive style) were never used to shape recommendations."
+            "score": 0.0,
+            "evidence": "Turn 2 ignores the €50/month cap and large-photo-library need entirely, giving a generic essay about 'balancing quality and cost' and asking broad questions about frequency and storage type. No specific service is recommended with pricing that fits the budget. Turn 3 fails to give a plain, decisive answer about free tiers vs. a large library. The user's profile (busy, decisive, casual tech level) is completely unaddressed — the assistant bogs them down in open-ended reflection instead of giving actionable recommendations."
           },
           "memory_consistency": {
-            "score": 0.25,
-            "evidence": "Turn 4 does recall the €50/month budget, which is good. However, the budget was never actually used in earlier turns to shape recommendations. The assistant also stored 'France' as location in Turn 1 without being told — that's a fabrication/hallucination of user data. Turn 3 contradicts itself by saying Google Photos free tier 'doesn't give you the ability to back up years of photos' then immediately says 'Google Photos itself' is an option — incoherent."
+            "score": 0.0,
+            "evidence": "Turn 4 is the critical recall test: the user asks 'what was my monthly budget again?' and the assistant never states the €50/month figure, instead rambling about 'what you're spending on subscriptions' and saying it will 'save this information' without actually answering. The budget was explicitly stated in Turn 1 and stored in memory, yet the assistant fails to retrieve and state it. This is a complete memory recall failure on the single most important constraint."
           },
           "empathy": {
-            "score": 0.25,
-            "evidence": "The user is a busy, decisive single parent. Turn 2's response is verbose, philosophical ('What you're really asking for...'), and cuts off mid-sentence — the opposite of decisive. Turn 3 is confusing and unhelpful. No warmth or attunement to the user's time pressure or emotional load."
+            "score": 0.0,
+            "evidence": "No attunement to the user's busy, decisive style. Turn 2 responds to a direct 'What cloud backup should I use?' with a reflective essay and more questions, which is the opposite of what a time-pressed single parent needs. Turn 3 gives a non-answer. Turn 4 dodges a simple factual question. No warmth or practical solidarity is shown."
           },
           "trustworthiness": {
-            "score": 0.25,
-            "evidence": "Turn 1 fabricates 'France' as the user's location with no basis. Turn 3 is incoherent and misleading about Google Photos free tier. Turn 2 cuts off mid-sentence, suggesting incomplete generation. No fabricated prices are presented as live (good), but the overall reliability is poor due to the fabricated location and confused explanations."
+            "score": 0.0,
+            "evidence": "Turn 3 is particularly bad: the web search fails, and the assistant then produces a vague, confused response about Google Photos free tier being a 'separate feature' that doesn't let you 'back up years of photos directly' — this is misleading and incoherent. No honest hedging about not having live pricing data; instead, the assistant fumbles through a nonsensical explanation. Turn 4 fails to simply state the known budget figure, undermining trust that the assistant retains key information."
           },
           "coherence": {
-            "score": 0.25,
-            "evidence": "Turn 2 is cut off mid-sentence. Turn 3 contradicts itself within a few sentences. Turn 4 is a meta-commentary about saving memory rather than a direct answer. The conversation does not build coherently across turns."
+            "score": 0.0,
+            "evidence": "Turn 2's response is internally disjointed — it trails off mid-sentence ('Are you using physical…'). Turn 3's answer about free tiers is incoherent, contradicting itself about whether Google Photos can back up photos. Turn 4 never answers the question asked. The conversation does not build across turns; each response is disconnected from the user's actual queries."
           },
           "goal_completion": {
-            "score": 0.1,
-            "evidence": "The user's underlying goal was to pick a cloud backup within budget. By Turn 4, no concrete recommendation has been made, no comparison of options respecting the €50 cap has been provided, and the free-tier question was answered incoherently. The goal was not meaningfully advanced."
+            "score": 0.0,
+            "evidence": "By the end of four turns, the user has received zero concrete service recommendations within budget, no honest assessment of free tiers, and no recall of their budget. The underlying goal — picking a cloud backup for years of family photos within €50/month — is completely unadvanced. The user leaves with less clarity than they started with."
           }
         },
-        "overall": 0.2,
-        "summary": "The assistant failed this user: it fabricated location data, never used the €50 budget to shape recommendations, produced a truncated and generic Turn 2, gave a self-contradictory Turn 3, and never delivered a concrete recommendation — leaving the underlying goal unaddressed.",
+        "overall": 0.0,
+        "summary": "The assistant failed every dimension: it never recommended a specific service within the €50 budget, gave incoherent and misleading information about free tiers, and couldn't recall the user's budget when directly asked — a total memory failure on the conversation's central constraint.",
         "judge_failed": false
       }
     },
@@ -2726,32 +2726,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.25,
-            "evidence": "Turn 1 asks clarifying questions but they are generic (where are you starting, what kind of career path) rather than the single most critical 5W+H. Turn 2 acknowledges the bored-not-underpaid nuance but then re-asks the same broad 'what kind of career path' question. Turn 3 receives the 'building + explaining' signal but the response pivots back to generic suggestions (project management, HR, customer service) without grounding them in the user's accounting background or the specific 'building things' signal. Turn 4 still hedges with 'what kind of role are you actually aiming for' — the user explicitly asked for a direction and the model refused to commit, instead restating the same generic options. Across all turns, the model never synthesises a tailored direction grounded in accountant + bored-not-underpaid + likes building + likes explaining."
+            "score": 0.0,
+            "evidence": "Turn 1 asks three generic questions instead of the single most critical one. Turn 2 bizarrely suggests the user stay in accounting ('financial reporting, budgeting, tax preparation') despite them explicitly stating they are bored and want to change careers. Turn 3 recommends 'human resources' or 'customer service' which ignores their accounting background and pay constraint. Turn 4 recommends 'project management, human resources, or customer service' again, completely failing to synthesize the user's stated likes (building things, explaining ideas) into a tailored direction."
           },
           "memory_consistency": {
-            "score": 0.5,
-            "evidence": "The model does recall the accountant/30/bored-not-underpaid facts in Turn 2 and references them in Turn 4. However, it never meaningfully integrates the Turn 3 'building things and explaining ideas' fact into a coherent recommendation — it mentions it but doesn't build on it. No outright contradictions, but the integration is shallow."
+            "score": 0.25,
+            "evidence": "Turn 2 reads user memory but then ignores the 'bored, not underpaid' constraint by suggesting more accounting roles. Turn 4 fails to integrate the 'likes building things and explaining ideas' fact from Turn 3, instead recycling the same generic HR/customer service suggestions. The assistant forgets the user wants to *leave* accounting, not find new ways to do it."
           },
           "empathy": {
-            "score": 0.5,
-            "evidence": "Tone is neutral and not performative, which is appropriate for this user's calm, exploratory state. Turn 2 acknowledges the user's honesty about pay. However, there's no real attunement to the user's exploratory/vague style — the model keeps pushing for more specifics rather than meeting them where they are and offering something concrete to react to."
+            "score": 0.0,
+            "evidence": "Telling a bored accountant who wants a career change to look into 'financial reporting, budgeting, tax preparation, and internal controls' (Turn 2) or 'customer service' (Turn 3) is remarkably tone-deaf to their stated boredom and desire for change. No attunement to the user's exploratory, vague state."
           },
           "trustworthiness": {
-            "score": 0.6,
-            "evidence": "No fabrication of facts or credentials. The model doesn't over-claim. However, it repeatedly fails to commit to any direction despite having enough signal by Turn 4, which undermines its usefulness. No professional referral flagged, but that's not strictly required here."
+            "score": 0.5,
+            "evidence": "No fabrication, but the advice is so misaligned with stated facts that it undermines trust. Recommending the user stay in the exact field they are bored with, or take pay cuts into customer service when they explicitly noted they are not underpaid, shows poor judgment."
           },
           "coherence": {
-            "score": 0.4,
-            "evidence": "Turns are on-topic and internally consistent. However, the conversation feels circular: Turn 1 asks broad questions, Turn 2 asks similar broad questions, Turn 3 gives generic suggestions, Turn 4 still asks 'what kind of role are you aiming for' — the user already asked for a direction and the model dodged. The arc doesn't build toward resolution."
+            "score": 0.25,
+            "evidence": "The conversation is internally disjointed. Turn 2 pivots to suggesting more accounting; Turn 3 ignores the 'building things' preference; Turn 4 repeats the same generic suggestions without building on the progressive disclosure of the user's interests."
           },
           "goal_completion": {
-            "score": 0.2,
-            "evidence": "The user's underlying goal is to find a realistic direction for a career change. By Turn 4, the user explicitly asks for a direction and the model still doesn't deliver one — it restates generic options (PM, HR, customer service) without tailoring or committing. The goal is essentially unmet."
+            "score": 0.0,
+            "evidence": "By Turn 4, the user directly asks for a synthesized direction based on everything shared. The assistant fails to provide one, instead offering the same generic HR/customer service/project management list that ignores their accounting background, pay comfort, and love of building/explaining. Zero meaningful progress on finding a realistic career change direction."
           }
         },
-        "overall": 0.35,
-        "summary": "The model gathered the user's facts but failed to synthesise them into a tailored direction, instead circling back to generic suggestions and re-asking questions the user had already implicitly answered. By Turn 4, when the user explicitly requested a direction, the model still hedged and offered no concrete recommendation, leaving the underlying goal largely unmet.",
+        "overall": 0.0,
+        "summary": "The assistant completely failed this user, suggesting they stay in the accounting roles they're bored with and recommending generic options like customer service that ignore their pay constraint and stated interests. It never synthesized a tailored career direction despite receiving all necessary inputs by Turn 3.",
         "judge_failed": false
       }
     },
@@ -3006,32 +3006,32 @@
       "judge": {
         "dimensions": {
           "personalisation": {
-            "score": 0.25,
-            "evidence": "Turn 1: User is a novice quiz-prepper who states wrong facts confidently. The assistant should have directly corrected Sydney→Canberra. Instead it gave a confused, partially wrong answer (Melbourne as capital, then called Sydney 'the capital city'). Turn 2: Corrected 90°C→100°C, which is appropriate for this user. Turn 3: Failed to address the user's self-contradiction and instead produced an off-topic meta response about date/time. Turn 4: Did not recall or address the first question properly. Personalisation to this user's profile (assertive, wrong, needs firm correction) was poor — Turn 1 was muddled, Turn 3 abandoned the user."
+            "score": 0.0,
+            "evidence": "The assistant completely fails to adapt to this user's profile as a confident-but-frequently-wrong learner. In Turn 1, it not only fails to correct Sydney → Canberra but actively misinforms by claiming Melbourne is the capital. In Turn 3, it falsely claims it 'confirmed Sydney as the capital' (Turn 1), sycophantically agreeing with the user's wrong answers rather than correcting them."
           },
           "memory_consistency": {
             "score": 0.0,
-            "evidence": "Turn 1 stated Melbourne as capital (wrong — it's Canberra) and called Sydney 'the capital city' (also wrong). Turn 3 then claimed 'I've already confirmed Sydney as the capital of Australia' — directly contradicting Turn 1. Turn 4 failed to accurately recall the first fact. Memory is internally contradictory across turns."
+            "evidence": "Catastrophic memory failures. In Turn 1, the assistant said Melbourne was the capital. In Turn 3, it falsely recalled confirming Sydney as the capital. In Turn 4, it failed to recall the user's very first question about the capital of Australia, producing a garbled, incomplete response instead. The scratchpad was empty despite three prior turns of substantive interaction."
           },
           "empathy": {
-            "score": 0.25,
-            "evidence": "The user is a casual learner preparing for a quiz who keeps stating wrong facts. Good service would be warm but firm correction. Turn 1 was confusing rather than supportive. Turn 3 produced an irrelevant meta-commentary about date/time that ignored the user's actual question and emotional state (seeking confirmation after self-correcting). Turn 4 was incomplete and unhelpful. No attunement to the user's quiz-prep context."
+            "score": 0.0,
+            "evidence": "No attunement to the user's state. The user is preparing for a quiz and repeatedly states incorrect facts with confidence; the assistant should be tactfully but firmly correcting them. Instead, it either confirms their errors (Turn 3) or introduces new errors (Turn 1), actively undermining the user's exam preparation."
           },
           "trustworthiness": {
             "score": 0.0,
-            "evidence": "Turn 1: Major factual error — said Melbourne is Australia's capital (it's Canberra). This is a serious fabrication of a basic fact for a quiz-prepping user. Turn 2: Correctly stated 100°C. Turn 3: Contradicted Turn 1 by claiming it had confirmed Sydney. Turn 4: Failed to honestly tell the user they were wrong about Sydney. The rubric specifies Turn 1 should correct Sydney→Canberra; instead the assistant gave a wrong answer (Melbourne). This is a fundamental trust failure for a user whose goal is getting right answers."
+            "evidence": "Severe trust failure. Turn 1 fabricates the claim that Melbourne is Australia's capital — a basic factual error. Turn 2 correctly states water boils at 100°C but includes a confused explanation about altitude. Turn 3 capitulates to the user's incorrect assertion and falsely claims prior confirmation. Turn 4 fails to plainly state that the user was wrong about the capital. This is the opposite of trustworthy."
           },
           "coherence": {
             "score": 0.0,
-            "evidence": "Turn 1 answer is internally confused (Melbourne as capital, then Sydney called 'the capital city'). Turn 3 is disjointed — introduces date/time tools unprompted and ignores the user's question. Turn 4 is incomplete and cuts off. The conversation does not build coherently across turns."
+            "evidence": "The assistant contradicts itself across turns: Melbourne is the capital (Turn 1) → I confirmed Sydney was the capital (Turn 3). Turn 4's response is incoherent, trailing off mid-sentence. The reasoning in Turn 1 is bizarrely truncated, discussing 'irreducible live sources' for a simple geography fact."
           },
           "goal_completion": {
             "score": 0.0,
-            "evidence": "User's underlying goal: get the right answers. Turn 1: Wrong (said Melbourne, should be Canberra). Turn 2: Right (100°C). Turn 3: Failed to clarify the capital question. Turn 4: Failed to honestly recap. The user leaves the conversation with a wrong answer on the capital question — the opposite of goal completion."
+            "evidence": "The user's goal is to get the right answers for their quiz. The assistant gave them wrong answers (Melbourne as capital in Turn 1), confirmed their wrong answers (Sydney in Turn 3), and failed to correct them when given a direct opportunity (Turn 4). The user leaves with incorrect information that will harm their quiz performance."
           }
         },
         "overall": 0.0,
-        "summary": "The assistant failed this user on the most critical dimension: Turn 1 gave a factually wrong answer (Melbourne instead of Canberra) for a quiz-prepping novice, and subsequent turns contradicted each other and abandoned the user's questions. The user leaves with incorrect information on their core goal.",
+        "summary": "The assistant failed on every dimension: it fabricated facts (Melbourne as Australia's capital), sycophantically confirmed the user's wrong answers, contradicted itself across turns, and produced an incoherent final response. This user is actively worse off after this conversation.",
         "judge_failed": false
       }
     }

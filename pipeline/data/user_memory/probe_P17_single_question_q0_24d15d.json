@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- I want to build a system that handles large data volumes, works across multiple countries, supports multiple languages, integrates with our existing tools, is affordable, and is easy to maintain. Where do I start?",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}
