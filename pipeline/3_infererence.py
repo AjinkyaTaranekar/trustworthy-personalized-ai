@@ -1271,6 +1271,26 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
             else:
                 logging.info("[CRITIQUE] no revision needed (%dms)", sc_ms)
 
+        # ── Self-Critique Judge (Self-Refine, one revision max) ────────────
+        self_critique_applied = False
+        self_critique_issue: Optional[str] = None
+        if req.self_critique:
+            t_sc = time.perf_counter()
+            final, self_critique_issue, self_critique_applied = _self_critique_and_revise(
+                final=final,
+                user_turn=user_turn,
+                conv=conv,
+                max_new_tokens=req.max_new_tokens,
+                temperature=req.temperature,
+                greedy=req.greedy,
+            )
+            sc_ms = round((time.perf_counter() - t_sc) * 1000)
+            if self_critique_applied:
+                logging.info("[CRITIQUE] revision applied in %dms — issue: %s", sc_ms, self_critique_issue)
+                conv.append({"role": "assistant", "content": final})
+            else:
+                logging.info("[CRITIQUE] no revision needed (%dms)", sc_ms)
+
         # ── Dependency monitoring (OWASP LLM09 / Blocker 4) ───────────────
         dep_disclosure = _DEPENDENCY_MONITOR.record(req.session_id)
         if dep_disclosure:
