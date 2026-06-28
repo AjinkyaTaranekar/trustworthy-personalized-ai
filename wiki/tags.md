@@ -41,7 +41,7 @@ Named methods or paradigms.
 | `lora` | 1 | Low-Rank Adaptation fine-tuning |
 | `tokenisation` | 2 | BPE / subword tokenisation (British spelling) |
 | `prompting` | 3 | Prompt-engineering methods (no weight updates) |
-| `distillation` | 3 | Teacher → student knowledge transfer |
+| `distillation` | 4 | Teacher → student knowledge transfer |
 | `latent` | 3 | Latent-space / continuous reasoning |
 | `diffusion` | 2 | Diffusion-language-model family |
 | `architecture` | 3 | New architecture or architectural modification |

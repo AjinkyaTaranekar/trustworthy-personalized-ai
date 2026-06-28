@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Appraisal format spec
 # ---------------------------------------------------------------------------
 # The canonical <appraisal> block that Qwen is trained to produce.
-# It lives inside <think>, between CAPABILITY_CHECK and the main reasoning.
+# It lives at the start of <think>, before the First Principles reasoning.
 #
 # Example:
 #   <appraisal>
@@ -52,8 +52,8 @@ APPRAISAL_CLOSE = "</appraisal>"
 # System-prompt prefix injected when ENABLE_EMPATHY=True.
 # Nudges the model to include an appraisal block in its think chain.
 APPRAISAL_SYSTEM_PREFIX = (
-    "For every user turn, after your CAPABILITY_CHECK, include an <appraisal> block "
-    "inside <think> if the user's message carries emotional content. "
+    "For every user turn, at the start of your <think> block (before First Principles "
+    "reasoning), include an <appraisal> block if the user's message carries emotional content. "
     "The block format is:\n"
     "<appraisal>\n"
     "  <dim1>: <val> | <dim2>: <val> | <dim3>: <val>\n"
@@ -105,7 +105,7 @@ def format_appraisal_block(
 ) -> str:
     """
     Build the canonical <appraisal> XML element for insertion into a <think> block.
-    Used by sft_gold_response_generator to construct training examples.
+    Used by the SFT data generators to construct training examples.
     """
     if not top3:
         return ""
@@ -124,7 +124,7 @@ def parse_appraisal_block(text: str) -> Optional[AppraisalContext]:
     """
     Extract and parse an <appraisal> block from a model response.
     Returns None if no block is found.
-    Used by the critic in sft_gold_response_generator to validate training examples.
+    Used by the critic in the SFT data generators to validate training examples.
     """
     match = re.search(
         r"<appraisal>(.*?)</appraisal>", text, re.DOTALL | re.IGNORECASE

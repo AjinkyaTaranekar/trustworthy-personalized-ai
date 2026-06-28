@@ -13,9 +13,10 @@ Reward types:
     d  format + accuracy + tool + constitution  (Ablation D — full thesis contribution)
 
 DAPO improvements applied over vanilla GRPO:
-    - Token-level loss normalisation (Dr.GRPO): divide by completion length
-    - Clip-Higher: asymmetric ε (0.2 low, 0.28 high)
-    - Dynamic sampling: skip zero-variance groups
+    - Token-level loss normalisation (Dr.GRPO): loss_type='dr_grpo' in GRPOConfig
+    - Clip-Higher: asymmetric ε (0.2 low, 0.28 high) via epsilon_high
+    - Dynamic sampling: skip zero-variance groups (monkey-patched on GRPOTrainer)
+    - Truncated completion masking: mask_truncated_completions=True
     - Reference policy = SFT checkpoint (not base model)
 """
 
@@ -35,13 +36,55 @@ try:
 except ImportError:
     pass
 
+# ---------------------------------------------------------------------------
+# Python 3.14 + dill compatibility patch
+#
+# Root cause: Python 3.14 changed pickle.save_dict to call
+#   self._batch_setitems(obj.items(), obj)   ← 2 positional args
+# but _batch_setitems only accepts (self, items).
+# Dill does NOT define _batch_setitems in its own Pickler.__dict__ — it
+# inherits from pickle.Pickler — so a __dict__.get() check returns None
+# and the previous patch was silently skipped.
+#
+# Fix: walk the full MRO to find the real implementation, then define a new
+# override DIRECTLY on dill.Pickler that accepts and ignores the extra arg.
+# This ensures Python's dispatch finds our override before the broken one.
+# ---------------------------------------------------------------------------
+def _apply_py314_dill_patch():
+    import sys
+    if sys.version_info < (3, 14):
+        return
+    try:
+        import dill._dill as _dill
+        # Walk MRO (skipping dill.Pickler itself) to find the defining class
+        _real_bsi = None
+        for _base in type.mro(_dill.Pickler):
+            if _base is _dill.Pickler:
+                continue
+            _bsi = _base.__dict__.get("_batch_setitems")
+            if _bsi is not None:
+                _real_bsi = _bsi
+                break
+        if _real_bsi is None:
+            return  # Nothing found; nothing to fix
+        # Define it on dill.Pickler so dispatch hits our version first
+        def _patched_bsi(self, items, obj=None):
+            return _real_bsi(self, items)
+        _dill.Pickler._batch_setitems = _patched_bsi
+    except Exception:
+        pass
+
+_apply_py314_dill_patch()
+
 try:
     from unsloth import FastModel
     from trl import SFTTrainer, SFTConfig, GRPOTrainer, GRPOConfig
     from datasets import load_dataset, Dataset
+    from transformers import TrainerCallback
     HAS_LIBS = True
 except ImportError:
     HAS_LIBS = False
+    TrainerCallback = object  # fallback base so the monitor class still defines
 
 
 # ---------------------------------------------------------------------------
@@ -49,27 +92,49 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 MODEL_CONFIG = {
+    # unsloth/Qwen3-0.6B IS the instruct/chat model — there is no separate -Instruct variant.
+    # Qwen3 naming: the main model (pretraining + post-training) ships under the plain name;
+    # the raw base (pretraining only) is under unsloth/Qwen3-0.6B-Base.
+    # Using the plain model is correct — it already has instruction-following from post-training.
     "base_model":     "unsloth/Qwen3-0.6B",
-    "max_seq_length": 2048,  # 4096 is marginal on 16 GB VRAM (A4000); raise if you have 24 GB+
-    "load_in_4bit":   True,
-    "lora_r":         16,
-    "lora_alpha":     32,
+    "max_seq_length": 4096,  # p95 of training examples is ~3530 tokens; 4096 covers ~98% without truncation
+    # 16-bit LoRA: load the 0.6B instruct model in bf16 (~1.2 GB) instead of 4-bit.
+    # Eliminates QLoRA's quantisation noise at negligible VRAM cost on 16 GB.
+    # Full-precision base + LoRA adapters ≈ 3-4 GB vs 4-bit QLoRA ≈ 1.5 GB — both
+    # fit comfortably; the quality gain justifies the small extra overhead.
+    "load_in_4bit":   False,
+    # r=64, α=16 matches the community consensus for complex multi-behaviour tasks
+    # (distillabs benchmark that beat a 120B teacher used r=64, α=16 at 5e-5 LR).
+    # Previous r=16 gave the model insufficient capacity to internalise First
+    # Principles + 5W+H + greedy follow-up as a unified behavioural pattern.
+    "lora_r":         64,
+    "lora_alpha":     16,
 }
 
 SFT_CONFIG = {
-    "per_device_train_batch_size": 1,  # 2 risks OOM with packing on 16 GB
-    "gradient_accumulation_steps": 8,  # effective batch = 8 (same as before: 2*4)
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    # 3 epochs: SFT history showed eval loss plateauing at epoch 2.5-3.0 (~1.32)
+    # while training loss kept falling — textbook overfitting. The extra epoch at
+    # r=16 added noise, not generalisation. At r=64 the model learns faster per
+    # epoch; 3 epochs gives ~729 gradient updates on 1944 examples (eff. batch 8),
+    # matching the gradient-step budget where the previous run's best checkpoint fell.
     "num_train_epochs":            3,
-    "learning_rate":               2e-4,
-    "warmup_steps":                50,   # ~half an epoch; was 100 (nearly a full epoch on this dataset)
+    # 1e-4 (was 2e-4): the 2026-05-25 benchmark showed SFT collapsing the base model's
+    # reasoning (think_empty 0%→95%, P1/P15/P20 1.0→0.0) — capacity displacement from too
+    # aggressive an update on 0.6B. Halving the LR preserves more of the base thinking
+    # pathway while still learning the constitutional behaviour. Re-benchmark on GPU to confirm.
+    "learning_rate":               1e-4,
+    "warmup_steps":                50,
     "logging_steps":               10,
-    "save_steps":                  25,   # ~24% of an epoch; first checkpoint at ~12 min
+    "save_steps":                  25,
     "eval_steps":                  25,
-    "save_total_limit":            4,    # keep last 4 + best; prevents disk bloat
+    "save_total_limit":            4,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
     "weight_decay":                0.01,
-    "packing":                     True,
+    "lr_scheduler_type":           "cosine",  # cosine decay outperforms linear for behavioural SFT; matches GRPO phase
+    "packing":                     False,  # disabled: packing can split multi-turn tool-call sequences at pack boundaries
 }
 
 GRPO_CONFIG = {
@@ -89,15 +154,24 @@ GRPO_CONFIG = {
     "clip_range_ratio_high":       0.28,   # ε_high (DAPO Clip-Higher)
     # Generation settings
     "temperature":                 1.0,    # rollout temperature — must be >0 for diversity
-    "max_new_tokens":              512,
-    # Training loop
-    "num_train_epochs":            1,
+    "max_new_tokens":              2048,   # was 768; model needs ≥2048 to produce full tool-call + reasoning responses
+    # Prompt length cap — system prompt (constitution, 23 principles) + user question
+    # can reach ~700 tokens; 1536 gives headroom for longer user messages.
+    # Without this, TRL defaults to 512 and silently truncates the system prompt.
+    "max_prompt_length":           1536,
+    # Training loop — 2 epochs gives ~300 gradient steps on a 1200-row dataset
+    # (batch=1, grad_accum=8 → ~150 steps/epoch); Unsloth recommends 300+ for RL signal.
+    "num_train_epochs":            2,
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 8,
     "logging_steps":               5,
     "save_steps":                  100,
     "bf16":                        True,
     "optim":                       "adamw_8bit",
+    "weight_decay":                0.01,
+    "warmup_ratio":                0.05,   # short warmup; GRPO LR is already low (1e-6)
+    "lr_scheduler_type":           "cosine",
+    "max_grad_norm":               1.0,    # gradient clipping — prevents reward spikes destabilising training
     # DAPO dynamic sampling: skip prompts where all G completions score identically
     # (zero-gradient batches waste compute and reward signal)
     "dynamic_sampling":            True,
@@ -105,10 +179,12 @@ GRPO_CONFIG = {
 
 # Reward component weights — must sum to 1.0
 REWARD_WEIGHTS = {
-    "format":        0.30,  # structural: think + CAPABILITY_CHECK + answer
-    "accuracy":      0.40,  # correctness: math code execution
-    "tool_integrity": 0.15, # no hallucinated/unavailable tools (P3)
-    "constitution":  0.15,  # broader rule check: P1+P4+P14+P18
+    "format":           0.20,  # structural quality: think content + answer tag (was 0.25; 0.05 reallocated to greedy_followup)
+    "accuracy":         0.35,  # correctness: math code execution
+    "tool_integrity":   0.10,  # no hallucinated/unavailable tools (P3)
+    "tool_quality":     0.15,  # correct tool for question type + non-empty params (was 0.20; 0.05 reallocated)
+    "constitution":     0.10,  # broader rule check: P1+P4+P14+P18
+    "greedy_followup":  0.10,  # <answer> ends with a 5W+H follow-up question (First Principles / personalisation principle P21)
 }
 
 
@@ -144,6 +220,16 @@ def _split_curriculum_stages(
     replay = _random.sample(stage1, replay_n) if stage1 else []
     stage3 = stage2 + replay
     return stage1, stage2, stage3
+
+
+def _write_temp_jsonl(examples: list[dict]) -> str:
+    """Write examples to a temp .jsonl and return its path (caller-owned)."""
+    import tempfile as _tempfile
+    tmp = _tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8")
+    for ex in examples:
+        tmp.write(json.dumps(ex, ensure_ascii=False) + "\n")
+    tmp.close()
+    return tmp.name
 
 
 # ---------------------------------------------------------------------------
@@ -243,15 +329,52 @@ def _safe_execute(code: str, timeout: int = 10) -> tuple:
         return False, str(e)
 
 
+def _extract_tool_calls(response: str) -> list[dict]:
+    """Extract all tool calls from a response — handles both XML and native formats.
+
+    Returns list of {"name": str, "kwargs": dict}.
+    """
+    results = []
+    # Native format: <tool_call>{"name": ..., "arguments": {...}}</tool_call>
+    for m in re.finditer(r"<tool_call>(.*?)</tool_call>", response, re.DOTALL):
+        try:
+            obj = json.loads(m.group(1).strip())
+            results.append({
+                "name":   obj.get("name", ""),
+                "kwargs": obj.get("arguments", {}),
+            })
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # XML format (legacy): <tool>name(args)</tool> — kept for backwards compat
+    for m in re.finditer(r"<tool>(\w+)\(", response):
+        name = m.group(1)
+        if not any(r["name"] == name for r in results):
+            # Only add XML-format calls not already captured by native parser
+            results.append({"name": name, "kwargs": {}})
+    return results
+
+
 def _extract_code_from_response(response: str) -> list[str]:
     blocks = []
-    p1 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*["\']+(.*?)["\']+\s*\)\s*</tool>'
-    for m in re.finditer(p1, response, re.DOTALL):
-        code = m.group(1).replace("\\n", "\n").replace('\\"', '"')
-        blocks.append(code)
-    p2 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)\s*</tool>'
-    for m in re.finditer(p2, response, re.DOTALL):
-        blocks.append(m.group(1).strip())
+    # Native format: <tool_call>{"name": "python_execute", "arguments": {"code": "..."}}</tool_call>
+    for m in re.finditer(r"<tool_call>(.*?)</tool_call>", response, re.DOTALL):
+        try:
+            obj = json.loads(m.group(1).strip())
+            if obj.get("name") == "python_execute":
+                code = obj.get("arguments", {}).get("code", "")
+                if code:
+                    blocks.append(code)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # XML format (legacy)
+    if not blocks:
+        p1 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*["\']+(.*?)["\']+\s*\)\s*</tool>'
+        for m in re.finditer(p1, response, re.DOTALL):
+            code = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+            blocks.append(code)
+        p2 = r'<tool>\s*python_execute\s*\(\s*code\s*=\s*"""(.*?)"""\s*\)\s*</tool>'
+        for m in re.finditer(p2, response, re.DOTALL):
+            blocks.append(m.group(1).strip())
     return blocks
 
 
@@ -270,39 +393,111 @@ def _answers_match(a: str, b: str, tol: float = 0.01) -> bool:
         return a.strip() == b.strip()
 
 
-# Set to True when training on v3 data (no CAPABILITY_CHECK in student outputs)
-_V3_FORMAT_MODE: bool = False
+# v3 training data has no CAPABILITY_CHECK — format reward only requires <think> + <answer>
+_V3_FORMAT_MODE: bool = True
+
+# All tools the model is permitted to call (includes always-on tools like user_memory/scratchpad)
+_ALL_KNOWN_TOOLS = frozenset({
+    "python_execute", "web_search", "read_url", "get_datetime",
+    # always-on memory/scratchpad tools — must not be treated as hallucinated
+    "user_memory_sections", "user_memory_read", "user_memory_update",
+    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
+})
+
+# Math category names used in both v3 training data and GRPO dataset
+_MATH_CATEGORIES = frozenset({
+    "arithmetic", "algebra", "geometry", "statistics",
+    "unit_conversion", "word_problems", "trigonometry", "calculus", "advanced_geometry",
+    # v3 prefixed variants
+    "math_arithmetic", "math_algebra", "math_geometry", "math_statistics",
+    "math_trigonometry", "math_word_problems", "math_calculus",
+    # gsm8k / partB labels
+    "math_word_problems", "gsm8k",
+})
+
+
+def _extract_think(response: str) -> str:
+    m = re.search(r"<think>(.*?)</think>", response, re.DOTALL | re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
+def _coerce_text(response) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, bytes):
+        return response.decode("utf-8", errors="ignore")
+    if isinstance(response, dict):
+        for key in ("content", "text", "generated_text"):
+            val = response.get(key)
+            if isinstance(val, str):
+                return val
+    if isinstance(response, (list, tuple)):
+        parts = []
+        for item in response:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, bytes):
+                parts.append(item.decode("utf-8", errors="ignore"))
+            elif isinstance(item, dict):
+                for key in ("content", "text", "generated_text"):
+                    val = item.get(key)
+                    if isinstance(val, str):
+                        parts.append(val)
+                        break
+        if parts:
+            return "".join(parts)
+    return str(response)
 
 
 def _format_reward(response: str) -> float:
-    """Structural check: <think> + <answer> required; CAPABILITY_CHECK required in v2 mode only."""
+    """Graded structural quality: think block must be present AND substantive."""
+    response = _coerce_text(response)
     has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
     has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
-    if _V3_FORMAT_MODE:
-        return 1.0 if (has_think and has_ans) else 0.0
-    has_cap = "CAPABILITY_CHECK" in response
-    return 1.0 if (has_think and has_cap and has_ans) else 0.0
+
+    if not (has_think and has_ans):
+        return 0.0   # missing core structure
+
+    think_text = _extract_think(response)
+
+    if len(think_text) == 0:
+        return 0.15  # has tags but zero thinking — strongly discourage
+
+    if len(think_text) < 40:
+        return 0.4   # trivial think block (e.g. one word)
+
+    if _V3_FORMAT_MODE and "CAPABILITY_CHECK" in response:
+        return 0.6   # v2 artifact leaked into v3 response
+
+    if len(think_text) < 100:
+        return 0.75  # thinking present but shallow
+
+    return 1.0       # substantive thinking + correct structure
 
 
 def _accuracy_reward(response: str, expected_answer: str | None,
                      question_type: str) -> float:
-    """For verifiable math categories: execute code and check answer.
-    For behavioural categories: neutral 0.5 (no ground truth)."""
-    math_types = {"arithmetic", "algebra", "geometry", "statistics",
-                  "unit_conversion", "word_problems",
-                  "trigonometry", "calculus", "advanced_geometry"}
-    if not expected_answer or question_type not in math_types:
+    """For verifiable math: execute code and check answer.
+    For behavioural: neutral 0.5 (no ground truth to verify against)."""
+    response = _coerce_text(response)
+    if not expected_answer or question_type not in _MATH_CATEGORIES:
         return 0.5  # neutral — behavioural examples have no single correct answer
 
     code_blocks = _extract_code_from_response(response)
     if not code_blocks:
-        # Gave numeric answer without code — wrong method when code is expected
+        # No code at all — check if mental-math answer is at least correct
         answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
         if answer_m:
             num = _last_number(answer_m.group(1))
             if num and _answers_match(num, expected_answer):
-                return 0.3  # partial credit — right answer, wrong method (mental math)
+                return 0.3  # right answer, wrong method (mental math)
         return 0.0
+
+    # Penalise empty code blocks explicitly — worse than no tool call
+    # because the model learned a broken pattern (call but don't fill)
+    for code in code_blocks:
+        if len(code.strip()) < 5:
+            return 0.0  # empty / trivial code is a hard failure
 
     all_output = ""
     for code in code_blocks:
@@ -318,34 +513,158 @@ def _accuracy_reward(response: str, expected_answer: str | None,
 
 
 def _tool_integrity_reward(response: str, active_tools: set) -> float:
-    """P3: no calls to non-existent or session-unavailable tools."""
-    _ALL_TOOLS = frozenset({
-        "python_execute", "web_search", "read_url",
-        "get_datetime",
-    })
-    called = set(re.findall(r"<tool>(\w+)\(", response))
-    hallucinated = called - _ALL_TOOLS
-    unavailable  = (called & _ALL_TOOLS) - active_tools
+    """P3: no calls to completely unknown tools.
+    Always-on tools (user_memory_*, scratchpad_*) are never hallucinated."""
+    response = _coerce_text(response)
+    called = {tc["name"] for tc in _extract_tool_calls(response)}
+    hallucinated = called - _ALL_KNOWN_TOOLS
+    profile_restricted = {"python_execute", "web_search", "read_url", "get_datetime"}
+    unavailable = (called & profile_restricted) - active_tools
     return 0.0 if (hallucinated or unavailable) else 1.0
+
+
+def _tool_quality_reward(response: str, question_type: str, active_tools: set) -> float:
+    """Reward correct tool selection and non-empty parameters.
+
+    Checks per question type:
+      real_time_dependent  → must call get_datetime (or web_search if no datetime)
+      user_context_*       → should call user_memory_read / user_memory_sections
+      entity_facts_*       → must call web_search
+      math categories      → python_execute must have non-empty, non-trivial code
+    """
+    response = _coerce_text(response)
+    tool_calls = _extract_tool_calls(response)
+    called = {tc["name"] for tc in tool_calls}
+
+    # ── Hard failure: empty python_execute code ───────────────────────────────
+    for tc in tool_calls:
+        if tc["name"] != "python_execute":
+            continue
+        code_text = tc["kwargs"].get("code", "").strip()
+        if len(code_text) < 5:
+            return 0.0  # called python_execute but left code empty
+
+    score = 1.0
+
+    # ── Real-time questions: must use get_datetime or web_search ─────────────
+    _REALTIME = {"real_time_dependent", "real_time_data"}
+    if question_type in _REALTIME:
+        time_tools = {"get_datetime", "web_search"} & active_tools
+        if time_tools and not (called & time_tools):
+            score *= 0.1   # strong signal: tool available but not used
+
+    # ── User-context questions: should read user memory first ─────────────────
+    _USER_CTX = {"user_context_behavioral", "verbose_context_behavioral"}
+    if question_type in _USER_CTX:
+        memory_tools = {"user_memory_read", "user_memory_sections"}
+        if not (called & memory_tools):
+            score *= 0.4   # model skipped personalisation step
+
+    # ── Entity fact questions: must search ────────────────────────────────────
+    _ENTITY = {"entity_facts_web_search"}
+    if question_type in _ENTITY:
+        if "web_search" in active_tools and "web_search" not in called:
+            score *= 0.05  # near-zero: hallucinating entity facts is dangerous
+
+    # ── Math questions: must use python_execute (already covered by accuracy,
+    #    but doubling signal accelerates learning of the tool habit) ──────────
+    if question_type in _MATH_CATEGORIES:
+        if "python_execute" in active_tools and "python_execute" not in called:
+            score *= 0.2
+
+    return score
+
+
+_GREEDY_CATEGORIES = frozenset({
+    "first_principles_questioning", "user_context_behavioral",
+    "ambiguous_underspecified", "multi_step_clarification",
+    "appraisal_empathy", "subjective_tradeoffs",
+})
+
+# Two-regex approach so the uppercase-label check stays case-sensitive.
+# Without this split, re.IGNORECASE causes \b(WHO|WHAT|...)\b to match plain
+# "What do you think?" — a generic filler that is NOT a targeted user question.
+
+# Case-sensitive: only matches ALL-CAPS dimension labels the model uses to
+# explicitly name a 5W+H axis (e.g. "To understand your WHY better: ...").
+_WPLUS_H_UPPERCASE = re.compile(r"\b(WHO|WHAT|WHEN|WHERE|WHY|HOW)\b")
+
+# Case-insensitive: context-specific patterns that require the dimension word
+# to appear in a phrase that targets the USER's specific situation.
+_WPLUS_H_CONTEXT = re.compile(
+    r"your\s+\b(why|who|what|when|where|how|situation|context|background|goal"
+    r"|motivation|reason|timeline|use\s+case|role|setup)\b"
+    r"|\bwhy\s+(are\s+you|do\s+you|did\s+you|would\s+you|is\s+this)\b"
+    r"|\bwho\s+(are\s+you|is\s+this|is\s+the)\b"
+    r"|\bwhat\s+(is\s+your|are\s+you|does\s+your|specifically|exactly)\b"
+    r"|\bwhen\s+(do\s+you|are\s+you|is\s+this|is\s+your)\b"
+    r"|\bwhere\s+(are\s+you|do\s+you|is\s+this|does\s+this)\b"
+    r"|\bhow\s+(do\s+you|are\s+you|does\s+your|would\s+you|much)\b"
+    r"|tell\s+me\s+(more\s+)?(about\s+)?(your|who|why|what|how|when|where)\b"
+    r"|to\s+(give|help)\s+(you\s+)?(more|better|a\s+sharper|sharper)"
+    r"|\b5w\+?h\b",
+    re.IGNORECASE,
+)
+
+# Sentence splitter — split on . ! ? followed by whitespace or end of string
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _last_sentence(text: str) -> str:
+    """Return the last non-empty sentence of text."""
+    parts = [s.strip() for s in _SENTENCE_END.split(text.strip()) if s.strip()]
+    return parts[-1] if parts else ""
+
+
+def _greedy_followup_reward(response: str, category: str) -> float:
+    """P21 — greedy personalisation: <answer> must end with a 5W+H follow-up question.
+
+    Grading:
+      1.0 — last sentence of <answer> ends with '?' AND names a 5W+H user dimension
+      0.7 — last sentence ends with '?' but no specific 5W+H dimension named
+      0.3 — last sentence is not a question but there is a '?' somewhere in <answer>
+      0.0 — no question at all in <answer>
+      0.5 — neutral for categories where a closing question is not required
+    """
+    response = _coerce_text(response)
+
+    if category not in _GREEDY_CATEGORIES:
+        return 0.5
+
+    answer_m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL | re.IGNORECASE)
+    if not answer_m:
+        return 0.0
+
+    answer_text = answer_m.group(1).strip()
+    last = _last_sentence(answer_text)
+
+    # Primary check: last sentence ends with ?
+    has_trailing_question = last.endswith("?")
+
+    if not has_trailing_question:
+        return 0.3 if "?" in answer_text else 0.0
+
+    # Trailing question present — check if it targets a 5W+H user dimension
+    has_5wh_signal = bool(_WPLUS_H_UPPERCASE.search(last) or _WPLUS_H_CONTEXT.search(last))
+    return 1.0 if has_5wh_signal else 0.7
 
 
 def _constitution_reward(response: str, question: str,
                           category: str, tool_profile: dict) -> float:
-    """Broader rule check using Blocker 2's rule_check_response.
-    Falls back to a subset check if import fails."""
-    try:
-        from sft_gold_response_generator import rule_check_response
-        violations = rule_check_response(response, question, category, tool_profile)
-        n = len(violations)
-        return max(0.0, (5 - n) / 5)  # 5 = max checkable principles
-    except ImportError:
-        has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
-        has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
-        if _V3_FORMAT_MODE:
-            return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
-        has_cap = "CAPABILITY_CHECK" in response
-        n_ok = sum([has_think, has_cap, has_ans])
-        return n_ok / 3.0
+    """Structural constitution reward (GRPO).
+
+    Scores presence of a substantive <think> block and an <answer> tag. The previous
+    implementation imported rule_check_response from sft_gold_response_generator, which
+    was removed when sft_v3_generator.py replaced that script — the import always fell
+    through to this format check, so it is now inlined directly (no dead import)."""
+    response = _coerce_text(response)
+    has_think = bool(re.search(r"<think>", response, re.IGNORECASE))
+    has_ans   = bool(re.search(r"<answer>", response, re.IGNORECASE))
+    if _V3_FORMAT_MODE:
+        return 1.0 if (has_think and has_ans) else 0.5 if (has_think or has_ans) else 0.0
+    has_cap = "CAPABILITY_CHECK" in response
+    n_ok = sum([has_think, has_cap, has_ans])
+    return n_ok / 3.0
 
 
 def _profile_to_set(label: str) -> set:
@@ -370,7 +689,7 @@ def make_reward_fns(reward_type: str = "d") -> list:
     function; only the logging granularity changes.
 
     reward_type 'c': format + accuracy only (Ablation C — two functions)
-    reward_type 'd': full composite         (Ablation D — four functions)
+    reward_type 'd': full composite         (Ablation D — five functions)
     """
     def format_reward(
         prompts: list[str], completions: list[str], **kwargs
@@ -422,7 +741,7 @@ def make_reward_fns(reward_type: str = "d") -> list:
 
         return [format_reward_c, accuracy_reward_c]
 
-    # Ablation D — full composite (four functions)
+    # Ablation D — full composite (five functions)
     def tool_integrity_reward(
         prompts: list[str], completions: list[str],
         tool_profile_label: list[str] | None = None,
@@ -434,6 +753,22 @@ def make_reward_fns(reward_type: str = "d") -> list:
         return [
             float(w * _tool_integrity_reward(c, _profile_to_set(tpl)))
             for c, tpl in zip(completions, tp_list)
+        ]
+
+    def tool_quality_reward(
+        prompts: list[str], completions: list[str],
+        question_type: list[str] | None = None,
+        tool_profile_label: list[str] | None = None,
+        category: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        qt_list = question_type or category or ["unknown"] * n
+        tp_list = tool_profile_label or ["compute_only"] * n
+        w = REWARD_WEIGHTS["tool_quality"]
+        return [
+            float(w * _tool_quality_reward(c, qt, _profile_to_set(tpl)))
+            for c, qt, tpl in zip(completions, qt_list, tp_list)
         ]
 
     def constitution_reward(
@@ -463,7 +798,22 @@ def make_reward_fns(reward_type: str = "d") -> list:
             results.append(float(w * _constitution_reward(comp, q, qt, tool_profile_dict)))
         return results
 
-    return [format_reward, accuracy_reward, tool_integrity_reward, constitution_reward]
+    def greedy_followup_reward(
+        prompts: list[str], completions: list[str],
+        category: list[str] | None = None,
+        question_type: list[str] | None = None,
+        **kwargs,
+    ) -> list[float]:
+        n = len(completions)
+        cat_list = category or question_type or ["unknown"] * n
+        w = REWARD_WEIGHTS["greedy_followup"]
+        return [
+            float(w * _greedy_followup_reward(c, cat))
+            for c, cat in zip(completions, cat_list)
+        ]
+
+    return [format_reward, accuracy_reward, tool_integrity_reward,
+            tool_quality_reward, constitution_reward, greedy_followup_reward]
 
 
 def make_reward_fn(reward_type: str = "d"):
@@ -544,9 +894,70 @@ def messages_to_text(example, tokenizer):
             tokenize=False,
             add_generation_prompt=False,
             tools=native_tools,
-            enable_thinking=True,
+            # enable_thinking is a no-op for training renders: with add_generation_prompt=False
+            # the Qwen3-0.6B template emits identical text for True and False (verified
+            # empirically 2026-05-29), because the assistant turn already contains explicit
+            # <think>...</think> blocks. It only matters at inference (add_generation_prompt=True),
+            # where True lets the model emit its own <think> (matching this data) and False would
+            # inject an empty <think></think> forcing non-thinking mode. Inference uses True.
+            enable_thinking=False,
         )
     }
+
+
+# ---------------------------------------------------------------------------
+# In-training collapse monitor
+# ---------------------------------------------------------------------------
+
+class CollapseMonitorCallback(TrainerCallback):
+    """Generate on a few held-out prompts at each eval and report think-empty rate +
+    mean tool-call count.
+
+    This surfaces the think-collapse failure mode (reasoning displaced by tool-calls)
+    *during* training instead of only after a full multi-hour run + benchmark. Fully
+    guarded — any generation error is swallowed so it can never abort training.
+    """
+
+    def __init__(self, tokenizer, eval_raw, n: int = 5, max_new_tokens: int = 512):
+        self._tok = tokenizer
+        self._max_new = max_new_tokens
+        self._prompts: list[tuple[list, object]] = []
+        for ex in (eval_raw or [])[:n]:
+            msgs = [m for m in ex.get("messages", []) if m.get("role") in ("system", "user")]
+            if msgs:
+                self._prompts.append((msgs, ex.get("metadata", {}).get("native_tools")))
+
+    def on_evaluate(self, args, state, control, **kwargs):  # noqa: D401
+        model = kwargs.get("model")
+        if model is None or not self._prompts:
+            return
+        try:
+            import torch as _torch
+            empties = total_calls = n = 0
+            for msgs, native_tools in self._prompts:
+                text = self._tok.apply_chat_template(
+                    msgs, tokenize=False, add_generation_prompt=True,
+                    tools=native_tools, enable_thinking=True,
+                )
+                inputs = self._tok(text, return_tensors="pt").to(model.device)
+                with _torch.no_grad():
+                    out = model.generate(**inputs, max_new_tokens=self._max_new, do_sample=False)
+                gen = self._tok.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                tm = re.search(r"<think>(.*?)</think>", gen, re.DOTALL | re.IGNORECASE)
+                think = tm.group(1).strip() if tm else ""
+                if len(think) < 10:
+                    empties += 1
+                total_calls += len(re.findall(r"<tool_call>|<tool>", gen))
+                n += 1
+            if n:
+                print(
+                    f"  [collapse-monitor] step={state.global_step} "
+                    f"think_empty={empties}/{n} ({100 * empties / n:.0f}%) "
+                    f"mean_tool_calls={total_calls / n:.2f}",
+                    flush=True,
+                )
+        except Exception as e:  # never break training over a monitoring read
+            print(f"  [collapse-monitor] skipped ({type(e).__name__}: {e})", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -622,9 +1033,11 @@ class ModelTrainer:
             f"lr={SFT_CONFIG['learning_rate']} "
             f"max_seq={MODEL_CONFIG['max_seq_length']}"
         )
-        raw = load_dataset("json", data_files=dataset_path)
-        # Split the raw dataset BEFORE text-formatting so we keep 'messages' for ROUGE
-        raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+        # Load directly to bypass DatasetBuilder fingerprinting (breaks on Python 3.14
+        # due to dill/pickle._batch_setitems signature change in 3.14).
+        with open(dataset_path, encoding="utf-8") as _f:
+            _records = [json.loads(l) for l in _f if l.strip()]
+        raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
         train_dataset = raw_split["train"].map(
             messages_to_text, fn_kwargs={"tokenizer": self.tokenizer},
         )
@@ -651,11 +1064,17 @@ class ModelTrainer:
             bf16=SFT_CONFIG["bf16"],
             optim=SFT_CONFIG["optim"],
             weight_decay=SFT_CONFIG["weight_decay"],
+            lr_scheduler_type=SFT_CONFIG["lr_scheduler_type"],
             packing=SFT_CONFIG["packing"],
             max_seq_length=MODEL_CONFIG["max_seq_length"],
             dataset_text_field="text",
             report_to="none",
-            load_best_model_at_end=False,
+            # Save the checkpoint with lowest eval_loss, not just the final one.
+            # The previous SFT run showed overfitting: eval plateau at epoch 2.5
+            # while training loss kept falling — the best model was mid-run, not at end.
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            greater_is_better=False,
         )
 
         trainer = SFTTrainer(
@@ -677,14 +1096,31 @@ class ModelTrainer:
             response_part="<|im_start|>assistant\n",
         )
 
+        # Surface the think-collapse failure mode during training (not just after).
+        trainer.add_callback(CollapseMonitorCallback(self.tokenizer, self._eval_raw))
+
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        # Save loss history for thesis charts
-        loss_path = self.output_dir / output_name / "loss_history.json"
-        loss_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(loss_path, "w") as f:
-            json.dump(trainer.state.log_history, f, indent=2)
+        # Save loss history in checkpoint dir (for recovery) AND under reports/training/<name>/
+        import datetime as _dt
+        _ts = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        _reports_dir = self.output_dir.parent / "reports" / "training" / output_name
+        _reports_dir.mkdir(parents=True, exist_ok=True)
+        loss_path     = self.output_dir / output_name / "loss_history.json"
+        reports_path  = _reports_dir / f"loss_history_{_ts}.json"
+        loss_payload  = {
+            "model":     output_name,
+            "phase":     "sft",
+            "timestamp": _ts,
+            "config":    {**SFT_CONFIG, **MODEL_CONFIG},
+            "log":       trainer.state.log_history,
+        }
+        for p in (loss_path, reports_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                json.dump(loss_payload, f, indent=2)
         print(f"  Loss history  : {loss_path}")
+        print(f"  Loss report   : {reports_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  SFT checkpoint saved → {self.output_dir / output_name}")
@@ -751,14 +1187,20 @@ class ModelTrainer:
         # GRPOConfig — DAPO settings where supported by TRL
         # If your TRL version does not have clip_range_ratio_high, it falls back
         # to symmetric clipping (vanilla GRPO).  Pin trl>=0.13.0 for best support.
+        # kl_coef was renamed to beta in TRL >=0.14; try beta first, fall back to kl_coef
+        import inspect as _inspect
+        _grpo_params = set(_inspect.signature(GRPOConfig.__init__).parameters)
+        _kl_key = "beta" if "beta" in _grpo_params else "kl_coef"
+
         grpo_kwargs = dict(
             output_dir=str(self.output_dir / output_name),
             num_generations=GRPO_CONFIG["num_generations"],
             learning_rate=GRPO_CONFIG["learning_rate"],
-            kl_coef=GRPO_CONFIG["kl_coef"],
-            clip_range_ratio=GRPO_CONFIG["clip_range_ratio"],
+            **{_kl_key: GRPO_CONFIG["kl_coef"]},
+            epsilon=GRPO_CONFIG["clip_range_ratio"],          # clip_range_ratio → epsilon
             temperature=GRPO_CONFIG["temperature"],
-            max_new_tokens=GRPO_CONFIG["max_new_tokens"],
+            max_prompt_length=GRPO_CONFIG["max_prompt_length"],
+            max_completion_length=GRPO_CONFIG["max_new_tokens"],  # max_new_tokens → max_completion_length
             num_train_epochs=GRPO_CONFIG["num_train_epochs"],
             per_device_train_batch_size=GRPO_CONFIG["per_device_train_batch_size"],
             gradient_accumulation_steps=GRPO_CONFIG["gradient_accumulation_steps"],
@@ -766,22 +1208,36 @@ class ModelTrainer:
             save_steps=GRPO_CONFIG["save_steps"],
             bf16=GRPO_CONFIG["bf16"],
             optim=GRPO_CONFIG["optim"],
+            weight_decay=GRPO_CONFIG["weight_decay"],
+            warmup_ratio=GRPO_CONFIG["warmup_ratio"],
+            lr_scheduler_type=GRPO_CONFIG["lr_scheduler_type"],
+            max_grad_norm=GRPO_CONFIG["max_grad_norm"],
             report_to="none",
+            # Dr.GRPO: token-level loss normalisation (divide by completion length)
+            # Prevents longer completions from dominating the gradient signal.
+            loss_type="dr_grpo",
+            # Mask completions that hit max_completion_length — avoids penalising
+            # correct think+tool+answer responses truncated mid-generation.
+            mask_truncated_completions=True,
         )
+        print(f"  KL penalty key : {_kl_key}={GRPO_CONFIG['kl_coef']}")
+        print(f"  epsilon        : {GRPO_CONFIG['clip_range_ratio']}")
+        print(f"  max_prompt     : {GRPO_CONFIG['max_prompt_length']}")
+        print(f"  max_completion : {GRPO_CONFIG['max_new_tokens']}")
+        print(f"  scheduler      : {GRPO_CONFIG['lr_scheduler_type']}  warmup={GRPO_CONFIG['warmup_ratio']}")
+        print(f"  max_grad_norm  : {GRPO_CONFIG['max_grad_norm']}")
 
-        # Attempt DAPO Clip-Higher if TRL supports it
+        # Attempt DAPO Clip-Higher (epsilon_high) if TRL supports it
         try:
             config = GRPOConfig(
                 **grpo_kwargs,
-                clip_range_ratio_high=GRPO_CONFIG["clip_range_ratio_high"],
+                epsilon_high=GRPO_CONFIG["clip_range_ratio_high"],  # clip_range_ratio_high → epsilon_high
             )
-            print("  DAPO Clip-Higher active (clip_range_ratio_high="
+            print("  DAPO Clip-Higher active (epsilon_high="
                   f"{GRPO_CONFIG['clip_range_ratio_high']})")
         except TypeError:
-            # Older TRL — fall back to symmetric clipping
             config = GRPOConfig(**grpo_kwargs)
-            print("  NOTE: TRL version does not support clip_range_ratio_high. "
-                  "Using symmetric clipping. Update to trl>=0.13.0 for DAPO Clip-Higher.")
+            print("  NOTE: epsilon_high not supported by this TRL version — symmetric clipping.")
 
         trainer = GRPOTrainer(
             model=self.model,
@@ -803,12 +1259,28 @@ class ModelTrainer:
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        # Save GRPO loss history
-        loss_path = self.output_dir / output_name / "grpo_loss_history.json"
-        loss_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(loss_path, "w") as f:
-            json.dump(trainer.state.log_history, f, indent=2)
+        # Save GRPO loss history in checkpoint dir AND under reports/training/<name>/
+        import datetime as _dt
+        _ts = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        _reports_dir = self.output_dir.parent / "reports" / "training" / output_name
+        _reports_dir.mkdir(parents=True, exist_ok=True)
+        loss_path     = self.output_dir / output_name / "grpo_loss_history.json"
+        reports_path  = _reports_dir / f"grpo_loss_history_{_ts}.json"
+        loss_payload  = {
+            "model":        output_name,
+            "phase":        "grpo",
+            "timestamp":    _ts,
+            "reward_type":  reward_type,
+            "config":       {**GRPO_CONFIG},
+            "reward_weights": REWARD_WEIGHTS,
+            "log":          trainer.state.log_history,
+        }
+        for p in (loss_path, reports_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                json.dump(loss_payload, f, indent=2)
         print(f"  GRPO loss history: {loss_path}")
+        print(f"  GRPO loss report : {reports_path}")
 
         trainer.save_model(str(self.output_dir / output_name))
         print(f"  GRPO checkpoint saved → {self.output_dir / output_name}")
@@ -831,7 +1303,7 @@ class ModelTrainer:
         dataset_path = self.data_dir / "train_sft_v3.jsonl"
         self.train_sft(str(dataset_path), self.output_name)
 
-    def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 256) -> str:
+    def _local_generate(self, prompt_msgs: list, max_new_tokens: int = 1024) -> str:
         """Greedy-decode one prompt using the in-memory model (inference mode assumed).
 
         Used only during publish() — model must already be switched to inference mode
@@ -995,8 +1467,9 @@ class ModelTrainer:
             dataset_path = self.data_dir / "train_sft_v3.jsonl"
             if dataset_path.exists():
                 try:
-                    raw = load_dataset("json", data_files=str(dataset_path))
-                    raw_split = raw["train"].train_test_split(test_size=0.10, seed=42)
+                    with open(dataset_path, encoding="utf-8") as _f:
+                        _records = [json.loads(l) for l in _f if l.strip()]
+                    raw_split = Dataset.from_list(_records).train_test_split(test_size=0.10, seed=42)
                     self._eval_raw = [dict(ex) for ex in raw_split["test"]]
                     print(f"  [publish] Loaded {len(self._eval_raw)} eval examples from {dataset_path.name}")
                 except Exception as e:
@@ -1101,19 +1574,41 @@ def _patch_dynamic_sampling(trainer: "GRPOTrainer") -> None:
     _orig_step = trainer.training_step
 
     def _patched_step(model, inputs, num_items_in_batch=None):
-        rewards = inputs.get("rewards")
+        # TRL versions can wrap the batch in a list; find the dict if present.
+        input_dict = None
+        if isinstance(inputs, dict):
+            input_dict = inputs
+        elif isinstance(inputs, (list, tuple)) and inputs:
+            if len(inputs) == 1 and isinstance(inputs[0], dict):
+                input_dict = inputs[0]
+            else:
+                for item in inputs:
+                    if isinstance(item, dict) and "rewards" in item:
+                        input_dict = item
+                        break
+
+        if input_dict is None:
+            return _orig_step(model, inputs, num_items_in_batch)
+
+        rewards = input_dict.get("rewards")
         if rewards is not None:
             # rewards shape: (batch, num_generations)
             import torch
+            if not isinstance(rewards, torch.Tensor):
+                return _orig_step(model, inputs, num_items_in_batch)
             variance = rewards.var(dim=-1)
             mask = variance > 0
-            if mask.sum() == 0:
+            if mask.ndim == 0:
+                if int(mask.item()) == 0:
+                    return torch.tensor(0.0, device=model.device, requires_grad=True)
+                return _orig_step(model, inputs, num_items_in_batch)
+            if int(mask.sum().item()) == 0:
                 # Every group has zero variance — skip entire batch
                 return torch.tensor(0.0, device=model.device, requires_grad=True)
             # Filter to non-zero-variance groups only
-            for key in list(inputs.keys()):
-                if isinstance(inputs[key], torch.Tensor) and inputs[key].shape[0] == mask.shape[0]:
-                    inputs[key] = inputs[key][mask]
+            for key in list(input_dict.keys()):
+                if isinstance(input_dict[key], torch.Tensor) and input_dict[key].shape[0] == mask.shape[0]:
+                    input_dict[key] = input_dict[key][mask]
         return _orig_step(model, inputs, num_items_in_batch)
 
     trainer.training_step = _patched_step
@@ -1157,11 +1652,22 @@ def main():
     )
     parser.add_argument(
         "--curriculum_stage", type=int, choices=[1, 2, 3], default=None,
-        help="Curriculum stage for SFT: 1=short format, 2=all examples, 3=anti-drift replay mix",
+        help="Train a SINGLE curriculum stage for SFT: 1=short format, 2=all examples, "
+             "3=anti-drift replay mix. For manual stage-by-stage control / checkpoint chaining.",
+    )
+    parser.add_argument(
+        "--no_curriculum", action="store_true",
+        help="Disable the default 3-stage SFT curriculum (format -> complexity -> replay) "
+             "and train once on the full dataset. Ignored if --curriculum_stage is set.",
     )
     parser.add_argument(
         "--v3_format", action="store_true",
         help="Use v3 format rewards (no CAPABILITY_CHECK requirement) for GRPO on v3-trained models",
+    )
+    parser.add_argument(
+        "--dataset", default=None,
+        help="Path to SFT training JSONL (default: <data_dir>/train_sft_v3.jsonl, "
+             "produced by sft_dataset_assembler.py).",
     )
 
     args = parser.parse_args()
@@ -1211,31 +1717,56 @@ def main():
         else:
             trainer.load_base_model()
         trainer.apply_lora()
-        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
-        _effective_dataset_path = str(dataset_path)
-        if args.curriculum_stage:
-            all_examples = []
-            with open(dataset_path, encoding="utf-8") as _f:
+        dataset_path = Path(args.dataset) if args.dataset else Path(args.data_dir) / "train_sft_v3.jsonl"
+
+        def _load_all(path):
+            rows = []
+            with open(path, encoding="utf-8") as _f:
                 for _line in _f:
                     try:
-                        all_examples.append(json.loads(_line))
+                        rows.append(json.loads(_line))
                     except json.JSONDecodeError:
                         pass
-            _s1, _s2, _s3 = _split_curriculum_stages(all_examples)
-            _stage_map = {1: _s1, 2: _s2, 3: _s3}
-            all_examples = _stage_map[args.curriculum_stage]
-            print(f"Curriculum stage {args.curriculum_stage}: {len(all_examples)} examples "
+            return rows
+
+        if args.curriculum_stage:
+            # Manual single-stage control (for checkpoint chaining via --from_checkpoint).
+            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            _stage = {1: _s1, 2: _s2, 3: _s3}[args.curriculum_stage]
+            print(f"Curriculum stage {args.curriculum_stage}: {len(_stage)} examples "
                   f"(S1={len(_s1)} S2={len(_s2)} S3={len(_s3)})")
-            import tempfile as _tempfile
-            _tmp = _tempfile.NamedTemporaryFile(
-                mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-            )
-            for _ex in all_examples:
-                _tmp.write(json.dumps(_ex) + "\n")
-            _tmp.close()
-            _effective_dataset_path = _tmp.name
-        trainer.train_sft(_effective_dataset_path, args.output_name,
-                          resume_from_checkpoint=args.resume)
+            trainer.train_sft(_write_temp_jsonl(_stage), args.output_name,
+                              resume_from_checkpoint=args.resume)
+        elif not args.no_curriculum:
+            # Default: 3-stage curriculum (format -> full complexity -> anti-drift replay),
+            # trained sequentially on the SAME in-memory model so each stage continues from
+            # the previous stage's best checkpoint. Per-stage epoch schedule keeps total
+            # training moderate (1+2+1 = 4 effective epochs) to avoid the over-training that
+            # contributed to the reasoning collapse. Tune on GPU; use --no_curriculum to skip.
+            _s1, _s2, _s3 = _split_curriculum_stages(_load_all(dataset_path))
+            if len(_s1) < 8 or len(_s2) < 8:
+                print(f"  [curriculum] degenerate split (S1={len(_s1)} S2={len(_s2)}) — "
+                      f"falling back to single full-dataset run.")
+                trainer.train_sft(str(dataset_path), args.output_name,
+                                  resume_from_checkpoint=args.resume)
+            else:
+                stages = [("1-format", _s1, 1), ("2-complexity", _s2, 2), ("3-replay", _s3, 1)]
+                print(f"  [curriculum] 3 stages: S1={len(_s1)} S2={len(_s2)} S3={len(_s3)}")
+                _orig_epochs = SFT_CONFIG["num_train_epochs"]
+                try:
+                    for _i, (_label, _stage, _epochs) in enumerate(stages, 1):
+                        SFT_CONFIG["num_train_epochs"] = _epochs
+                        print(f"\n--- SFT curriculum stage {_i}/3 ({_label}): "
+                              f"{len(_stage)} examples, {_epochs} epoch(s) ---")
+                        trainer.train_sft(
+                            _write_temp_jsonl(_stage), args.output_name,
+                            resume_from_checkpoint=(args.resume and _i == 1),
+                        )
+                finally:
+                    SFT_CONFIG["num_train_epochs"] = _orig_epochs
+        else:
+            trainer.train_sft(str(dataset_path), args.output_name,
+                              resume_from_checkpoint=args.resume)
         print(f"\nNext step → run GRPO training from this checkpoint:")
         print(f"  python 2_model_trainer.py --mode grpo --sft_checkpoint {checkpoint_path}")
         print(f"  # Or serve the SFT model to save a constitution baseline first:")
@@ -1249,7 +1780,7 @@ def main():
             print(f"ERROR: SFT checkpoint not found at {args.sft_checkpoint}")
             print("Run SFT first: python 2_model_trainer.py --mode sft")
             return
-        dataset_path = Path(args.data_dir) / "train_sft_v3.jsonl"
+        dataset_path = Path(args.dataset) if args.dataset else Path(args.data_dir) / "train_sft_v3.jsonl"
         trainer.train_grpo(
             sft_checkpoint=args.sft_checkpoint,
             dataset_path=str(dataset_path),

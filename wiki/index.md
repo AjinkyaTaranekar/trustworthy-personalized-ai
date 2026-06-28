@@ -82,6 +82,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[sources/papers/mcp-multi-agent]] — MCP coordination protocol
 - [[sources/papers/search-r1]] — RL-trained search-tool use
 - [[sources/papers/rag-original]] — retrieval-augmented generation
+- [[sources/papers/beyond-react]] — planner-centric DAG framework; Qwen3-0.6B GRPO instability confirmed; stage-grouping schema derived from their DAG insight
 
 ### Papers — Multimodal / agent RL
 - [[sources/papers/ui-r1]] — RL for GUI-agent action prediction
@@ -156,6 +157,8 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[experiments/experiment-catalog]] — all six experiments + ablation A/B/C/D
 - [[experiments/frontier-model-comparison]] — study design comparing Qwen3-0.6B (base + fine-tuned) vs Claude Sonnet 4.6, Minimax M2.7, Kimi K2.6 across 50 prompts; two evaluation tracks (automated + human)
 - [[experiments/human-evaluation-rubric]] — 12-item Likert rubric from Mayer et al. trust model + Davis empathy index; the external human-judgment ground truth
+- [[experiments/sft-benchmark-analysis-20260525]] — full 5-run benchmark analysis: per-principle trend, probe failure anatomy, latency profile, cross-cutting diagnoses (memory overuse, empty think blocks)
+- [[experiments/thinker-executor-experiment]] — Experiment 3 design: dual-SFT 0.6B architecture splitting constitutional reasoning (Thinker) from tool execution (Executor); motivated by capacity-displacement finding in SFT benchmarking
 
 ## Decisions
 
@@ -180,6 +183,17 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 
 - `IMPROVEMENT_ROADMAP.md` — 54KB roadmap at repo root. Ingest if still authoritative.
 - Per-file deep-dives of individual `pipeline/sft_*.py` scripts — summarised together in [[sources/code/sft-v2-pipeline]] for now.
+
+## Cited but not yet ingested as wiki stubs
+
+- Rainone et al. (2025) — "Replacing thinking with tool usage enables reasoning in small language models" — arXiv:2507.05065
+- Yao et al. (2025) — "Reason-Plan-ReAct: A Reasoner-Planner Supervising a ReAct Executor" — arXiv:2512.03560
+- Żywot et al. (2026) — "Can Small Agents Collaborate to Beat a Single Large Language Model?" — arXiv:2601.11327
+- Pan et al. (2025) — "Planner and Executor: Collaboration between Diffusion and Autoregressive Models" — arXiv:2510.15244
+- Thinking Machines Lab (2026) — "Interaction Models" blog post / TML-Interaction-Small release
+- Xu et al. (2025) — "Thinker: Training LLMs in Hierarchical Thinking for Deep Search" — arXiv:2511.07943
+- Wang et al. (2025) — "RAGEN: Understanding Self-Evolution in LLM Agents via Multi-Turn RL" — arXiv:2504.20073
+- Chakraborty et al. (2025) — "T1: Tool-Oriented Conversational Dataset for Multi-Turn Agentic Planning" — arXiv:2505.16986
 
 ## Cited but not in `docs/Assets/`
 

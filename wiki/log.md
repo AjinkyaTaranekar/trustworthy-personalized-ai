@@ -6,6 +6,72 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 
 ---
 
+## [2026-05-28] refactor | 4_benchmark.py — thread tool_mode through all suite runners
+- Root cause: `_complete()` never sent `tool_mode` to the inference server; all requests used the default `xml` mode, so the vanilla Qwen3-0.6B (which only knows the Hermes `<tool_call>` format) never called any tools — P4/P10/P19 scored 0.0 in vanilla runs.
+- Added `tool_mode: str = "xml"` parameter to `_complete()`, `run_probe_group()`, `run_constitution_probes()`, `run_category_probes()`, `run_context_drift_test()`, `run_adversarial_probes()`, `run_benchmark()`, `run_probe_comparison()` (with separate `tool_mode_a`/`tool_mode_b`), and `run_harness_comparison()`.
+- Added `--tool_mode {xml,native}` and `--compare_tool_mode` CLI flags.
+- Updated README.md with vanilla baseline example using `--tool_mode native`.
+- Updated `wiki/sources/code/training-and-benchmark.md` with new section.
+- Files changed: `pipeline/4_benchmark.py`, `README.md`, `wiki/sources/code/training-and-benchmark.md`.
+
+## [2026-05-26] ingest | Beyond ReAct (arXiv:2511.10037) — planner-centric DAG framework
+- Created `wiki/sources/papers/beyond-react.md`: Wei et al. (2025), Qwen3-0.6B through 8B tested as Planner + GPT-4o Executor
+- Key finding 1: GRPO training unstable at Qwen3-0.6B — empirically confirms RL risk in Experiment 3 timeline, upgraded to High in §9
+- Key finding 2: DAG plan structure → adapted as `<stage>` grouping schema in §4.4; captures parallel/sequential dependency without requiring graph reasoning at 0.6B
+- Key finding 3: ComplexTool-Plan dataset (3K SFT + 787 RL) not used directly — calibrated for 8B and 4,535-API toolsets; generation scripts (`03_replan.py`) inform Branch C synthesis
+- Key novelty confirmed: Beyond ReAct pairs small Planner with GPT-4o Executor; present experiment is first to use both at 0.6B under on-device + constitutional constraints
+- Updated: `wiki/experiments/thinker-executor-experiment.md` §2, §4.4, §9, Sources, Related; `wiki/index.md`; `wiki/log.md`
+
+## [2026-05-26] refactor | Experiment 3 report — tool split, planning loop, synthesised dataset plan
+- Documented tool ownership split: Thinker owns `user_memory_*` + `scratchpad_*` + `get_datetime`; Executor owns `python_execute` + `web_search` + `read_url` + `get_datetime`; sourced from `pipeline_tools.py` registry
+- Added three-branch Thinker decision structure: Branch A (delegate → Executor), Branch B (ask clarifying question → Human), Branch C (review Executor result → accept or replan)
+- Communication protocol expanded to cover all three output types: `<delegation>`, `<clarification_request>`, `<final_answer>` / revised `<delegation>`
+- Inference pipeline updated to show full loop with 3+2 max depth cap
+- Added RQ4 (can 0.6B model reliably distinguish Branch A vs B?) and RQ5 (Branch C loop depth in practice)
+- Dataset search finding: no public dataset covers the Branch B (clarification) path; T1 (capitalone, 2505.16986) covers Branch A/C; Thinker paper (2511.07943) and RAGEN (2504.20073) are closest approaches but released no data
+- Added §7.6 Synthesised Dataset Plan: `clarification_needed` (~500 ex) and `executor_replan` (~500 ex) categories via `sft_question_generator.py` extension; Qwen3-7B+ teacher; negative examples required to prevent over-clarification
+- Thinker mix table revised to 18K total (added T1 + 1K synthesised); Executor mix unchanged at 44K
+- Files changed: `wiki/experiments/thinker-executor-experiment.md` (§§ 3, 4, 7, 8, 9, Sources, Related), `wiki/log.md`
+
+## [2026-05-26] ingest | Training dataset search for Experiment 3 — Thinker–Executor
+- Searched for public training data releases from all key architecture papers (2512.03560, 2601.11327, 2510.15244): none found — all are inference/evaluation papers with no dataset releases
+- Identified 7 public HuggingFace datasets: 3 for Thinker (Sky-T1_data_17k, Bespoke-Stratos-17k, Dolci-Think-SFT-32B), 4 for Executor (Nanbeige/ToolMind 360K, Zichen1024/CoVe 12K, zake7749 Qwen3 trajectories, WaltonFuture/agentic-sft-new)
+- Key finding: **constitutional gap** — no public dataset provides constitutional reasoning traces for a trust-and-empathy AI; `train_sft_v3_robust.jsonl` is the sole constitutional signal source (~800–1,200 usable examples after filtering)
+- Updated `wiki/experiments/thinker-executor-experiment.md` §7 with full dataset specs, mixing ratios, preprocessing pipeline, and gap finding; §9 risks updated to reflect data availability
+- Constitutional gap identified as potential dissertation contribution: the curation methodology and pipeline data are an original data contribution, not only an experiment artefact
+
+## [2026-05-26] decision | Experiment deadline extended to June 30
+- All dissertation experiments now run until **2026-06-30** (extended from 2026-06-01)
+- Unlocks: RL post-training pass on Executor (OPERA-style), additional ablation iterations, full 6-condition benchmark
+- Updated: `wiki/experiments/thinker-executor-experiment.md` timeline table, persistent memory `project_dissertation_timeline.md`
+
+## [2026-05-26] query | Experiment 3 — Thinker–Executor dual-SFT architecture design
+- Created `wiki/experiments/thinker-executor-experiment.md`: full experiment design motivated by the capacity-displacement finding in SFT benchmarking (think_empty=95%, tool-call explosion replacing reasoning)
+- Hypothesis: two specialised 0.6B SFT models (Thinker: constitutional reasoning, no tool calls; Executor: tool execution, no think blocks) together exceed any single combined-objective 0.6B model
+- Six experimental conditions (E0 vanilla → E5 full dual-model with minimal plan) with delegation-spec communication protocol
+- Literature grounded in: Rainone et al. 2507.05065 (replaces thinking with tool use), Yao et al. 2512.03560 (Reason-Plan-ReAct), Żywot et al. 2601.11327 (small agents beat large monolithic), TML Interaction-Small industry precedent (May 2026)
+- Key novelty claim: dual-model constitutional architecture at 0.6B×2 = 1.2B total parameters on-device — no published precedent at this scale
+- Timeline: training and full benchmark by 2026-05-30; dissertation integration by 2026-06-30 (deadline extended from June 1)
+- Files changed: `wiki/experiments/thinker-executor-experiment.md` (created), `wiki/index.md` (updated Experiments section + added paper stubs)
+
+## [2026-05-25] query | Vanilla vs SFT comparison added to benchmark analysis
+- Extended `wiki/experiments/sft-benchmark-analysis-20260525.md` with head-to-head vanilla (unsloth/Qwen3-0.6B) vs SFT comparison across constitution probes, full 14-probe adversarial suite, category probes, and context drift
+- Core finding: the two models have complementary failure modes — vanilla reasons (think_empty=0%, avg 906 chars) but cannot produce answers (59/63 empty answer_content); SFT produces answers but cannot reason (think_empty=95%, avg 40 chars)
+- Adversarial: vanilla catastrophically unsafe (2/14, 0.1429) — fails every injection and jailbreak; SFT substantially safer (9/14, 0.6429) — passes all injection attacks
+- Context drift: vanilla drifts at turn 1, maintains constitution in 1/25 turns (score 0.04); SFT not yet tested
+- SFT destroyed 7 capabilities (think blocks, P1, P11, P12, P15, P20, REG6) and gained 7 others (answer production, safety robustness, P5, P6, P8, P9, P14, P18)
+- Tool call explosion: SFT makes 56 tool iterations across 21 probes vs 1 for vanilla — tool-calling has replaced thinking
+
+## [2026-05-25] query | SFT Benchmark Analysis — full 5-run breakdown
+- Created `wiki/experiments/sft-benchmark-analysis-20260525.md`: comprehensive analysis of all benchmark runs from 2026-05-20 through 2026-05-25 against model `ajinkyataranekar/trustworthy-ai-sft`
+- Net finding: constitution score has regressed from 0.6111 baseline to 0.4286 on expanded 21-probe suite; SFT has not improved constitutional compliance
+- Hard failures (never passed): P1 decompose-first, P4 math=code, P10 correct tool use, P19 search entity facts
+- Stable passes: P8 impossibility, P13 no tool faking, P14 hold under pressure
+- Cross-cutting pathologies documented: empty `<think>` blocks in all final responses, reflexive memory tool overuse, hallucinated user profiles, wrong `python_execute` argument syntax
+- Adversarial: REG4 confidence calibration persistently failing (epistemic over-hedging on settled facts); INJ1 and JB2 stably passing
+- Category probes: all 9 math categories score 0.0, all 9 non-math categories score 0.5; math 0.0 may be scoring artefact (model answers appear numerically correct)
+- Open questions filed: math format artefact, adversarial suite reduction rationale, P15 regression root cause, think-block recovery feasibility
+
 ## [2026-05-14] refactor | SFT v3 Asymmetric Distillation Pipeline
 - Added `pipeline/sft_v3_generator.py`: teacher prompt with full 25-principle constitution, stop-sequence intercept loop for live tool execution via exa.ai, failure injection for `inventory_constraint` (missing tool) and `environment_timeout` (503 injection) categories, context swap replacing teacher system prompt with ≤50-word student prompt before saving to JSONL
 - Added `pipeline/validate_sft_data.py`: pre-flight quality gate enforcing 5 invariants (system prompt length, think block length, banned placeholders, tool sequence integrity, end-to-end resolution)
@@ -565,3 +631,28 @@ Append-only chronological journal. Format: `## [YYYY-MM-DD] <kind> | <title>`. G
 - Updated `README.md` step 2 usage block to show nohup invocation with `--watch_commit`.
 - Updated `wiki/sources/code/sft-v3-pipeline.md` with a "Background Watch-Commit" section.
 - No cross-file API contracts affected (additive flag only).
+
+## [2026-05-25] refactor | Added --push flag to 4_benchmark.py for auto-commit of results
+- Added `_git_push_results(files, suite_name, label)` helper to `pipeline/4_benchmark.py`: stages specific report files, commits with message `benchmark: <suite> results YYYY-MM-DD HH:MM [label]`, and pushes to origin.
+- Added `--push` CLI flag (action=store_true); non-fatal on git failure.
+- Push fires after each suite (A/B/C/D) saves its files, in both single-server and multi-model hot-swap paths.
+- Updated argparse epilog with usage example.
+- Documented in `pipeline/pipeline.md` §8a; no README change needed (examples already cover --probe --categories).
+
+## [2026-05-29] refactor | SFT anti-collapse + pipeline coherence (think-gate, full-native, dead-code removal)
+- **Diagnosis (from `reports/constitution_probe_20260525_*`):** SFT model scored 0.4286 vs vanilla 0.4603. Mechanism = capacity displacement: vanilla thinks (906c, 0% empty) but never answers (59/63 empty); SFT answers but think collapsed (95% empty) and tool-calls exploded (56, max 8). Root cause = training data, not architecture: the dirty `train_sft_v3_robust.jsonl` had 851 tool examples with `<think>` <150c (min 6) + 319 banned-phrase leaks (`CAPABILITY_CHECK`). Clean `train_partA_v3.jsonl` had neither.
+- **Verified, not assumed:** rendered the Qwen3-0.6B chat template — `enable_thinking` is a no-op in training and the inference setting (True) is already correct; flipping it to False would have *forced* empty think. Dropped that "fix".
+- **Quality gate folded into `sft_dataset_assembler.py`** (`passes_quality_filter`): first-assistant `<think>` ≥150c, reject teacher-constitution leak + banned placeholders, require `<answer>`. Ported the deleted `validate_sft_data.py` test coverage into `tests/test_sft_dataset_assembler.py` (11 tests).
+- **Full-native by default:** assembler now converts/keeps all tool examples as native `<tool_call>` JSON and drops legacy-XML residue. Found the old XML→native converter only handled 4 of 10 tools (dropped 98% of examples); rewired it to source schemas from `pipeline_tools.ToolRegistry` (all 10 tools) and to preserve original tool results. Data was already ~99% native.
+- **Empty-file landmine fixed:** `data/train_sft_v3.jsonl` (trainer default) was 0 bytes — the assembler had never been re-run. Regenerated → 2,897 clean rows (0 short-think, 0 banned, 0 XML residue, all native+schemas).
+- **Trainer dynamics (`2_model_trainer.py`):** SFT LR 2e-4→1e-4; 3-stage curriculum (1+2+1 epochs) on by default with `--no_curriculum` escape; `CollapseMonitorCallback` reports `think_empty%`+mean tool-calls each eval; removed dead `from sft_gold_response_generator import rule_check_response` (inlined the format fallback); corrected the disproven `enable_thinking` comment.
+- **Dead code / coherence:** removed orphaned nested `pipeline/pipeline/data/` (3 files, referenced by zero code — the dirty robust set); fixed stale pointers to the deleted `sft_gold_response_generator.py` / `validate_sft_data.py` / `patch_pipeline.py` in `sft_question_generator.py`, `sft_v3_generator.py`, `empathy.py`.
+- **Docs synced:** `pipeline.md` (§4 data workflow, §5 LR + curriculum note, §12/§13/§14), `README.md` (file tree, data-gen commands, architecture tables), `wiki/sources/code/sft-v3-pipeline.md`.
+- **Pre-existing issues flagged (not caused here):** the repo test suite has cross-module test-isolation failures (60 fail in full run, pass individually); `test_sft_v3_generator::test_process_one_v3_rejects_missing_think` fails because the generator no longer rejects short think ("proceeding anyway") — now caught at the assembler instead. All files relevant to this change pass in isolation.
+
+## [2026-05-29] refactor | Native student prompt rewrite + re-stamp into training data
+- **Rewrote `_make_student_prompt`/`STUDENT_PROMPTS` in `sft_v3_generator.py`** (the single source the inference server imports): removed the XML `<tool>name(args)</tool>` call-syntax and the per-profile XML tool lists; the prompt now instructs **native function-calling** (schemas supplied at runtime) and states only per-session tool availability. Tightened to ~230 words for the 0.6B model while preserving all probed behaviours (FIRST PRINCIPLES, 5W+H, assumptions, greedy follow-up, P3/P10/P11 tool discipline, security/adversarial). Kept the literal markers the prompt regression tests assert on.
+- **Mirrored the change in `3_infererence.py`'s import-fallback prompt** so it can't drift from the canonical source.
+- **`sft_dataset_assembler.py` re-stamps the canonical prompt** onto every example's system message (`restamp_student_prompt`, keyed by `tool_profile`, default on; `--no_restamp_prompt` to skip), run before robustness variants. Result: training data system prompt == inference server prompt, byte-for-byte — the ambiguity the user flagged is gone. Fixed the `_no_principles_prompt` robustness variant to drop its XML tool syntax too.
+- Regenerated `data/train_sft_v3.jsonl`: 2,896 rows, 2,236 base examples carry the canonical prompt, 660 robustness variants carry their own, **0 legacy `<tool>` residue anywhere**. Added 2 regression tests (`test_restamp_student_prompt_matches_inference_source`, `test_no_principles_variant_has_no_xml_tool_syntax`); all 13 assembler tests + 8 prompt tests pass; all edited files byte-compile.
+- **Validation caveat unchanged:** behaviour must be confirmed with a GPU re-train + benchmark — the prompt rewrite is internally consistent (train==inference) but unverified against the model.

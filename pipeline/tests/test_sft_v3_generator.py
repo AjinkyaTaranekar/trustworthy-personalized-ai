@@ -9,22 +9,37 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
 
-# ── Student prompt length ────────────────────────────────────────────────────
-
-def test_all_student_prompts_under_50_words():
-    import sft_v3_generator as gen
-    for profile_label, prompt in gen.STUDENT_PROMPTS.items():
-        word_count = len(prompt.split())
-        assert word_count <= 50, (
-            f"Student prompt for '{profile_label}' is {word_count} words (max 50): {prompt!r}"
-        )
-
+# ── Student prompt content ───────────────────────────────────────────────────
 
 def test_student_prompts_cover_all_profiles():
     import sft_v3_generator as gen
     for profile in gen.TOOL_PROFILES:
         assert profile["label"] in gen.STUDENT_PROMPTS, (
             f"No student prompt for profile '{profile['label']}'"
+        )
+
+
+def test_student_prompts_contain_first_principles_instruction():
+    import sft_v3_generator as gen
+    for profile_label, prompt in gen.STUDENT_PROMPTS.items():
+        assert "FIRST PRINCIPLES" in prompt, (
+            f"Student prompt for '{profile_label}' missing FIRST PRINCIPLES instruction"
+        )
+
+
+def test_student_prompts_contain_5wh_scan():
+    import sft_v3_generator as gen
+    for profile_label, prompt in gen.STUDENT_PROMPTS.items():
+        assert "5W+H" in prompt or "WHO" in prompt, (
+            f"Student prompt for '{profile_label}' missing 5W+H scan instruction"
+        )
+
+
+def test_student_prompts_contain_greedy_followup():
+    import sft_v3_generator as gen
+    for profile_label, prompt in gen.STUDENT_PROMPTS.items():
+        assert "GREEDY FOLLOW-UP" in prompt or "follow-up" in prompt.lower(), (
+            f"Student prompt for '{profile_label}' missing greedy follow-up instruction"
         )
 
 
@@ -124,13 +139,14 @@ def test_context_swap_replaces_system_prompt():
     assert system_msgs[0]["content"] == gen.STUDENT_PROMPTS["compute_only"]
 
 
-def test_context_swap_student_prompt_is_under_50_words():
+def test_context_swap_student_prompt_has_first_principles():
     import sft_v3_generator as gen
     conversation = _make_conversation("all_tools")
     profile = next(p for p in gen.TOOL_PROFILES if p["label"] == "all_tools")
     example = gen._build_v3_example(conversation, "What is 2+2?", "arithmetic", profile)
     system_msgs = [m for m in example["messages"] if m["role"] == "system"]
-    assert len(system_msgs[0]["content"].split()) <= 50
+    assert "FIRST PRINCIPLES" in system_msgs[0]["content"]
+    assert "5W+H" in system_msgs[0]["content"]
 
 
 def test_context_swap_teacher_constitution_not_in_output():

@@ -1,76 +1,50 @@
 {
   "train": {
-    "total": 1855,
+    "total": 2895,
     "by_category": {
-      "math_word_problems": 550,
-      "math_algebra": 165,
-      "math_arithmetic": 136,
-      "user_context_behavioral": 104,
-      "interleaved_tool_reasoning": 96,
-      "math_trigonometry": 96,
-      "math_statistics": 81,
-      "subjective_tradeoffs": 80,
-      "ambiguous_underspecified": 80,
-      "entity_facts_web_search": 72,
-      "math_geometry": 71,
-      "impossible_tasks": 67,
-      "real_time_dependent": 61,
-      "multi_step_clarification": 59,
-      "adversarial_pressure": 41,
-      "knowledge_boundary": 37,
-      "partial_capability_honest": 32,
-      "verbose_context_behavioral": 23,
-      "scratchpad_decomposition": 4
+      "math_word_problems": 503,
+      "impossible_tasks": 192,
+      "user_context_behavioral": 180,
+      "ambiguous_underspecified": 177,
+      "subjective_tradeoffs": 164,
+      "multi_step_clarification": 161,
+      "math_algebra": 154,
+      "interleaved_tool_reasoning": 148,
+      "verbose_context_behavioral": 145,
+      "math_arithmetic": 141,
+      "real_time_dependent": 127,
+      "entity_facts_web_search": 127,
+      "adversarial_pressure": 114,
+      "partial_capability_honest": 107,
+      "math_trigonometry": 76,
+      "knowledge_boundary": 75,
+      "math_statistics": 71,
+      "math_geometry": 67,
+      "scratchpad_decomposition": 55,
+      "inventory_constraint": 47,
+      "environment_timeout": 26,
+      "math": 15,
+      "adversarial": 11,
+      "regression": 7,
+      "tool_use": 2,
+      "first_principles_questioning": 2,
+      "constitution": 1
     },
     "by_source": {
-      "math": 549,
-      "gsm8k": 550,
-      "v3_distillation": 756
+      "v3_distillation": 1847,
+      "math": 509,
+      "gsm8k": 503,
+      "manual_v1": 36
     },
     "by_pipeline": {
-      "partb_converted": 1099,
-      "sft_v3": 756
+      "sft_v3": 1847,
+      "partb_converted": 1002,
+      "unknown": 36,
+      "part_b_datasets": 10
     },
     "revised_count": 0,
-    "tool_turn_examples": 1847,
-    "native_tool_examples": 184,
-    "avg_response_chars": 2215
-  },
-  "eval": {
-    "total": 144,
-    "by_category": {
-      "math_word_problems": 45,
-      "math_algebra": 11,
-      "math_arithmetic": 10,
-      "user_context_behavioral": 10,
-      "math_statistics": 9,
-      "impossible_tasks": 9,
-      "interleaved_tool_reasoning": 7,
-      "ambiguous_underspecified": 7,
-      "real_time_dependent": 6,
-      "multi_step_clarification": 5,
-      "math_trigonometry": 4,
-      "adversarial_pressure": 4,
-      "subjective_tradeoffs": 4,
-      "math_geometry": 4,
-      "partial_capability_honest": 3,
-      "entity_facts_web_search": 3,
-      "verbose_context_behavioral": 1,
-      "scratchpad_decomposition": 1,
-      "knowledge_boundary": 1
-    },
-    "by_source": {
-      "gsm8k": 45,
-      "v3_distillation": 61,
-      "math": 38
-    },
-    "by_pipeline": {
-      "partb_converted": 83,
-      "sft_v3": 61
-    },
-    "revised_count": 0,
-    "tool_turn_examples": 143,
-    "native_tool_examples": 0,
-    "avg_response_chars": 2386
+    "tool_turn_examples": 2852,
+    "native_tool_examples": 2895,
+    "avg_response_chars": 3483
   }
 }

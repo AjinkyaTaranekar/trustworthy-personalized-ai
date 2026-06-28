@@ -837,8 +837,8 @@ def main():
         workers=args.workers,
     )
 
-    print(f"\nNext step → generate gold responses for Part A:")
-    print(f"  python sft_gold_response_generator.py --questions {args.output} --output data/train_partA.jsonl")
+    print(f"\nNext step → generate gold responses for Part A (asymmetric distillation):")
+    print(f"  python sft_v3_generator.py --questions {args.output} --output data/train_partA_v3.jsonl")
 
 
 if __name__ == "__main__":

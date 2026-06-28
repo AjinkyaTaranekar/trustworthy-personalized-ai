@@ -14,29 +14,44 @@ from scratchpad import ScratchpadStore as _ScratchpadStore
 PROFILE_COMPUTE = "compute_only"
 PROFILE_NO_TOOLS = "no_tools"
 
+# v3 format: First Principles + 5W+H in <think>, no CAPABILITY_CHECK label,
+# <answer> ends with a targeted 5W+H follow-up question.
 GOOD_RESPONSE = (
-    "<think>CAPABILITY_CHECK: I have python_execute available.\n"
-    "The user wants 7+3. I will use python_execute.\n</think>"
+    "<think>"
+    "First Principles: the user wants 7+3, which is pure arithmetic — irreducible. "
+    "5W+H scan: WHO is asking a math question, WHAT is the sum 7+3, WHEN is immediate, "
+    "WHERE doesn't matter, WHY is to get the correct value, HOW is to use python_execute. "
+    "No unknown dimensions — this is a fully specified computation."
+    "</think>"
     "<tool>python_execute(code='print(7+3)')</tool>"
-    "<answer>The answer is 10.</answer>"
+    "<answer>The answer is 10.\n\n"
+    "To understand your WHY better — are you verifying this for a specific calculation?</answer>"
 )
 
 BAD_NO_THINK = "The answer is 10."
-BAD_NO_CAPCHECK = "<think>I will compute this.</think><answer>10.</answer>"
-BAD_NO_ANSWER = "<think>CAPABILITY_CHECK: ok.</think>I think it is 10."
+
+# No longer bad in v3 — CAPABILITY_CHECK is not required.
+# This response will fail P20 (thin think, no First Principles) and P21 (no follow-up).
+BAD_THIN_THINK = "<think>I will compute this.</think><answer>10.</answer>"
+
+BAD_NO_ANSWER = (
+    "<think>First Principles: arithmetic. 5W+H: user wants a number. "
+    "WHY is the unknown dimension.</think>I think it is 10."
+)
 BAD_HALLUCINATED_TOOL = (
-    "<think>CAPABILITY_CHECK: ok.</think>"
+    "<think>First Principles: lookup task. 5W+H scan done.</think>"
     "<tool>fly_to_moon(destination='Mars')</tool>"
-    "<answer>Done.</answer>"
+    "<answer>Done.\n\nTo understand your WHY: what are you trying to achieve?</answer>"
 )
 BAD_UNAVAILABLE_TOOL = (
-    "<think>CAPABILITY_CHECK: web_search not available.</think>"
+    "<think>First Principles: need live data. web_search not available in this session.</think>"
     "<tool>web_search(query='weather')</tool>"
-    "<answer>Here is the weather.</answer>"
+    "<answer>Here is the weather.\n\nTo understand your WHERE: what city do you need weather for?</answer>"
 )
 BAD_MATH_NO_CODE = (
-    "<think>CAPABILITY_CHECK: python_execute available.</think>"
-    "<answer>7823 multiplied by 349 minus 1024 is 2,730,603.</answer>"
+    "<think>First Principles: arithmetic computation needed. python_execute available.</think>"
+    "<answer>7823 multiplied by 349 minus 1024 is 2,730,603.\n\n"
+    "To understand your WHY: is this for a specific project?</answer>"
 )
 
 MATH_QUESTION = "What is 7823 multiplied by 349, then subtract 1024?"
@@ -54,10 +69,16 @@ def test_run_checks_missing_think_block():
     assert any("PRINCIPLE_1" in v for v in violations)
     assert any("think" in v.lower() for v in violations)
 
-def test_run_checks_missing_capability_check():
-    violations = run_checks(BAD_NO_CAPCHECK, PLAIN_QUESTION, PROFILE_NO_TOOLS)
-    assert any("PRINCIPLE_1" in v for v in violations)
-    assert any("CAPABILITY_CHECK" in v for v in violations)
+def test_run_checks_capability_check_not_required():
+    # v3: CAPABILITY_CHECK label is no longer required in <think>.
+    # A response with <think> but no CAPABILITY_CHECK must not fire P1.
+    no_capcheck = (
+        "<think>First Principles: simple lookup. WHO is asking, WHY unclear.</think>"
+        "<answer>Paris.\n\nTo understand your WHY: is this for a quiz or a trip?</answer>"
+    )
+    violations = run_checks(no_capcheck, PLAIN_QUESTION, PROFILE_NO_TOOLS)
+    assert not any("CAPABILITY_CHECK" in v for v in violations)
+    assert not any("PRINCIPLE_1" in v for v in violations)
 
 def test_run_checks_missing_answer_block():
     violations = run_checks(BAD_NO_ANSWER, PLAIN_QUESTION, PROFILE_NO_TOOLS)
@@ -84,6 +105,29 @@ def test_run_checks_math_no_code_skipped_when_no_tool():
 def test_run_checks_multiple_violations():
     violations = run_checks(BAD_NO_THINK, MATH_QUESTION, PROFILE_COMPUTE)
     assert len(violations) >= 2
+
+def test_run_checks_thin_think_triggers_p20():
+    # <think> present but no First Principles language → P20 violation
+    violations = run_checks(BAD_THIN_THINK, PLAIN_QUESTION, PROFILE_NO_TOOLS)
+    assert any("PRINCIPLE_20" in v for v in violations)
+
+def test_run_checks_no_followup_question_triggers_p21():
+    # <answer> doesn't end with ? → P21 violation
+    no_followup = (
+        "<think>First Principles: lookup. 5W+H: WHO unclear, WHY unclear.</think>"
+        "<answer>Paris is the capital of France.</answer>"
+    )
+    violations = run_checks(no_followup, PLAIN_QUESTION, PROFILE_NO_TOOLS)
+    assert any("PRINCIPLE_21" in v for v in violations)
+
+def test_run_checks_generic_question_no_5wh_dim_triggers_p21():
+    # Ends with ? but no 5W+H dimension named → P21 weak-violation
+    generic_q = (
+        "<think>First Principles: lookup. 5W+H: WHO unclear.</think>"
+        "<answer>Paris. What do you think?</answer>"
+    )
+    violations = run_checks(generic_q, PLAIN_QUESTION, PROFILE_NO_TOOLS)
+    assert any("PRINCIPLE_21" in v for v in violations)
 
 
 # ── build_corrective_prompt ──────────────────────────────────────────────────
