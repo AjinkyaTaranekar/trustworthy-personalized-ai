@@ -158,6 +158,30 @@ _FATAL = ("authentication", "invalid api key", "permissiondenied", "permission d
           "model_not_found", "not found", "404", "badrequest", "invalid_request")
 
 
+# ---------------------------------------------------------------------------
+# OpenAI-compatible providers — reached through litellm's openai/ handler with a
+# custom api_base. Map a friendly prefix -> (api_base, (multi_key_env, single_key_env)).
+# A model like "crusoe/zai/GLM-5.1" is rewritten to litellm "openai/zai/GLM-5.1"
+# with api_base set, so key-rotation/pacing/backoff in RobustPool still apply.
+# ---------------------------------------------------------------------------
+_OPENAI_COMPAT = {
+    "crusoe": ("https://api.inference.crusoecloud.com/v1",
+               ("CRUSOE_API_KEYS", "CRUSOE_API_KEY")),
+}
+_DEFAULT_KEY_ENV = ("NVIDIA_NIM_API_KEYS", "NVIDIA_NIM_API_KEY")
+
+
+def resolve_model(model: str):
+    """Map a friendly model string to (litellm_model, api_base).
+
+    'crusoe/zai/GLM-5.1' -> ('openai/zai/GLM-5.1', 'https://.../v1'); any other
+    model passes through unchanged with api_base=None (litellm's own routing)."""
+    for prefix, (base, _env) in _OPENAI_COMPAT.items():
+        if model.startswith(prefix + "/"):
+            return "openai/" + model[len(prefix) + 1:], base
+    return model, None
+
+
 class RobustPool:
     """Concurrent LLM caller that keeps going through rate limits.
 
@@ -180,14 +204,17 @@ class RobustPool:
     def complete(self, messages: list, model: str, max_tokens: int,
                  timeout: int = 120, temperature: float = 0.1, **kw) -> str:
         import litellm
+        litellm_model, api_base = resolve_model(model)
         attempt = 0
         while True:
             self.bucket.acquire()
             self.sem.acquire()
             wait = 0.0
             try:
-                kwargs = dict(model=model, messages=messages, max_tokens=max_tokens,
+                kwargs = dict(model=litellm_model, messages=messages, max_tokens=max_tokens,
                               timeout=timeout, temperature=temperature, **kw)
+                if api_base:
+                    kwargs["api_base"] = api_base
                 if self.keys.current_key:
                     kwargs["api_key"] = self.keys.current_key
                 resp = litellm.completion(**kwargs)
@@ -214,14 +241,23 @@ class RobustPool:
             self.sem.try_scale_up()
 
 
-def keys_from_env() -> List[str]:
-    """Collect NVIDIA NIM keys from the environment: NVIDIA_NIM_API_KEYS (comma/space
-    separated) takes precedence, else the single NVIDIA_NIM_API_KEY."""
+def keys_from_env(model: str = "") -> List[str]:
+    """Collect API keys for `model`'s provider from the environment.
+
+    The multi-key env var (comma/space separated) takes precedence over the single
+    one. Provider is chosen by the model prefix: an OpenAI-compatible provider in
+    _OPENAI_COMPAT (e.g. 'crusoe/...' -> CRUSOE_API_KEYS/CRUSOE_API_KEY) else the
+    NVIDIA NIM defaults. Backward compatible: keys_from_env() -> NVIDIA keys."""
     import os
-    raw = os.environ.get("NVIDIA_NIM_API_KEYS", "")
+    multi_env, single_env = _DEFAULT_KEY_ENV
+    for prefix, (_base, envs) in _OPENAI_COMPAT.items():
+        if model.startswith(prefix + "/"):
+            multi_env, single_env = envs
+            break
+    raw = os.environ.get(multi_env, "")
     keys = [k.strip() for k in raw.replace(",", " ").split() if k.strip()]
     if not keys:
-        single = os.environ.get("NVIDIA_NIM_API_KEY", "").strip()
+        single = os.environ.get(single_env, "").strip()
         if single:
             keys = [single]
     return keys

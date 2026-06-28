@@ -253,22 +253,31 @@ def fig_category_heatmap(plt, M, labels, outdir):
 # ---------------------------------------------------------------------------
 
 def render_all(labels: List[str], reports_dir: str = "reports",
-               outdir: Optional[str] = None) -> None:
+               outdir: Optional[str] = None, extended: bool = False) -> None:
+    """Render the dissertation figures. By default only the five CORE figures are written
+    (the ones that carry the argument); the four EXTENDED figures, which overlap with the
+    core set or with the diagnostics table, are written only when extended=True, so the
+    figure list stays lean and academic rather than bloated."""
     plt = _try_mpl()
     if plt is None:
         return
     outdir = outdir or os.path.join(reports_dir, "dissertation_assets")
     M = {l: em.condition_metrics(reports_dir, l) for l in labels}
-    fig_ladder_compliance(plt, M, labels, outdir)
-    fig_ladder_per_family(plt, M, labels, outdir)
+    # Core: the isolating deltas (the argument), reasoning depth, drift, categories,
+    # and the per-family breakdown.
     fig_ladder_deltas(plt, reports_dir, labels, outdir)
     fig_think_distribution(plt, reports_dir, M, labels, outdir)
-    fig_reasoning_location(plt, M, labels, outdir)
-    fig_depth_vs_cost(plt, reports_dir, labels, outdir)
-    fig_tool_usage(plt, M, labels, outdir)
     fig_drift_curve(plt, M, labels, outdir)
     fig_category_heatmap(plt, M, labels, outdir)
-    print(f"\n  figures → {os.path.relpath(outdir)}")
+    fig_ladder_per_family(plt, M, labels, outdir)
+    if extended:
+        # Secondary figures (overlap with the core set / the diagnostics table).
+        fig_ladder_compliance(plt, M, labels, outdir)
+        fig_reasoning_location(plt, M, labels, outdir)
+        fig_depth_vs_cost(plt, reports_dir, labels, outdir)
+        fig_tool_usage(plt, M, labels, outdir)
+    n = 9 if extended else 5
+    print(f"\n  figures ({n}) -> {os.path.relpath(outdir)}")
 
 
 if __name__ == "__main__":
@@ -276,5 +285,7 @@ if __name__ == "__main__":
     ap.add_argument("--labels", nargs="+", required=True)
     ap.add_argument("--reports_dir", default="reports")
     ap.add_argument("--outdir", default=None)
+    ap.add_argument("--extended", action="store_true",
+                    help="Also render the four secondary figures (default: five core only).")
     args = ap.parse_args()
-    render_all(args.labels, args.reports_dir, args.outdir)
+    render_all(args.labels, args.reports_dir, args.outdir, extended=args.extended)

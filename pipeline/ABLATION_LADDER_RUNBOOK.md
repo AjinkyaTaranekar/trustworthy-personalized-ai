@@ -205,8 +205,9 @@ python 3_infererence.py \
     --base_model unsloth/Qwen3-0.6B --port 8000
 ```
 ```bash
-# bench  (--max_new_tokens 2048 so the Thinker's reasoning is not truncated; the
-#         default 1024 is too small for the dual model)
+# bench
+python 4_benchmark.py --probe --categories --drift --adversarial --persona \
+     --tool_mode native  --model_label thinker_executor --output_dir reports_jun24/thinker_executor
 ```
 
 > **Determinism for the dual model (fixed 2026-06-25):** the orchestrator previously hard-coded the Thinker to sample (`greedy=False`), so Thinker–Executor ran stochastically at temp 0.7 while the single-model conditions ran greedy — an unfair, noisy comparison (T-E numbers wobbled run-to-run). The orchestrator + dual endpoint now honour the request's `greedy` flag, so the standard (greedy-default) benchmark command is deterministic for T-E too. **For the final comparison, re-run ALL five conditions greedy with the same `--max_new_tokens` (e.g. 2048)** so every condition is decoded identically.
@@ -266,10 +267,10 @@ python analyze_experiments.py \
 `--figures` renders the dissertation figures (needs matplotlib). Drop it for the table only.
 
 Outputs:
-- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs. Now also includes **judge-free depth/tool rows** (from `experiment_metrics.py`): `<think>` length, `<think>`-empty rate, **reasoning externalisation ratio** (in-think vs answer-body), clarification rate, hollow-pass rate, tool calls/response, tool-failure rate, decoy-bait rate. Plus the **purpose-weighted "trustworthiness" score** (a-priori tiers from `principle_families.py`: Tier-1 ×3 ask/no-fabrication/deny-unknown, Tier-2 ×2 pressure+personalisation, Tier-3 ×1 tool/reasoning mechanism) for rule and combined, with the **per-tier breakdown** — reported alongside the unweighted mean, never instead of it.
+- `reports/experiment_ladder_<ts>.csv` + `.tex` — scores per condition with the four **isolating deltas** (C1−C0 tools, C2−C1 SFT scaffolding, C3−C2 constitutional content, C4−C3 architecture) and bootstrap 95% CIs. The CSV holds **every** row; the `.tex` is split into **two tables** so the dissertation stays readable: a clean **headline ladder** (`tab:experiment-ladder` — rule/combined constitution, the **purpose-weighted "trustworthiness" score** + per-tier breakdown from `principle_families.py` Tier-1 ×3 / Tier-2 ×2 / Tier-3 ×1, `<think>`-empty rate, hollow-pass rate, categories, drift, persona, adversarial) and a separate **diagnostics table** (`tab:experiment-diagnostics` — `<think>` length, externalisation ratio, clarification rate, tool calls/response, tool-failure rate, decoy-bait rate). Edit `DIAGNOSTIC_METRICS` in `analyze_experiments.py` to re-balance the two.
 - `reports/experiment_h3_failures_<ts>.csv` — probes the top rung still fails or regresses on (H3 limits).
 - `reports/persona_dimension_correlation_<ts>.csv` — 6×6 Pearson matrix over the judged personas; flags any distinct dimension pair with |r| ≥ 0.9 as near-redundant (the "are the trust/empathy metrics overlapping?" check). Needs ≥3 judged personas.
-- `reports/dissertation_assets/fig_ladder_*.pdf`, `fig_think_distribution.pdf`, `fig_reasoning_location.pdf`, `fig_depth_vs_cost.pdf`, `fig_tool_usage.pdf`, `fig_drift_curve.pdf`, `fig_category_heatmap.pdf` — the nine ladder figures (when `--figures`).
+- `reports/dissertation_assets/*.pdf` — **five CORE figures** by default with `--figures` (`fig_ladder_deltas`, `fig_think_distribution`, `fig_drift_curve`, `fig_category_heatmap`, `fig_ladder_per_family`); add `--extended_figures` for the four secondary ones (`fig_ladder_compliance`, `fig_reasoning_location`, `fig_depth_vs_cost`, `fig_tool_usage`), nine total. The secondary set overlaps with the core figures and the diagnostics table, hence opt-in.
 - Console also prints the persona dimension means per condition.
 
 **Quick metric dry-run (no figures, no consolidation):** `python experiment_metrics.py --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor` prints the per-condition judge-free metrics for a fast sanity check. Standalone figures: `python experiment_figures.py --labels …`.

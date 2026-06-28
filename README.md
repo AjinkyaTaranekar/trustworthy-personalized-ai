@@ -42,6 +42,7 @@ Supported providers via [litellm](https://github.com/BerriAI/litellm) — swap w
 |---|---|---|---|
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/moonshotai/kimi-k2.6` | Free tier |
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/minimaxai/minimax-m2.7` | Free tier |
+| **Crusoe** ✅ judge fallback | `CRUSOE_API_KEY=...` | `crusoe/zai/GLM-5.1` | Credits |
 | **exa.ai** ✅ web search | `EXA_API_KEY=...` | Used by `sft_v3_generator.py` for live semantic web search | $10 free credits |
 | Groq | `GROQ_API_KEY=gsk_...` | `groq/llama-3.3-70b-versatile` | Free tier |
 | Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | `claude-sonnet-4-6` | ~$10–15 for full run |
@@ -675,7 +676,15 @@ python 5_judgement_day.py --judge_model claude-opus-4-8
 # Scope to the five ladder conditions and also write a narrative diagnostic
 python 5_judgement_day.py --judge_model claude-opus-4-8 \
     --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor --report
+
+# Crusoe (OpenAI-compatible) judge fallback when NVIDIA NIM is rate-limited
+#   — set CRUSOE_API_KEY; the crusoe/ prefix routes via litellm's openai/ handler.
+python 5_judgement_day.py --judge_model crusoe/zai/GLM-5.1 \
+    --reports_dir reports_jun24 \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
 ```
+
+The judge picks its key by the model's provider prefix: `crusoe/...` -> `CRUSOE_API_KEY(S)`, otherwise `NVIDIA_NIM_API_KEY(S)`. Any OpenAI-compatible endpoint can be added to `_OPENAI_COMPAT` in `llm_pool.py` (prefix -> base URL + key env). **The judge model must be identical across all five conditions** (it is the measurement instrument) and should be the same model `--meta_eval` validates against the human gold set — so if you switch the headline judge to GLM-5.1, re-run the meta-eval with GLM-5.1 too.
 
 It fills `llm_score` / `combined_score` / `persona_score` (+ the six persona `dimension_means`) and recomputes the blended aggregates. Two upgraded prompts (both system+user, reasoning-before-score, calibrated anchors): a per-response judge for Suites A–C and a whole-transcript conversation judge for Suite E. A failed judge call scores `None` (excluded from the average), never a silent 0.5. Keep the judge model identical across conditions (recorded in `run_metadata.judged_by`); adversarial (Suite D) is rule-only and never judged.
 
@@ -793,7 +802,7 @@ python analyze_experiments.py \
     --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
 ```
 
-It pairs the latest report of each suite per label, prints the ladder with the four **isolating deltas** (bootstrap 95% CIs where item-level data exists), keeps the constitution suite as **rule-based (primary) and combined (secondary) rows separately** to avoid LLM-judge circularity, and writes `experiment_ladder_<ts>.csv`, `experiment_ladder_<ts>.tex` (dissertation table), and `experiment_h3_failures_<ts>.csv` (probes the top rung still fails or regresses on — the H3 limits evidence).
+It pairs the latest report of each suite per label, prints the ladder with the four **isolating deltas** (bootstrap 95% CIs where item-level data exists), keeps the constitution suite as **rule-based (primary) and combined (secondary) rows separately** to avoid LLM-judge circularity, and writes `experiment_ladder_<ts>.csv`, `experiment_ladder_<ts>.tex` (**two** dissertation tables: a clean headline ladder plus a separate depth/tool **diagnostics** table), and `experiment_h3_failures_<ts>.csv` (probes the top rung still fails or regresses on — the H3 limits evidence). Add `--figures` for the **five core** dissertation figures, or `--figures --extended_figures` for all nine.
 
 ---
 
