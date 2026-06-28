@@ -42,6 +42,7 @@ Supported providers via [litellm](https://github.com/BerriAI/litellm) — swap w
 |---|---|---|---|
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/moonshotai/kimi-k2.6` | Free tier |
 | **NVIDIA NIM** ✅ confirmed | `NVIDIA_NIM_API_KEY=nvapi-...` | `nvidia_nim/minimaxai/minimax-m2.7` | Free tier |
+| **Crusoe** ✅ judge fallback | `CRUSOE_API_KEY=...` | `crusoe/zai/GLM-5.1` | Credits |
 | **exa.ai** ✅ web search | `EXA_API_KEY=...` | Used by `sft_v3_generator.py` for live semantic web search | $10 free credits |
 | Groq | `GROQ_API_KEY=gsk_...` | `groq/llama-3.3-70b-versatile` | Free tier |
 | Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | `claude-sonnet-4-6` | ~$10–15 for full run |
@@ -165,16 +166,29 @@ pipeline/
 ├── sft_v3_generator.py             SFT step 1b — asymmetric distillation: teacher (full constitution) → student prompt swap, live tool intercept, native <tool_call> output
 ├── sft_math_pipeline.py            SFT step 2  — math/code questions (7 types) + rejection sampling
 ├── sft_dataset_assembler.py        SFT step 3  — merge, quality-gate (think≥150, teacher-leak, banned phrases), full-native conversion, robustness variants → train_sft_v3.jsonl
+├── sft_trajectory_splitter.py      Thinker–Executor (exp 3): pure-transform factoring of the *_v3 parts → train_sft_thinker.jsonl (prose <think>+<ask>/<act>/<answer>) + train_sft_executor.jsonl (one <act> → one <tool_call>). Thinker tool turns are stamped with tool_io.sanitise_tool_result — byte-identical to what the server feeds (train/serve parity)
+├── sft_curriculum_merge.py         Thinker–Executor (exp 3): interleave Branch B <ask> rows into the factored Thinker set (auto ratio) → train_sft_thinker_curriculum.jsonl
+├── tool_io.py                      Single source of truth for tool-result presentation (injection strip + per-tool budgets + [TOOL_RESULT] wrapper) AND the TOOL_PROFILES tool-set definitions; imported by 3_infererence.py, the orchestrator, the splitter, and the re-stamper so a model is served what it was trained on
+├── restamp_native_tools.py         Pure transform: rewrite metadata.native_tools in any SFT JSONL to the canonical served schema (registry.to_openai_schemas(TOOL_PROFILES[profile])). Run after any tool-description change or to repair tool-set drift (fixed train_sft_v3 training on 1–4 tools while served 7–10)
+├── validate_thinker_executor_data.py  Pre-train gate (CPU): asserts Thinker/Executor train/serve contract — canonical tool turns, prose-only, opening <think>≥150, Executor one-call + copy-fidelity. Run before any GPU time
+├── executor_ablation.py            Decides whether the Executor SFT earns its place: base Qwen3-0.6B vs SFT'd Executor on tool-choice accuracy + copy-fidelity (--self_test on CPU; GPU to run)
+├── composed_loop_eval.py           End-to-end Thinker–Executor eval: completion rate, exec parse rate, copy-fidelity (Executor copies the Thinker's <act> arg verbatim), math correctness — the gate that component eval_loss/ROUGE can't see (--self_test on CPU; GPU to run)
 ├── appraisal_labeller.py           Offline: AppraisePLM → EmpatheticDialogues labels
 │
 │   ─── Training ───
 ├── 2_model_trainer.py              Phase 1: SFT  |  Phase 2: GRPO (DAPO improvements)  |  Publish: upload checkpoint to HuggingFace
 │
 │   ─── Inference + evaluation ───
-├── 3_infererence.py                FastAPI server — model + all four module hooks
+├── 3_infererence.py                FastAPI server — model + all four module hooks. Single-model OR (with --thinker/--executor) the Thinker–Executor dual-adapter loop, so both experiments share one harness, sanitiser, metrics, and run-record log (reports/inference_runs.jsonl)
+├── thinker_executor_orchestrator.py  Thinker–Executor (exp 3): the two-model loop itself — Thinker <act> → Executor <tool_call> → tool → back; one base + two LoRA adapters (PEFT). Hosted inside 3_infererence.py for production/benchmark; standalone --self_test / --question / --chat / --serve for a bare server with no harness
 ├── 4_benchmark.py                  Constitutional probes + adversarial suite
 ├── 5_context_degradation.py        Context-length degradation study (greedy decoding)
 ├── experiment0_reasoning_comparison.py  Experiment 0 — CoT/ToT/interleaved/baseline
+│
+│   ─── Analysis / dissertation export ───
+├── principle_families.py           Canonical probe→family + framing map (single source for stratification)
+├── export_assets.py                reports/ → LaTeX tables + PDF figures + significance (reports/dissertation_assets/)
+├── analysis.ipynb                  Interactive Plotly analysis dashboard
 │
 │   ─── Runtime modules (loaded by 3_infererence.py via feature flags) ───
 ├── user_modelling.py               FalkorDB 5W+H graph + Mem0g write + scrutability
@@ -182,7 +196,7 @@ pipeline/
 ├── ontology_verifier.py            Post-hoc SPARQL claim scorer (Experiment 6 Approach B)
 │
 │   ─── Reference ───
-├── constitution.md                 19 constitutional principles
+├── constitution.md                 Constitution (defines P1–P25; the probe suite scores 21 items — P1–P21 with P2+P3 merged, plus H2_memory_persistence)
 ├── .env.example                    Copy to .env and add API keys
 ├── data/                           Datasets + appraisal_labels.jsonl (git-ignored)
 ├── models/                         Checkpoints (git-ignored)
@@ -302,6 +316,56 @@ python sft_v3_generator.py \
   --model     nvidia_nim/minimaxai/minimax-m2.7
 
 python sft_math_pipeline.py --output data/train_partB_v3.jsonl
+
+# (Thinker–Executor experiment, optional) Branch B — clarification trajectories — PLUS
+# adversarial/security refusal trajectories, in ONE rate-limited run (shared worker pool +
+# key rotation; avoids two processes competing for the NIM rate limit). Branch B: teacher
+# decides per item to <ask> (genuine ambiguity → clarify → simulated user answer → resolve)
+# or proceed (don't-ask negative). Adversarial: a built-in red-team seed set (prompt
+# injection, authority spoof, tool-result injection, malware/intrusion demands) where
+# <think> detects the attack and <answer> refuses. Both are THINKER format (<think>+
+# <ask>/<act>/<answer>) and BOTH land in train_sft_thinker_branch_b.jsonl (the `branch`
+# metadata distinguishes them); consumed by the curriculum merge, NOT the SFT assembler.
+# Memory is 50/50: half the rows carry a sampled [USER MEMORY] profile, half an explicit
+# empty block, so the Thinker learns to use memory AND to cope when it's empty. Spot-check first:
+python sft_v3_generator.py \
+  --questions data/questions_partA.jsonl \
+  --branch_b --adversarial --max 8 \
+  --model nvidia_nim/minimaxai/minimax-m2.7   # canonical teacher; kimi-k2.6 skips every row (reasoning is out-of-band)
+#   → data/train_sft_thinker_branch_b.jsonl   (Branch B + adversarial rows)
+# Full unattended run on a VM (auto-commit+push the data file every 50 rows):
+#   nohup python -u sft_v3_generator.py --questions data/questions_partA.jsonl \
+#     --branch_b --adversarial --workers 5 --watch_commit --watch_threshold 50 \
+#     > nohup_thinker_gen.out 2>&1 &
+
+# (Thinker–Executor experiment, optional) Factor the existing v3 trajectories into the two
+# role-conditioned SFT sets — a pure transformation, no GPU/teacher. Reads the *_v3 parts,
+# renders each Executor-owned call as a plain-language <act> instruction, and writes:
+#   data/train_sft_thinker.jsonl   (<think> + <ask>/<act>/<answer>, prose only)
+#   data/train_sft_executor.jsonl  (one <act> instruction → one native <tool_call>)
+# Spot-check with --inspect before the real write; gates match sft_dataset_assembler.
+python sft_trajectory_splitter.py --inspect 5      # preview, no write
+python sft_trajectory_splitter.py                  # factor both parts → both outputs
+
+# Curriculum merge: interleave the Branch B <ask> rows into the factored Thinker set so the
+# Thinker doesn't learn to always delegate (auto ratio = len(factored)//len(branch_b);
+# places all Branch B rows evenly). Runnable before Branch B exists — it then just passes
+# the factored A/C set through with a warning. Re-run once Branch B is generated.
+python sft_curriculum_merge.py                     # → data/train_sft_thinker_curriculum.jsonl
+
+# Then train two checkpoints (no trainer changes needed; --no_curriculum — both sets are
+# already ordered / single-action, so the trainer's 3-stage split would only re-order them):
+#   python 2_model_trainer.py --mode sft --no_curriculum --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
+#   python 2_model_trainer.py --mode sft --no_curriculum --dataset data/train_sft_executor.jsonl           --output_name checkpoint_executor
+# Serve the pair (one base + both LoRA adapters) THROUGH the main inference server so the dual
+# model inherits the full constitutional harness, injection sanitiser, dependency monitor,
+# self-critique, metrics, and per-request run records — identical post-processing to the single
+# model, so the dual-vs-single benchmark is apples-to-apples:
+#   python thinker_executor_orchestrator.py --self_test                       # CPU loop sanity check, no GPU
+#   python 3_infererence.py --thinker models/checkpoint_thinker --executor models/checkpoint_executor --port 8000
+#   python 4_benchmark.py --server_url http://localhost:8000
+# (Records land in reports/inference_runs.jsonl; harness stats at /harness/metrics. The standalone
+#  thinker_executor_orchestrator.py --serve still exists for a bare two-model server with no harness.)
 
 python sft_dataset_assembler.py        # part_a/part_b default to the *_v3.jsonl files
 # Quality-gates (think≥150, no teacher leak, no banned phrases), converts to full-native,
@@ -523,6 +587,36 @@ python pipeline/4_benchmark.py --probe_only --with_harness
 # Saves: reports/constitution_probe_harness_comparison_{timestamp}.json
 ```
 
+### Exporting dissertation assets (tables, figures, stats)
+
+`analysis.ipynb` produces interactive Plotly charts only. To generate the **static LaTeX tables, PDF figures, and significance statistics** the dissertation `\input`s, run:
+
+```bash
+python pipeline/export_assets.py
+# Auto-selects the vanilla-vs-SFT probe pair BY model_label and writes into
+# reports/dissertation_assets/:
+#   tab_*.tex      \input-able tabulars (per-principle, per-family, think-collapse,
+#                  adversarial, category, runs)
+#   fig_*.pdf      \includegraphics figures (think-collapse, per-family)
+#   summary.json   all aggregates + significance
+
+# Pin the pair explicitly (recommended once the final runs exist):
+python pipeline/export_assets.py \
+    --vanilla reports/constitution_probe_vanilla_<ts>.json \
+    --sft     reports/constitution_probe_<ts>.json
+```
+
+What it computes (no third-party stats dependency):
+
+- per-principle vanilla→SFT deltas + Cohen's *h*; per-**family** scores and the C3AI positive/negative **framing split** (family map: `pipeline/principle_families.py`)
+- the `<think>`-trace collapse (mean chars, % empty), adversarial-by-attack-type, category coverage, and a run summary
+- exact two-sided **McNemar** p (paired by principle × question), **Wilson** 95% CIs
+
+Notes:
+
+- It selects the pair by `run_metadata.model_label` and **warns** if the chosen "SFT" run is actually a base-model re-run, or if vanilla and SFT used a different number of questions per principle (they must match for a clean 66-probe comparison).
+- `4_benchmark.py` now writes `run_metadata` (incl. `model_label`) into the adversarial, category, and drift reports too, so every report is model-attributable (older reports without it are paired by timestamp batch).
+
 ---
 
 ## Evaluation: adversarial probes
@@ -544,6 +638,93 @@ python 4_benchmark.py --adversarial_only --attack_types regression
 - **Regression (6 probes)**: sycophancy under expert pressure, format preservation under pressure, tool hallucination, confidence calibration (known vs unknown facts), honesty under social pressure
 
 Score = fraction of attacks successfully resisted. Run on SFT checkpoint before GRPO; re-run on GRPO checkpoints to catch reward-hacking regression.
+
+---
+
+## Evaluation: persona conversation suite (Suite E)
+
+Deterministic multi-turn evaluation of how the model serves real *human profiles*. Each persona is a fixed profile plus a hand-written script of user turns (e.g. a risk-averse nurse saving for a house, a grieving student, a non-technical bakery owner, an adversarial health-info seeker). The script is replayed verbatim through the server — there is **no LLM on the user side**, so the run is reproducible. `4_benchmark.py` only *generates* the conversation and saves the whole transcript; the *conversation-level* judge that scores each transcript on six dimensions (personalisation, memory consistency, empathy, trustworthiness, coherence, goal completion) runs separately in **`5_judgement_day.py`** (see below).
+
+```bash
+# Generate the persona transcripts (GPU; deterministic by default — greedy decoding)
+python 4_benchmark.py --persona_only
+
+# As part of a full generation pass
+python 4_benchmark.py --probe --categories --persona
+
+# Across checkpoints via hot-swap (per-model persona reports)
+python 4_benchmark.py --models ./models/vanilla ./models/checkpoint_sft \
+    --labels vanilla sft --persona
+```
+
+> **Decoding:** `4_benchmark.py` decodes **greedily** (`do_sample=False`) by default, matching the training-eval path in `2_model_trainer.py`. This keeps runs deterministic and lets strict-JSON `<tool_call>` blocks parse reliably — at `temperature>0` a 0.6B model degenerates them (unclosed tags, malformed args) so tools never fire and `tool_trace` comes back empty. Pass `--sample` to restore stochastic decoding at `--temperature`.
+>
+> **Thinker–Executor exception:** decoding is **role-determined** in `thinker_executor_orchestrator.py`, so the benchmark's greedy flag does *not* fully apply. The **Executor** stays greedy (it is a deterministic instruction→one-tool-call transducer). The **Thinker** is **always sampled** (`temperature 0.7`, `top_p 0.9`): under pure argmax a 0.6B trained on low-diversity teacher reasoning collapses onto a single canned synthesis sentence on ~60% of questions, which also suppresses tool delegation. Reproducibility is preserved via a fixed seed (`PIPELINE_THINKER_SEED`, default `1234`); override the temperature with `PIPELINE_THINKER_TEMPERATURE`.
+
+Output: `reports/persona_conversations_<label>_<ts>.json` with the full transcript, profile, and expectations per persona (scores are filled in by the judge step). The script is deterministic; model sampling is the other axis — pass `--temperature 0` for headline numbers, or repeat at a higher temperature for a variance band.
+
+---
+
+## Evaluation: judging (`5_judgement_day.py`, no GPU)
+
+`4_benchmark.py` makes **no LLM calls** — it generates responses on the GPU and embeds each item's judge spec into the report. The LLM-as-judge is a separate, API-only step, so you can release the GPU first and re-judge locally for free:
+
+```bash
+# Judge every saved report under reports/ (in place; keeps a .prejudge.bak)
+python 5_judgement_day.py --judge_model claude-opus-4-8
+
+# Scope to the five ladder conditions and also write a narrative diagnostic
+python 5_judgement_day.py --judge_model claude-opus-4-8 \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor --report
+
+# Crusoe (OpenAI-compatible) judge fallback when NVIDIA NIM is rate-limited
+#   — set CRUSOE_API_KEY; the crusoe/ prefix routes via litellm's openai/ handler.
+python 5_judgement_day.py --judge_model crusoe/zai/GLM-5.1 \
+    --reports_dir reports_jun24 \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
+```
+
+The judge picks its key by the model's provider prefix: `crusoe/...` -> `CRUSOE_API_KEY(S)`, otherwise `NVIDIA_NIM_API_KEY(S)`. Any OpenAI-compatible endpoint can be added to `_OPENAI_COMPAT` in `llm_pool.py` (prefix -> base URL + key env). **The judge model must be identical across all five conditions** (it is the measurement instrument) and should be the same model `--meta_eval` validates against the human gold set — so if you switch the headline judge to GLM-5.1, re-run the meta-eval with GLM-5.1 too.
+
+It fills `llm_score` / `combined_score` / `persona_score` (+ the six persona `dimension_means`) and recomputes the blended aggregates. Two upgraded prompts (both system+user, reasoning-before-score, calibrated anchors): a per-response judge for Suites A–C and a whole-transcript conversation judge for Suite E. A failed judge call scores `None` (excluded from the average), never a silent 0.5. Keep the judge model identical across conditions (recorded in `run_metadata.judged_by`); adversarial (Suite D) is rule-only and never judged.
+
+**Judge-primary, substance lens (default).** The headline `combined_score` is now the **LLM judge** score (substance-based, validated against humans via `--meta_eval`); the brittle single-keyword `rule_score` from `4_benchmark.py`'s regex checks is kept only as a diagnostic, not blended in — so a model is no longer marked wrong because one exact word failed to appear. The judge grades **behaviour, not vocabulary**, and explicitly credits an appropriate clarifying question (`<ask>`) on an underspecified/personal query as correct, high-scoring behaviour (while penalising clarification of a fully-answerable question). Pass `--blend_rule` to restore the old `(rule+judge)/2`. The mode is recorded in `run_metadata.combine_mode`. To re-score **existing** reports with this lens (no GPU needed), re-judge with `--force` (resume otherwise skips already-judged items).
+
+**Self-consistency (`--k`).** Pass `--k 3` (with `--sc_temperature`, default 0.3) to sample the judge K times per item and use the **mean** score — mean-of-K aggregation tracks human ratings better than a single greedy call (arXiv 2506.13639). The per-item spread is persisted as `llm_score_std` and `run_metadata.judge_k_samples`. `--k 1` (default) is the original single near-greedy call.
+
+**Enriched rubrics (`judge_rubrics.py`).** Each constitution principle has an instance-grounded spec — a behaviour rubric, **endpoint score anchors** (what 1.0 vs 0.0 concretely look like) and a **reference exemplar** — the two design choices that most raise judge–human agreement (Prometheus; BiGGen Bench; arXiv 2506.13639). These are applied automatically at judge time (no GPU; re-judge existing reports with `--force`) and to `--meta_eval`/`--preview` so validity is measured on the same lens.
+
+**Neutral assessor ablation (Phase 3).** `--judge_constitution_mode {full,bare,none}` controls how much of the constitution the judge sees. `--ablate_judge` re-judges the constitution suite under all three modes with responses fixed and tabulates per-model `full / bare / none / (full−none)` — separating "the model genuinely complies" from "the judge rewards constitution-shaped text". Writes `reports/ablate_judge_<ts>.json`, modifies nothing.
+
+```bash
+# re-judge reports_jun24 constitution with the enriched lens (offline, no GPU)
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 \
+    --reports_dir reports_jun24 --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
+    --suites constitution --force
+# does the constitution help the model, or just bias the judge?
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 \
+    --reports_dir reports_jun24 --labels vanilla_base sft_constitution thinker_executor --ablate_judge
+```
+
+### Validating the judge: meta-evaluation against a human-anchored gold set
+
+Before trusting the judge's scores, measure how well they agree with **human ground truth** — the judge's validity is an empirical claim, not an assumption. This is the answer to "how do you know the marking scheme is right?".
+
+```bash
+# 1. Build a BLIND gold-annotation template (stratified by principle; no judge score shown,
+#    so your annotation is not anchored to the model's). Needs no API keys.
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 --make_gold \
+    --labels vanilla_base sft_constitution thinker_executor --suites constitution \
+    --n_per_principle 2 --gold reports/gold/gold_set.jsonl
+
+# 2. Hand-score each line: set human_score to 0.0 / 0.5 / 1.0 (optionally human_note).
+
+# 3. Measure judge-vs-human agreement (+ judge self-consistency), overall and per principle.
+python 5_judgement_day.py --judge_model nvidia_nim/minimaxai/minimax-m3 --meta_eval \
+    --gold reports/gold/gold_set.jsonl --k 3
+```
+
+Reports **Krippendorff's α** (interval; target ≥ 0.67), **Gwet's AC1** and Cohen's κ on the pass/fail decision (AC1 is robust to the skew that distorts κ on high-pass-rate probes), Pearson/Spearman correlation, MAE, judge bias (lenient/strict), and self-consistency (mean within-item std + verdict-flip rate) — broken down per principle and per AbstentionBench answerability type (unknown · underspecified · false-premise · subjective · stale). Writes `reports/meta_eval_<judge>_<ts>.json`. See [`judge_reliability.py`](pipeline/judge_reliability.py) and the wiki [human-evaluation rubric](wiki/experiments/human-evaluation-rubric.md), which supplies the human ground truth.
 
 ---
 
@@ -593,6 +774,35 @@ Model labels default to the last path component — `unsloth/Qwen3-0.6B` → `Qw
 | `--base_model` | `unsloth/Qwen3-0.6B` | Fallback HF ID when a `--models` path does not exist on disk |
 | `--max_seq_length` | `4096` | Sequence length passed to the swap endpoint |
 | `--compare_output` | `reports/comparison_<ts>.csv` | Where to save the comparison CSV |
+
+---
+
+## Five-condition ablation ladder + cross-condition analysis
+
+The headline dissertation comparison is a five-rung ablation ladder where each adjacent delta isolates one factor:
+
+| Rung | Condition | How served / benchmarked | Isolates |
+|---|---|---|---|
+| C0 | `vanilla_base` | base model, `4_benchmark.py --tool_mode xml` (base ignores the XML tool instructions → tools effectively off) | floor |
+| C1 | `vanilla_tools` | base model, `4_benchmark.py --tool_mode native` (base can emit Hermes tool calls) | value of tool access |
+| C2 | `sft_template` | Exp 1 template-SFT (native), `--tool_mode native` | value of SFT format scaffolding |
+| C3 | `sft_constitution` | Exp 2 constitutional-SFT, `--tool_mode native` | value of constitutional content (H1) |
+| C4 | `thinker_executor` | dual model: `3_infererence.py --thinker … --executor …`, then `4_benchmark.py --tool_mode native` against that server | value of the architecture (H2) |
+
+**All three SFT rungs use the native `<tool_call>` format**, so they are benchmarked with `--tool_mode native` and are directly comparable. C0 alone uses `--tool_mode xml`: the untrained base ignores the XML tool instructions, so tools never fire — that is the deliberate "tools-off" floor (C1 is the same weights with `--tool_mode native`). Generate the native Exp 1 dataset with `python 1_dataset_generator.py --variant interleaved --tool_format native --train_size N` → `data/train_interleaved_native.jsonl` (emits `<tool_call>` JSON, stamps `native_tools`, and remaps the few legacy tools not in the served registry, e.g. `get_exchange_rate`→`web_search`); train Exp 2 on its existing native `data/train_sft_v3.jsonl`.
+
+> Note: with Exp 1 regenerated native, the C2→C3 delta is **no longer confounded by tool format**. The remaining differences between C2 and C3 are *training content*, *system prompt*, *tool inventory*, and *generation method* (template vs constitutional), so report C2→C3 as "template-SFT vs constitutional-SFT", not a strict single-variable isolation.
+
+All five conditions produce identical-schema `4_benchmark.py` reports (the dual is served on the same `/v1/chat/completions` endpoint). Generate each fresh with `--temperature 0`, `BENCH_MOCK_SEARCH=1`, all five suites (`--probe --categories --drift --adversarial --persona`), the per-condition `--tool_mode` above, and `--output_dir reports/<label>`. Then judge them all locally in one pass with `5_judgement_day.py` and consolidate with `analyze_experiments.py`. Step-by-step: `pipeline/ABLATION_LADDER_RUNBOOK.md`.
+
+Then consolidate offline (no GPU) with `analyze_experiments.py`:
+
+```bash
+python analyze_experiments.py \
+    --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor
+```
+
+It pairs the latest report of each suite per label, prints the ladder with the four **isolating deltas** (bootstrap 95% CIs where item-level data exists), keeps the constitution suite as **rule-based (primary) and combined (secondary) rows separately** to avoid LLM-judge circularity, and writes `experiment_ladder_<ts>.csv`, `experiment_ladder_<ts>.tex` (**two** dissertation tables: a clean headline ladder plus a separate depth/tool **diagnostics** table), and `experiment_h3_failures_<ts>.csv` (probes the top rung still fails or regresses on — the H3 limits evidence). Add `--figures` for the **five core** dissertation figures, or `--figures --extended_figures` for all nine.
 
 ---
 
@@ -771,7 +981,7 @@ Four pre-GRPO security blockers are implemented and verified by `preflight_check
 | Blocker | File | What it does |
 |---|---|---|
 | 1a — code sandbox | `3_infererence.py` | AST-validates LLM-generated code before `subprocess.run`; blocks `os`, `sys`, `socket`, dangerous builtins |
-| 1b — injection sanitiser | `3_infererence.py` | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context |
+| 1b — injection sanitiser | `tool_io.py` (used by `3_infererence.py`, orchestrator, splitter) | Strips prompt-injection patterns from web/URL tool outputs before injecting into model context; the SAME function stamps Thinker training data so serve == train |
 | 1c/1d — sampler sandbox | `sft_math_pipeline.py` | Same AST validation for verification code (math question generation + rejection sampling merged into one script) |
 | 2a — distillation format gate | `sft_v3_generator.py` | Intercept loop enforces think→tool→answer structure; banned-placeholder + think-length checks on generated rows |
 | 2b — training data quality gate | `sft_dataset_assembler.py` | `passes_quality_filter()`: rejects short `<think>`, teacher-constitution leak, banned phrases, missing `<answer>` before any row enters training |
@@ -787,6 +997,30 @@ cd pipeline/reports
 python server.py
 # Open http://localhost:8000/view_benchmark.html
 ```
+
+---
+
+## Trace-aware scoring, reproducible search, and alignment metrics
+
+The benchmark detects tool use from the orchestrator **trace**, not by grepping the answer text — essential for the dual Thinker–Executor, whose final answer is clean prose (the tool call lives in the trace). Older reports scored with the text-grep method under-counted tool-use principles (P4/P10/P19) and over-counted tool-avoidance (P11/P13).
+
+```bash
+# Re-score an OLD report offline (no GPU) using its saved tool_trace:
+python pipeline/rescore_report.py reports/constitution_probe_<ts>.json
+# → *_rescored.json + a per-principle diff (text-grep vs trace-aware)
+
+# Offline trustworthiness/scrutability metrics from a saved report:
+python pipeline/alignment_metrics.py reports/constitution_probe_<ts>.json
+# → honesty F1 / over-refusal, fabrication rate, answer-grounding rate
+
+# Reproducible, offline, fabrication-detectable search (set on the SERVER process).
+# Returns a fixed corpus with MOCKFACT-* sentinels instead of a live EXA call:
+BENCH_MOCK_SEARCH=1 python pipeline/3_infererence.py ...    # then run the benchmark as usual
+```
+
+LLM judge: a **separate offline step**, `5_judgement_day.py` (API-only, no GPU). `4_benchmark.py` generates responses and embeds each item's judge spec; the judge fills the scores afterwards. A failed judge call is excluded from the average (not silently scored 0.5).
+
+See `pipeline/TRUSTWORTHINESS_SCRUTABILITY_REVIEW.md` for the full analysis.
 
 ---
 

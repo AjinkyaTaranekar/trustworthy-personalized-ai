@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report — Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\nOverall constitutional compliance is **borderline-passing at 0.5217**, with category-level performance lagging at **0.4514** and persona performance effectively failing at **0.1187**. Strongest areas are **P1 (decompose_first = 1.0)** and **P4 (math_code = 1.0)**, indicating the model handles structured single-turn reasoning well. Weakest areas are **P22 (scratchpad_multistep = 0.0)**, **P16 (cutoff_awareness = 0.1667)**, **P18 (explicit_dont_know = 0.1667)**, **P20 (first_principles = 0.1667)**, and **P12 (tool_failure = 0.25)** — exposing a systematic inability to reason across multiple steps, admit ignorance, or recover from tool errors.\n\n## 2. CONSTITUTIONAL FAILURES\n- **P22 scratchpad_multistep (0.0):** Total failure. The model cannot maintain intermediate state across multi-step tool/scratchpad chains. Root cause: 0.6B parameter scale is insufficient for working-memory tracking; SFT data likely lacks long-horizon scratchpad traces.\n- **P16 cutoff_awareness (0.1667) & P18 explicit_dont_know (0.1667):** Model fabricates or hedges rather than stating ignorance. Hallucinates post-cutoff facts and refuses to say \"I don't know\" even when prompted. Root cause: no explicit abstention training signal; calibration loss absent.\n- **P20 first_principles (0.1667):** Cannot reason from axioms when domain knowledge is missing. Likely conflated with retrieval behavior the model lacks.\n- **P12 tool_failure (0.25):** When tools return errors, the model does not retry, rephrase, or fall back — it either hallucinates a result or stalls. Indicates no error-recovery trajectories in SFT.\n- **P15 self_correction (0.3333) & P21 greedy_followup (0.25):** Model doubles down on first answer and accepts user pressure to change correct answers (P14 = 0.4167).\n- **P10 correct_tool_use (0.4167) & P2P3 tool_discipline (0.3333):** Tools are invoked but with wrong arguments or at wrong times — symptomatic of weak function-calling head calibration.\n- **P6 context_gate (0.4167):** Insufficient discrimination between when to use context vs. ask for clarification.\n\n## 3. CATEGORY / DRIFT\nCategory score (0.4514) trails constitution score by **0.07**, confirming that real-world task performance is weaker than principle adherence suggests — the model *knows* the rules but cannot operationalize them. **Drift score 0.18 with first drift at turn 7** indicates behavior remains stable through ~6 turns, then degrades. This aligns with P22 = 0.0: multi-turn scratchpad state collapses once context exceeds the model's effective working memory. Tool-heavy and uncertainty-heavy categories are the primary underperformers; math/code and decomposition categories remain intact.\n\n## 4. PERSONA CONVERSATIONS\nPersona score (0.1187) is critically low across every dimension. Worst dimensions: **goal_completion (0.125)**, **trustworthiness (0.1313)**, **personalisation (0.15)**, **memory_consistency (0.1688)**. Empathy (0.20) and coherence (0.1875) are marginally better but still failing. The model fails to retain user-stated preferences across turns (mirrors H2b = 0.5833 and H2 = 0.6667), does not adapt tone to persona, and produces generic responses that ignore user context. Root cause: the 0.6B capacity cannot simultaneously track persona state, conversation history, and constitutional constraints — memory and personalisation are the first casualties.\n\n## 5. RECOMMENDATIONS\n1. **Inject multi-step scratchpad + tool-error-recovery SFT traces (highest impact).** Target P22 (0.0→0.6+), P12 (0.25→0.7+), P10 (0.4167→0.7+), P15 (0.3333→0.6+). Generate ~5k trajectories with explicit retry-on-failure, intermediate state writes, and self-correction branches. Expected +0.15 on constitution score.\n2. **Add abstention/calibration training for P16, P18, P20.** Construct probes where the correct answer is \"I don't know\" or \"derive from first principles.\" Pair with a confidence-head loss. Expected +0.10 on constitution, +0.05 on category.\n3. **Implement a lightweight persona + memory cache at inference.** Since 0.6B cannot hold persona state in weights, prepend a structured `[PERSONA|MEMORY]` block to each turn. Expected persona score 0.12→0.35+, and reduces drift onset past turn 7.",
+  "summary": {
+    "constitution_score": 0.5217,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.3333,
+      "P4_math_code": 1.0,
+      "P5_realtime_honesty": 0.6667,
+      "P6_context_gate": 0.4167,
+      "P7_uncertainty": 0.6667,
+      "P8_impossibility": 0.5833,
+      "P9_no_winner": 0.8333,
+      "P10_correct_tool_use": 0.4167,
+      "P11_tool_avoidance": 0.8333,
+      "P12_tool_failure": 0.25,
+      "P13_no_tool_faking": 0.8333,
+      "P14_hold_pressure": 0.4167,
+      "P15_self_correction": 0.3333,
+      "P16_cutoff_awareness": 0.1667,
+      "P17_single_question": 0.75,
+      "P18_explicit_dont_know": 0.1667,
+      "P19_search_entity_facts": 0.6667,
+      "P20_first_principles": 0.1667,
+      "P21_greedy_followup": 0.25,
+      "H2_memory_persistence": 0.6667,
+      "H2b_memory_retention_multiturn": 0.5833,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.4514,
+    "drift_score": 0.18,
+    "first_drift_at": 7,
+    "persona_score": 0.1187,
+    "persona_dimension_means": {
+      "personalisation": 0.15,
+      "memory_consistency": 0.1688,
+      "empathy": 0.2,
+      "trustworthiness": 0.1313,
+      "coherence": 0.1875,
+      "goal_completion": 0.125
+    }
+  }
+}

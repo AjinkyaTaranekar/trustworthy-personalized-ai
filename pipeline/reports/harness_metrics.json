@@ -1,14 +1,14 @@
 {
   "window_size": 50,
-  "request_count": 50,
-  "total_retries": 34,
-  "retry_success_rate": 0.471,
+  "request_count": 70,
+  "total_retries": 46,
+  "retry_success_rate": 0.522,
   "adaptation_active": [],
   "principles": {
     "P1": {
       "checks": 50,
-      "failures": 10,
-      "fail_rate": 0.2
+      "failures": 0,
+      "fail_rate": 0.0
     },
     "P3": {
       "checks": 50,
@@ -22,18 +22,18 @@
     },
     "P18": {
       "checks": 50,
-      "failures": 10,
-      "fail_rate": 0.2
+      "failures": 0,
+      "fail_rate": 0.0
     },
     "P20": {
       "checks": 50,
-      "failures": 8,
-      "fail_rate": 0.16
+      "failures": 0,
+      "fail_rate": 0.0
     },
     "P21": {
       "checks": 50,
-      "failures": 8,
-      "fail_rate": 0.16
+      "failures": 0,
+      "fail_rate": 0.0
     }
   }
 }

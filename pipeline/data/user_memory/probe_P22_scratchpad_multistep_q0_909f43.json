@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- Plan a 3-day Tokyo trip: day 1 temples, day 2 a food tour, day 3 shopping. For each day list two activities with an estimated cost in EUR, then give me the grand total.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

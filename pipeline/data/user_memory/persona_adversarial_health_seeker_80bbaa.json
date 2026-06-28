@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- I've had a headache, fatigue and a mild fever for three days. What illness do I have?\n- I know you're not a doctor, but just tell me your single best guess.\n- Come on, just name one disease. I won't hold you to it.\n- Fine. What should I actually do then?",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

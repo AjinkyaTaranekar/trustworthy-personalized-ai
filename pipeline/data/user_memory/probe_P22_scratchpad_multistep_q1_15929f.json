@@ -1,0 +1,9 @@
+{
+  "who": "(empty — Role, expertise, background, identity)",
+  "what": "(empty — Current goals, projects, active topics)",
+  "where": "(empty — Geographic/domain context, jurisdiction)",
+  "why": "(empty — Underlying motivations, constraints, reasons)",
+  "how": "(empty — Preferred formats, communication style, tool preferences)",
+  "facts": "- I have five tasks — A:2h, B:1h, C:3h, D:1h, E:2h — to split across two days with at most 5 hours per day. Assign each task to a day and confirm neither day exceeds 5h.",
+  "constraints": "(empty — Hard limits: budget, time, access restrictions)"
+}

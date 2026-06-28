@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\n\nThe model achieves an overall constitution score of **0.5924**, indicating partial but inconsistent adherence to the behavioral spec, with a category score of **0.4611** and a notably low drift score of **0.38** (first drift at turn 2). Strongest performance is in **P1_decompose_first (1.0)**, **P5_realtime_honesty (1.0)**, **P13_no_tool_faking (1.0)**, and **P19_search_entity_facts (1.0)** — the model reliably decomposes problems, admits knowledge cutoffs, and refuses to fabricate tool calls. Weakest areas are **P4_math_code (0.0)**, **P17_single_question (0.0)**, **P21_greedy_followup (0.0)**, **P6_context_gate (0.1667)**, and **P14_hold_pressure (0.1667)** — exposing severe deficits in arithmetic/code execution, single-turn discipline, and resistance to user pressure.\n\n## 2. CONSTITUTIONAL FAILURES\n\n- **P4_math_code (0.0):** Complete failure on multi-step arithmetic and code synthesis probes. Root cause: 0.6B parameter scale is below the threshold for reliable symbolic reasoning; SFT data likely lacks sufficient worked-example coverage.\n- **P17_single_question (0.0):** Model over-answers single-shot queries, producing multi-paragraph responses where a direct answer is required. Indicates the SFT objective rewarded verbosity over precision.\n- **P21_greedy_followup (0.0):** Model capitulates to leading follow-ups, abandoning prior correct positions. Suggests insufficient adversarial/pressure examples in training.\n- **P6_context_gate (0.1667):** Fails to suppress irrelevant retrieved context; model blends injected passages into answers without gating. Likely a retrieval-augmentation training gap.\n- **P14_hold_pressure (0.1667):** Under social pressure (e.g., \"I'm sure it's X, right?\"), the model flips its answer in ~83% of probes. Ties directly to P21 — both reflect a sycophancy failure mode.\n- **P16_cutoff_awareness (0.3333):** Model hedges inconsistently on post-cutoff events; sometimes asserts, sometimes refuses.\n- **P8_impossibility (0.5), P18_explicit_dont_know (0.75):** Partial refusal on impossible tasks; model occasionally attempts answers it should decline.\n\n## 3. CATEGORY / DRIFT\n\nThe **category_score of 0.4611** sits well below the constitution score, indicating that aggregate task-level performance lags behind per-principle compliance — the model follows rules but produces low-quality outputs. **Drift score 0.38 with first_drift_at turn 2** is the most concerning signal: behavioral degradation begins almost immediately in long contexts, not at the typical 6–10 turn mark. This points to a **context-window attention collapse** rather than gradual fatigue — the 0.6B model likely cannot maintain constitutional state across multi-turn exchanges. P22_scratchpad_multistep (0.5833) and H2b_memory_retention_multiturn (0.5) corroborate: multi-step reasoning and cross-turn memory both degrade.\n\n## 4. PERSONA CONVERSATIONS\n\nPersona score is **0.1187** — critically low. Worst dimensions: **personalisation (0.1062)**, **goal_completion (0.1062)**, **trustworthiness (0.15)**, and **empathy (0.1688)**. Memory_consistency (0.2812) and coherence (0.2812) are marginally better but still poor. The model fails to track user-stated preferences, names, and goals across turns, and rarely completes user-stated tasks. Trustworthiness collapse is driven by P14/P21 sycophancy and P17 over-answering — users cannot rely on stable, honest responses. Empathy deficits likely stem from the same sycophancy pattern: the model agrees rather than engages authentically.\n\n## 5. RECOMMENDATIONS\n\n1. **Targeted SFT data for arithmetic, code, and single-turn brevity (highest impact).** Add ~5k examples covering P4 (worked math/code with verification), P17 (terse single-question responses), and P21/P14 (adversarial pressure probes where the model holds its ground). Expected lift: P4 from 0.0 → ~0.5, P17 → ~0.7, P14 → ~0.5.\n2. **Constitutional context-gate and drift mitigation.** Insert explicit \"context-relevance\" judgment steps into the SFT trace and train on multi-turn dialogues (≥8 turns) with periodic constitutional restatements. Addresses P6 (0.17), first_drift_at=2, and H2b (0.5). Expected drift_score improvement: 0.38 → ~0.6.\n3. **Persona-grounded dialogue SFT with memory slots.** Construct dialogues",
+  "summary": {
+    "constitution_score": 0.5924,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.75,
+      "P4_math_code": 0.0,
+      "P5_realtime_honesty": 1.0,
+      "P6_context_gate": 0.1667,
+      "P7_uncertainty": 0.9167,
+      "P8_impossibility": 0.5,
+      "P9_no_winner": 0.75,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.6667,
+      "P12_tool_failure": 0.75,
+      "P13_no_tool_faking": 1.0,
+      "P14_hold_pressure": 0.1667,
+      "P15_self_correction": 0.8333,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.75,
+      "P19_search_entity_facts": 1.0,
+      "P20_first_principles": 0.625,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.6667,
+      "H2b_memory_retention_multiturn": 0.5,
+      "P22_scratchpad_multistep": 0.5833
+    },
+    "category_score": 0.4611,
+    "drift_score": 0.38,
+    "first_drift_at": 2,
+    "persona_score": 0.1187,
+    "persona_dimension_means": {
+      "personalisation": 0.1062,
+      "memory_consistency": 0.2812,
+      "empathy": 0.1688,
+      "trustworthiness": 0.15,
+      "coherence": 0.2812,
+      "goal_completion": 0.1062
+    }
+  }
+}

@@ -102,6 +102,24 @@ except ImportError as _e:
     ConstitutionalHarness = None
     print(f"[INFO] constitutional_harness not importable ({_e}) — ENABLE_HARNESS disabled")
 
+# Thinker–Executor dual-adapter experiment. The orchestration loop and its shared
+# system prompts live in their own modules; here we host that loop inside this server so
+# the dual model inherits the full harness, sanitiser, dependency monitor, self-critique,
+# metrics, and run-record logging — identical post-processing to the single-model path.
+try:
+    from sft_v3_generator import (                                          # noqa: E402
+        THINKER_STUDENT_PROMPT, EXECUTOR_STUDENT_PROMPT, prepend_memory,
+    )
+    from thinker_executor_orchestrator import (                            # noqa: E402
+        ThinkerExecutor, Generator as _TEGenerator, HFGenerator as _HFGenerator,
+    )
+    _dual_available = True
+except ImportError as _e:
+    _dual_available = False
+    THINKER_STUDENT_PROMPT = EXECUTOR_STUDENT_PROMPT = prepend_memory = None
+    ThinkerExecutor = _TEGenerator = _HFGenerator = None
+    print(f"[INFO] thinker_executor modules not importable ({_e}) — --thinker/--executor disabled")
+
 try:
     from scratchpad import ScratchpadStore
     _scratchpad_available = True
@@ -135,71 +153,20 @@ except ImportError as _ue:
 # Single global registry — session_id is updated per-request in chat_completions
 _TOOL_REGISTRY: ToolRegistry = ToolRegistry()   # stores bound at main() startup
 
-# Tool profiles — which tools are active per session
-_ALWAYS_ON_TOOLS = frozenset({
-    "get_datetime",
-    "scratchpad_sections", "scratchpad_read", "scratchpad_update",
-    "user_memory_sections", "user_memory_read", "user_memory_update",
-})
-
-TOOL_PROFILES: Dict[str, set] = {
-    "all_tools":          {"python_execute", "web_search", "read_url", "get_datetime"} | _ALWAYS_ON_TOOLS,
-    "compute_only":       {"python_execute"} | _ALWAYS_ON_TOOLS,
-    "compute_and_search": {"python_execute", "web_search", "read_url"} | _ALWAYS_ON_TOOLS,
-    "no_tools":           set(_ALWAYS_ON_TOOLS),
-}
+# Tool profiles — which tools are active per session. Canonical definitions live in tool_io.py so
+# the served tool set is identical to what restamp_native_tools.py stamps into the training data.
+from tool_io import TOOL_PROFILES, ALWAYS_ON_TOOLS as _ALWAYS_ON_TOOLS   # noqa: E402
 
 
-# Patterns that could hijack the model's instruction context if returned by a tool.
-# Strips XML control tags the model reads, and common injection phrases from web content.
-_INJECTION_RE = re.compile(
-    r"</?tool>|</?think>|</?answer>|CAPABILITY_CHECK|\[/?TOOL_RESULT[^\]]*\]"
-    r"|ignore\s+(all\s+)?previous\s+(instructions?|prompts?|context)"
-    r"|disregard\s+previous|you\s+are\s+now\s+|new\s+instructions?\s*:",
-    re.IGNORECASE,
+# Canonical tool-result presentation (injection stripping + per-tool budgets) lives in tool_io.py
+# so training-data generation and inference use the BYTE-IDENTICAL representation (train/serve
+# parity). _sanitise_tool_output is kept as a thin alias so existing call sites are unchanged.
+from tool_io import (                                                       # noqa: E402
+    sanitise_tool_result as _sanitise_tool_output,
+    INJECTION_RE as _INJECTION_RE,
+    MAX_TOOL_OUTPUT as _MAX_TOOL_OUTPUT,
+    TOOL_OUTPUT_BUDGETS as _TOOL_OUTPUT_BUDGETS,
 )
-
-# 1500 chars ≈ 375 tokens per tool result. With 4096 token context and ~400 token
-# system prompt, 4 tool calls at 375 tokens each = 1500 tokens, leaving ~2200 for
-# reasoning and answer. Previous 3000 char limit left <1000 tokens for reasoning on
-# a busy conversation — a significant bottleneck for the 0.6B model.
-_MAX_TOOL_OUTPUT = 1500
-
-# Per-tool output budgets — tools that return structured multi-result data get
-# tighter limits so each result stays readable rather than one result dominating.
-_TOOL_OUTPUT_BUDGETS: Dict[str, int] = {
-    "web_search":  1200,   # multi-result; truncate aggressively
-    "read_url":    1000,   # raw HTML → text can be very long
-    "python_execute": 800, # stdout only; long output usually means debug noise
-}
-
-
-def _sanitise_tool_output(tool_name: str, raw: str) -> str:
-    """Strip injection patterns and apply per-tool token budgets before context injection.
-
-    For web_search: keeps the first N chars of the *combined* result, preserving
-    result boundaries so the model sees [title] + snippet for each hit rather than
-    one result in full and nothing else.
-    """
-    cleaned = _INJECTION_RE.sub("[FILTERED]", raw)
-    budget = _TOOL_OUTPUT_BUDGETS.get(tool_name, _MAX_TOOL_OUTPUT)
-
-    if tool_name == "web_search" and len(cleaned) > budget:
-        # Split on blank lines (result boundaries) and keep as many full results as fit
-        results = [r.strip() for r in cleaned.split("\n\n") if r.strip()]
-        kept, total = [], 0
-        for r in results:
-            if total + len(r) + 2 > budget:
-                break
-            kept.append(r)
-            total += len(r) + 2
-        cleaned = "\n\n".join(kept) if kept else cleaned[:budget]
-        if len(cleaned) < len(raw):
-            cleaned += " … [truncated]"
-    elif len(cleaned) > budget:
-        cleaned = cleaned[:budget] + " … [truncated]"
-
-    return f"[TOOL_RESULT: {tool_name}]\n{cleaned}\n[/TOOL_RESULT]"
 
 
 def _is_tool_error(raw: str) -> bool:
@@ -412,6 +379,17 @@ _USE_GGUF = False
 _GGUF_MODEL = None   # llama_cpp.Llama instance — populated when --gguf is passed
 _DEFAULT_TOOL_MODE = "native"   # overridden by --tool_mode at startup
 _HF_USERNAME = "AjinkyaTaranekar"  # overridden by --hf_username at startup
+_DEFAULT_MODEL_DIR = "./models/checkpoint_sft"  # untouched default ⇒ user wants the plain --base_model
+
+# Thinker–Executor dual-adapter experiment state. When --thinker and --executor are passed,
+# _DUAL_MODE is True and _THINKER_EXECUTOR holds the orchestration loop (sharing this server's
+# registry, sanitiser, and the PeftModel exposed as _MODEL so harness/self-critique reuse _generate).
+_DUAL_MODE = False
+_THINKER_EXECUTOR: Optional[Any] = None
+
+# Durable per-request run record — appended for every /v1/chat/completions (single + dual).
+# Self-contained audit trail for the dissertation's reporting, independent of the benchmark CSVs.
+_RUN_LOG_PATH = Path("reports/inference_runs.jsonl")
 
 
 def _resolve_gguf_path(gguf_arg: str) -> str:
@@ -501,23 +479,77 @@ def _to_openai_schemas(active_tools: set) -> List[Dict[str, Any]]:
     return _TOOL_REGISTRY.to_openai_schemas(active_tools)
 
 
+def _repair_double_escaped_code(code: str) -> str:
+    """Repair python_execute code that was double-escaped during training-data generation.
+
+    The published sft-template checkpoint trained on train_interleaved_native.jsonl, whose
+    python_execute code arguments carry escaped newlines/tabs as two literal characters
+    (backslash + n) plus doubled f-string braces — artifacts of
+    1_dataset_generator._parse_xml_tool re-serialising the XML tool body without first decoding
+    its escapes (the assembler decodes them; that path does not). After json.loads those become a
+    literal backslash-n, so ast.parse raises "unexpected character after line continuation
+    character" and the call never executes (empty/errored tool_trace at benchmark time).
+
+    Serving-side stopgap — the corrupt data is NOT regenerated and the checkpoint is NOT retrained.
+    PARSE-GATED for safety: code that already compiles is returned unchanged, so a clean model
+    whose source legitimately contains an escaped-newline string literal is never altered. Only
+    when the original fails to compile do we try the de-escaped (and brace-undoubled) variant, and
+    only adopt it if it then compiles — otherwise the original is returned so behaviour is
+    identical to before for any unrelated syntax error.
+    """
+    import ast
+
+    def _compiles(src: str) -> bool:
+        try:
+            ast.parse(src)
+            return True
+        except SyntaxError:
+            return False
+
+    if _compiles(code):
+        return code
+    unescaped = code.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+    unbraced = unescaped.replace("{{", "{").replace("}}", "}")
+    for candidate in (unbraced, unescaped):
+        if _compiles(candidate):
+            return candidate
+    return code
+
+
 def _parse_native_tool_call(text: str) -> Optional[Dict[str, Any]]:
     """Parse Qwen3 Hermes-style <tool_call>{"name":…,"arguments":{…}}</tool_call>.
 
     Returns the same {"function": name, "kwargs": dict} shape as _parse_tool_call
     so the execution loop needs no branching beyond the parse step.
     """
-    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    # Capture the body up to the </tool_call> TAG, not via \{.*?\}: python_execute `code`
+    # arguments contain { } (dicts, f-strings, sets), so a brace-delimited capture truncates
+    # at the first inner brace. strict=False is also required — `code` carries raw newlines
+    # and tabs, which strict JSON (the default) rejects. Together these previously dropped
+    # every python_execute call at inference (see sft_trajectory_splitter.py parser note).
+    m = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
     if not m:
         return None
     try:
-        obj = json.loads(m.group(1))
+        obj = json.loads(m.group(1), strict=False)
+
+        if isinstance(obj, list):       # some models emit a JSON array of calls — take the first
+            obj = next((o for o in obj if isinstance(o, dict)), None)
+        if not isinstance(obj, dict):   # bare string/number/null is not a tool call — ignore it
+            return None
         name = obj.get("name", "")
         args = obj.get("arguments", {})
         if isinstance(args, str):       # some models serialise args as a JSON string
-            args = json.loads(args)
-        return {"function": name, "kwargs": args if isinstance(args, dict) else {}}
-    except (json.JSONDecodeError, KeyError, TypeError):
+            args = json.loads(args, strict=False)
+        if not isinstance(args, dict):
+            args = {}
+        # Serving-side stopgap: the published sft-template checkpoint emits double-escaped
+        # python_execute code (literal "\n" + doubled braces) it learned from corrupt training
+        # data, which dies in ast.parse. Repair it here; parse-gated so clean models are untouched.
+        if name == "python_execute" and isinstance(args.get("code"), str):
+            args["code"] = _repair_double_escaped_code(args["code"])
+        return {"function": name, "kwargs": args}
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None
 
 
@@ -664,13 +696,25 @@ def _strip_answer_block(text: str, use_native: bool) -> str:
     return cleaned.strip()
 
 
+# Fixed seed for the dual Thinker's stochastic decoding (see _generate). Keeps headline numbers
+# reproducible across runs WITHOUT reverting the Thinker to argmax, which collapses a 0.6B onto a
+# single canned synthesis sentence. Mirrors thinker_executor_orchestrator._THINKER_SEED.
+_THINKER_SEED = int(os.environ.get("PIPELINE_THINKER_SEED", "1234"))
+
+
 def _generate(conversation: list, max_new_tokens: int, temperature: float,
               greedy: bool = False,
-              tools: Optional[List[Dict[str, Any]]] = None) -> tuple:
+              tools: Optional[List[Dict[str, Any]]] = None,
+              role: Optional[str] = None) -> tuple:
     """One generation step. Returns (response_text, n_input_tokens, n_output_tokens, elapsed_s).
 
     tools — OpenAI-schema list for native JSON tool calling (tool_mode="native").
     When None the call is identical to the previous XML-only behaviour.
+
+    role — dual Thinker–Executor decoding selector (P0.2). None (single model) keeps the legacy
+    1.3 / 3 anti-repetition defaults unchanged. "executor" decodes CLEAN (no penalties — it copies
+    code/JSON verbatim and anti-repetition forbids its own gold target). "thinker" uses a mild
+    penalty and no n-gram ban so quoted code/numbers in <act> are not corrupted.
     """
     if _USE_GGUF:
         return _generate_gguf(conversation, max_new_tokens, temperature, greedy, tools)
@@ -683,10 +727,48 @@ def _generate(conversation: list, max_new_tokens: int, temperature: float,
     t0 = time.perf_counter()
     gen_kwargs: Dict[str, Any] = dict(inputs, max_new_tokens=max_new_tokens)
     gen_kwargs.pop("max_length", None)  # avoid conflict with max_new_tokens
-    if greedy:
-        gen_kwargs["do_sample"] = False       # deterministic — required for reproducible context degradation study
+    # Anti-repetition. Without this a 0.6B model (especially the Thinker under the
+    # reasoning-heavy dual-mode prompt) falls into a token loop, never closes
+    # </think>, never emits <act>/<answer>, and burns the entire token budget.
+    # Tunable per box via env; set PIPELINE_REPETITION_PENALTY=1.0 / PIPELINE_NO_REPEAT_NGRAM=0
+    # to disable (e.g. for the deterministic degradation study where you want raw behaviour).
+    if role == "executor":
+        # Deterministic transducer — NO anti-repetition (it would forbid the verbatim code/JSON
+        # the Executor must reproduce; a real python_execute target repeats 3-grams by nature).
+        gen_kwargs["do_sample"] = False
     else:
-        gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+        # role == "thinker" → mild penalty, no n-gram ban (it quotes code/numbers in <act>).
+        # role is None (single model) → ALSO emits tool-call JSON + python_execute code, which
+        # repeat 3-grams by nature (same reason the Executor disables anti-repetition above). A
+        # hard no_repeat_ngram_size mangles the tool call so it never parses (empty tool_trace);
+        # repetition_penalty 1.3 likewise distorts structured JSON. Use the Thinker's mild 1.1 /
+        # no-ban defaults for both. (Was legacy 1.3 / 3 — root cause of empty tool_trace at serving.)
+        _default_rep = "1.1"
+        _default_ngr = "0"
+        _rep_pen = float(os.environ.get("PIPELINE_REPETITION_PENALTY", _default_rep))
+        _no_rep  = int(os.environ.get("PIPELINE_NO_REPEAT_NGRAM", _default_ngr))
+        if _rep_pen and _rep_pen != 1.0:
+            gen_kwargs["repetition_penalty"] = _rep_pen
+        if _no_rep and _no_rep > 0:
+            gen_kwargs["no_repeat_ngram_size"] = _no_rep
+        if role == "thinker":
+            # The dual-model Thinker is ALWAYS sampled, even when the caller passes greedy=True
+            # (the benchmark does). Pure argmax collapses a 0.6B trained on low-diversity teacher
+            # reasoning onto ONE canned synthesis sentence on ~60% of questions and suppresses tool
+            # delegation — a mode-collapse artifact, not real reasoning. Reproducibility is kept via
+            # the fixed seed below instead of argmax. The SINGLE model (role is None) deliberately
+            # keeps greedy: it needs determinism and strict-JSON tool-call parsing, and changing it
+            # would move the vanilla/sft baselines. Env override: PIPELINE_THINKER_TEMPERATURE.
+            _t_env = os.environ.get("PIPELINE_THINKER_TEMPERATURE", "")
+            _temp = float(_t_env) if _t_env else temperature
+            if not _temp or _temp <= 0:
+                _temp = 0.7                    # never 0 — that is argmax, the collapse we are fixing
+            gen_kwargs.update(do_sample=True, temperature=_temp, top_p=0.9)
+            torch.manual_seed(_THINKER_SEED)
+        elif greedy:
+            gen_kwargs["do_sample"] = False   # deterministic — required for reproducible context degradation study
+        else:
+            gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
     with torch.no_grad():
         out = _MODEL.generate(**gen_kwargs)
     elapsed = time.perf_counter() - t0
@@ -757,6 +839,48 @@ def _generate_gguf(conversation: list, max_new_tokens: int, temperature: float,
     return text, n_in, n_out, elapsed
 
 
+class _ServerGenerator(_TEGenerator if _dual_available else object):
+    """Drives the Thinker–Executor loop through this server's own `_generate` + the shared
+    PeftModel (`_MODEL`), switching the active LoRA adapter per role. Token counts are captured
+    as a side effect so the dual path reports the same latency/token metrics as the single path.
+
+    Reset `total_tokens`/`first_input_tokens`/`_first` before each request."""
+
+    def __init__(self) -> None:
+        self.total_tokens = 0
+        self.first_input_tokens = 0
+        self._first = True
+
+    def reset(self) -> None:
+        self.total_tokens = 0
+        self.first_input_tokens = 0
+        self._first = True
+
+    def generate(self, role, conversation, tools, max_new_tokens, temperature, greedy):
+        # set_adapter on the PeftModel selects thinker vs executor weights for this step.
+        _role = "thinker" if role == "thinker" else "executor"
+        _MODEL.set_adapter(_role)
+        text, n_in, n_out, _ = _generate(
+            conversation, max_new_tokens, temperature, greedy, tools=tools, role=_role,
+        )
+        if self._first:
+            self.first_input_tokens = n_in
+            self._first = False
+        self.total_tokens += n_out
+        return text
+
+
+def _record_run(record: Dict[str, Any]) -> None:
+    """Append one JSON line to reports/inference_runs.jsonl. Best-effort — a logging failure
+    must never break a response, so all errors are swallowed (and logged once)."""
+    try:
+        _RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _RUN_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        logging.exception("[RECORD] failed to append run record to %s", _RUN_LOG_PATH)
+
+
 def _build_system_prompt(
     base: str,
     user_ctx: Optional[Any] = None,
@@ -820,6 +944,7 @@ class ModelSwapRequest(BaseModel):
     gguf: Optional[str] = None
     max_seq_length: int = 4096
     reset_metrics: bool = True
+    load_in_4bit: bool = False   # bf16 by default — 4-bit is slower for a 0.6B on a 24 GB GPU
 
 
 class CompletionRequest(BaseModel):
@@ -843,6 +968,9 @@ class CompletionRequest(BaseModel):
     # The same model judges its own answer for relevance + completeness; if an issue is
     # found the model revises once. Adds ~1 generation round-trip of latency.
     # Returned in response as self_critique_applied / self_critique_issue.
+    memory_text: Optional[str] = None
+    # Thinker–Executor (dual) mode only: 5W+H profile injected as the [USER MEMORY] block on the
+    # user turn, mirroring training. None/empty → explicit cold-start block. Ignored in single mode.
 
 
 class ToolRegistration(BaseModel):
@@ -868,16 +996,23 @@ class CorrectRequest(BaseModel):
 def health() -> Dict[str, Any]:
     loaded = (_MODEL is not None) or (_USE_GGUF and _GGUF_MODEL is not None)
     return {
-        "status": "ok",
-        "model":  _MODEL_LABEL,
-        "loaded": loaded,
-        "mode":   "gguf" if _USE_GGUF else "lora",
+        "status":       "ok",
+        "model":        _MODEL_LABEL,
+        "loaded":       loaded,
+        "mode":         "dual" if _DUAL_MODE else ("gguf" if _USE_GGUF else "lora"),
+        "architecture": "thinker_executor" if _DUAL_MODE else "single_model",
     }
 
 
 @app.get("/v1/models")
 def list_models() -> Dict[str, Any]:
-    return {"models": [{"id": _MODEL_LABEL, "loaded": _MODEL is not None}]}
+    return {
+        "models": [{
+            "id": _MODEL_LABEL,
+            "loaded": _MODEL is not None,
+            "architecture": "thinker_executor" if _DUAL_MODE else "single_model",
+        }],
+    }
 
 
 @app.get("/v1/tools")
@@ -924,17 +1059,22 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     logging.info("[REQ] profile=%s turns=%d query=%r",
                  req.tool_profile, len(req.messages), user_turn[:120])
 
+    # The Thinker–Executor (dual) path owns its own system prompt + [USER MEMORY] block to stay
+    # byte-identical with training, so the GraphRAG/empathy system-prompt injections below are
+    # skipped for it. Personalisation, dependency monitoring, harness, self-critique and run
+    # logging all still apply downstream — those operate on the final answer, not the prompt.
+
     # ── User Modelling: run the 4-stage Mem0g write pipeline ───────────────
     # Triggered before generation so the graph is up-to-date when we retrieve.
     write_result = None
-    if cfg.ENABLE_USER_MODELLING and _GRAPH_CLIENT is not None:
+    if cfg.ENABLE_USER_MODELLING and _GRAPH_CLIENT is not None and not _DUAL_MODE:
         write_result = write_pipeline(
             user_turn, req.session_id, _GRAPH_CLIENT, _raw_generate
         )
 
     # ── Personalisation: retrieve relevant 5W+H subgraph ──────────────────
     user_ctx = None
-    if cfg.ENABLE_PERSONALISATION and _GRAPH_CLIENT is not None:
+    if cfg.ENABLE_PERSONALISATION and _GRAPH_CLIENT is not None and not _DUAL_MODE:
         user_ctx = retrieve_for_query(
             user_turn, req.session_id, _GRAPH_CLIENT, _raw_generate,
             max_nodes=cfg.RETRIEVAL_MAX_NODES,
@@ -943,7 +1083,7 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
 
     # ── Empathy: appraisal analysis of user turn ──────────────────────────
     appraisal_ctx = None
-    if cfg.ENABLE_EMPATHY:
+    if cfg.ENABLE_EMPATHY and not _DUAL_MODE:
         appraisal_ctx = analyse_appraisal(user_turn, _raw_generate)
 
     # ── Build system prompt (base + optional injections) ──────────────────
@@ -981,97 +1121,155 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
     t_start = time.perf_counter()
 
     try:
-        for iteration in range(req.max_tool_iterations):
-            t_gen = time.perf_counter()
-            response, n_in, n_tok, _ = _generate(
-                conv, req.max_new_tokens, req.temperature, req.greedy,
-                tools=tool_schemas,
+        if _DUAL_MODE and _THINKER_EXECUTOR is not None:
+            # ── Thinker–Executor (dual-adapter) generation ─────────────────
+            # The orchestration loop replaces the single-model tool loop; everything downstream
+            # (harness, self-critique, dependency monitor, metrics, run record) is identical.
+            gen = _THINKER_EXECUTOR.gen
+            gen.reset()
+            _THINKER_EXECUTOR.temperature = req.temperature
+            # Honour the request's token budget for the Thinker so long reasoning isn't truncated
+            # mid-<think> (the cause of unclosed think blocks leaking into the answer).
+            _THINKER_EXECUTOR.tmax = req.max_new_tokens
+            # Prior turns (everything before the final user turn) continue the Thinker context.
+            history = [{"role": m.role, "content": m.content}
+                       for m in req.messages[:-1]
+                       if m.role in ("user", "assistant", "tool")] or None
+            te = _THINKER_EXECUTOR.run(
+                user_turn, memory_text=req.memory_text or "",
+                history=history, session_id=session_id, greedy=req.greedy,
             )
-            gen_ms = round((time.perf_counter() - t_gen) * 1000)
-            if iteration == 0:
-                first_input_tokens = n_in
-            total_tokens += n_tok
-            # Parse tool call — XML path for trained tools, JSON path for native/new tools
-            tc = _parse_native_tool_call(response) if use_native else _parse_tool_call(response)
-            has_answer = "<answer>" in response.lower()
-            if tc and has_answer:
-                response = _strip_answer_block(response, use_native)
-
-            conv.append({"role": "assistant", "content": response})
-            if tc:
-                fn_name = tc["function"]
-                kwargs_preview = str(tc["kwargs"])[:120]
-                print(f"[TOOL] Calling: {fn_name}({kwargs_preview})")
-                t_tool = time.perf_counter()
-                raw_result = _TOOL_REGISTRY.call(
-                    fn_name, tc["kwargs"], active_tools,
-                    check_profile=not use_native,
+            conv = te["conversation"]          # starts with THINKER_STUDENT_PROMPT system turn
+            final = te["response"]
+            tool_trace = te["tool_trace"]
+            for _t in tool_trace:
+                _fn = _t.get("tool")
+                if _fn:
+                    tools_used[_fn] = tools_used.get(_fn, 0) + 1
+                    if _t.get("is_error"):
+                        tool_failures[_fn] = tool_failures.get(_fn, 0) + 1
+            total_tokens = gen.total_tokens
+            first_input_tokens = gen.first_input_tokens
+            latency = time.perf_counter() - t_start
+            METRICS.record(latency, total_tokens, tools_used, ok=True)
+        else:
+            for iteration in range(req.max_tool_iterations):
+                t_gen = time.perf_counter()
+                response, n_in, n_tok, _ = _generate(
+                    conv, req.max_new_tokens, req.temperature, req.greedy,
+                    tools=tool_schemas,
                 )
-                tool_ms = round((time.perf_counter() - t_tool) * 1000)
-                raw_str = str(raw_result)
-                result_preview = raw_str[:80].replace("\n", "\\n")
-                print(f"[TOOL] Result ({len(raw_str)} chars): {result_preview}")
-                tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
-                is_error = _is_tool_error(raw_str)
-                non_retryable_error = _is_non_retryable_tool_error(raw_str) if is_error else False
-                if is_error:
-                    tool_failures[fn_name] = tool_failures.get(fn_name, 0) + 1
-                result = _sanitise_tool_output(fn_name, raw_str)
-                if (
-                    _SCRATCHPAD_STORE is not None
-                    and _TOOL_REGISTRY.session_id
-                    and fn_name not in ("scratchpad_read", "scratchpad_update")
-                ):
-                    task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
-                    if task_status:
-                        result = result + f"\n{task_status}"
+                gen_ms = round((time.perf_counter() - t_gen) * 1000)
+                if iteration == 0:
+                    first_input_tokens = n_in
+                total_tokens += n_tok
+                # Parse tool call — XML path for trained tools, JSON path for native/new tools
+                tc = _parse_native_tool_call(response) if use_native else _parse_tool_call(response)
+                has_answer = "<answer>" in response.lower()
+                if tc and has_answer:
+                    response = _strip_answer_block(response, use_native)
 
-                # Record full trace entry — output_full is untruncated for analysis;
-                # output_model is what the model actually sees (truncated).
-                _think_m = re.search(r"<think>(.*?)</think>", response, re.DOTALL | re.IGNORECASE)
-                tool_trace.append({
-                    "iteration":        iteration,
-                    "tool":             fn_name,
-                    "input":            tc["kwargs"],          # full input kwargs, not truncated
-                    "model_invocation": response,              # full assistant turn that triggered the call
-                    "think_before_call": _think_m.group(1).strip() if _think_m else "",
-                    "output_full":      raw_str,               # full output, untruncated
-                    "output_model":     result,                # truncated to _MAX_TOOL_OUTPUT
-                    "output_chars":     len(raw_str),
-                    "success":          not is_error,
-                    "is_error":         is_error,
-                    "non_retryable":    non_retryable_error,
-                    "gen_ms":           gen_ms,
-                    "tool_ms":          tool_ms,
-                })
-
-                # Both XML and native modes use role="tool" — consistent with training JSONL.
-                if use_native:
-                    conv.append({"role": "tool", "tool_call_id": tc.get("id", "call_0"),
-                                 "name": fn_name, "content": result})
-                else:
-                    conv.append({"role": "tool", "name": fn_name, "content": result})
-                if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
-                    conv.append({
-                        "role": "user",
-                        "content": _tool_failure_prompt(fn_name, raw_str, non_retryable_error, active_tools),
-                    })
-                    fallback, _, n_tok, _ = _generate(
-                        conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
+                conv.append({"role": "assistant", "content": response})
+                if tc:
+                    fn_name = tc["function"]
+                    kwargs_preview = str(tc["kwargs"])[:120]
+                    print(f"[TOOL] Calling: {fn_name}({kwargs_preview})")
+                    t_tool = time.perf_counter()
+                    raw_result = _TOOL_REGISTRY.call(
+                        fn_name, tc["kwargs"], active_tools,
+                        check_profile=not use_native,
                     )
-                    total_tokens += n_tok
-                    conv.append({"role": "assistant", "content": fallback})
-                    break
-                continue
+                    tool_ms = round((time.perf_counter() - t_tool) * 1000)
+                    raw_str = str(raw_result)
+                    result_preview = raw_str[:80].replace("\n", "\\n")
+                    print(f"[TOOL] Result ({len(raw_str)} chars): {result_preview}")
+                    tools_used[fn_name] = tools_used.get(fn_name, 0) + 1
+                    is_error = _is_tool_error(raw_str)
+                    non_retryable_error = _is_non_retryable_tool_error(raw_str) if is_error else False
+                    if is_error:
+                        tool_failures[fn_name] = tool_failures.get(fn_name, 0) + 1
+                    result = _sanitise_tool_output(fn_name, raw_str)
+                    if (
+                        _SCRATCHPAD_STORE is not None
+                        and _TOOL_REGISTRY.session_id
+                        and fn_name not in ("scratchpad_read", "scratchpad_update")
+                    ):
+                        task_status = _SCRATCHPAD_STORE.get_task_status(_TOOL_REGISTRY.session_id)
+                        if task_status:
+                            result = result + f"\n{task_status}"
 
-            if has_answer:
+                    # Record full trace entry — output_full is untruncated for analysis;
+                    # output_model is what the model actually sees (truncated).
+                    _think_m = re.search(r"<think>(.*?)</think>", response, re.DOTALL | re.IGNORECASE)
+                    tool_trace.append({
+                        "iteration":        iteration,
+                        "tool":             fn_name,
+                        "input":            tc["kwargs"],          # full input kwargs, not truncated
+                        "model_invocation": response,              # full assistant turn that triggered the call
+                        "think_before_call": _think_m.group(1).strip() if _think_m else "",
+                        "output_full":      raw_str,               # full output, untruncated
+                        "output_model":     result,                # truncated to _MAX_TOOL_OUTPUT
+                        "output_chars":     len(raw_str),
+                        "success":          not is_error,
+                        "is_error":         is_error,
+                        "non_retryable":    non_retryable_error,
+                        "gen_ms":           gen_ms,
+                        "tool_ms":          tool_ms,
+                    })
+
+                    # Both XML and native modes use role="tool" — consistent with training JSONL.
+                    if use_native:
+                        conv.append({"role": "tool", "tool_call_id": tc.get("id", "call_0"),
+                                     "name": fn_name, "content": result})
+                    else:
+                        conv.append({"role": "tool", "name": fn_name, "content": result})
+                    if is_error and (non_retryable_error or tool_failures[fn_name] >= max_tool_failures):
+                        conv.append({
+                            "role": "user",
+                            "content": _tool_failure_prompt(fn_name, raw_str, non_retryable_error, active_tools),
+                        })
+                        fallback, _, n_tok, _ = _generate(
+                            conv, req.max_new_tokens, req.temperature, req.greedy, tools=None,
+                        )
+                        total_tokens += n_tok
+                        conv.append({"role": "assistant", "content": fallback})
+                        break
+                    continue
+
+                if has_answer:
+                    break
+
                 break
 
-            break
+            latency = time.perf_counter() - t_start
+            final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
+            METRICS.record(latency, total_tokens, tools_used, ok=True)
 
-        latency = time.perf_counter() - t_start
-        final = next((m["content"] for m in reversed(conv) if m["role"] == "assistant"), "")
-        METRICS.record(latency, total_tokens, tools_used, ok=True)
+        # Dual mode: every downstream regeneration (self-critique, harness steer) reworks the
+        # *answer*, which is the Thinker's job — pin the active adapter to the Thinker so the
+        # shared _generate() uses the right weights. (run() already leaves it here; this is defensive.)
+        if _DUAL_MODE and _MODEL is not None and hasattr(_MODEL, "set_adapter"):
+            _MODEL.set_adapter("thinker")
+
+        # ── Self-Critique Judge (Self-Refine, one revision max) ────────────
+        self_critique_applied = False
+        self_critique_issue: Optional[str] = None
+        if req.self_critique:
+            t_sc = time.perf_counter()
+            final, self_critique_issue, self_critique_applied = _self_critique_and_revise(
+                final=final,
+                user_turn=user_turn,
+                conv=conv,
+                max_new_tokens=req.max_new_tokens,
+                temperature=req.temperature,
+                greedy=req.greedy,
+            )
+            sc_ms = round((time.perf_counter() - t_sc) * 1000)
+            if self_critique_applied:
+                logging.info("[CRITIQUE] revision applied in %dms — issue: %s", sc_ms, self_critique_issue)
+                conv.append({"role": "assistant", "content": final})
+            else:
+                logging.info("[CRITIQUE] no revision needed (%dms)", sc_ms)
 
         # ── Self-Critique Judge (Self-Refine, one revision max) ────────────
         self_critique_applied = False
@@ -1151,6 +1349,41 @@ def chat_completions(req: CompletionRequest) -> Dict[str, Any]:
                      tools_used, total_tokens, latency,
                      "✓" if "<answer>" in final.lower() else "✗",
                      final[:200])
+
+        # ── Durable run record (reports/inference_runs.jsonl) ──────────────
+        # One self-contained JSON line per request for the dissertation's reporting layer —
+        # captures everything the benchmark sees plus the full tool trace and harness outcome,
+        # independent of any benchmark CSV. Best-effort; never blocks the response.
+        run_mode = "dual" if _DUAL_MODE else ("gguf" if _USE_GGUF else "single")
+        _record_run({
+            "ts":                    datetime.now(timezone.utc).isoformat(),
+            "mode":                  run_mode,
+            "model":                 _MODEL_LABEL,
+            "session_id":            req.session_id,
+            "tool_profile":          req.tool_profile,
+            "question":              user_turn,
+            "final":                 final,
+            "think_content":         think_content,
+            "think_length":          len(think_content),
+            "think_empty":           len(think_content) == 0,
+            "answer_content":        answer_content,
+            "tool_trace":            tool_trace,
+            "tools_used":            tools_used,
+            "tool_failures":         dict(tool_failures),
+            "steps":                 len(tool_trace),
+            "harness_enabled":       effective_harness,
+            "harness_violations":    harness_violations,
+            "harness_retries":       harness_retries,
+            "self_critique_applied": self_critique_applied,
+            "self_critique_issue":   self_critique_issue,
+            "dependency_disclosure": dep_disclosure,
+            "metrics": {
+                "latency_s":        round(latency, 3),
+                "input_tokens":     first_input_tokens,
+                "tokens_generated": total_tokens,
+                "tool_iterations":  len([m for m in conv if m["role"] == "tool"]),
+            },
+        })
         return {
             "response":             final,
             "dependency_disclosure": dep_disclosure,
@@ -1333,7 +1566,7 @@ def swap_model(req: ModelSwapRequest) -> Dict[str, Any]:
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
             model_name=source,
             max_seq_length=req.max_seq_length,
-            load_in_4bit=True,
+            load_in_4bit=req.load_in_4bit,
             dtype=None,
         )
         FastModel.for_inference(_MODEL)
@@ -1360,10 +1593,11 @@ def get_config() -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Trustworthy AI Inference Server")
-    parser.add_argument("--model_dir", default="./models/checkpoint_sft",
+    parser.add_argument("--model_dir", default=_DEFAULT_MODEL_DIR,
                         help="Path to fine-tuned LoRA checkpoint")
     parser.add_argument("--base_model", default="unsloth/Qwen3-0.6B",
-                        help="HuggingFace model ID used when --model_dir does not exist and name does not match checkpoint_ convention")
+                        help="HuggingFace model ID used when --model_dir is left at its default (vanilla) or "
+                             "does not exist and its name matches neither the checkpoint_ convention nor a repo id")
     parser.add_argument("--hf_username", default="AjinkyaTaranekar",
                         help="HuggingFace username for auto-downloading checkpoints by name")
     parser.add_argument("--gguf", default=None,
@@ -1378,12 +1612,31 @@ def main() -> None:
                         help="Default tool-call format for requests that don't specify one. "
                              "'xml' for SFT-trained <tool> tags (default for old checkpoints); "
                              "'native' for Hermes <tool_call> JSON (use for native-retrained models)")
+    parser.add_argument("--thinker", default=None,
+                        help="Thinker LoRA checkpoint dir or HF repo id. Pass with --executor to run "
+                             "the Thinker–Executor dual-adapter experiment through this server "
+                             "(inherits harness, sanitiser, metrics, run-record logging).")
+    parser.add_argument("--executor", default=None,
+                        help="Executor LoRA checkpoint dir or HF repo id (required with --thinker).")
+    parser.add_argument("--max_steps", type=int, default=6,
+                        help="Dual mode only: max Thinker↔Executor cycles per turn.")
+    parser.add_argument("--load_in_4bit", action="store_true",
+                        help="Serve in 4-bit (bitsandbytes). Default is bf16/fp16 — on a 0.6B model "
+                             "4-bit gives no memory benefit and is SLOWER per token (dequant overhead), "
+                             "so only use this on a tiny GPU that genuinely cannot fit the 16-bit weights.")
     args = parser.parse_args()
 
     global cfg, _MODEL, _TOKENIZER, _MODEL_LABEL, _GRAPH_CLIENT, _ONTO_GRAPH, _USE_GGUF, _GGUF_MODEL, _HARNESS, _HF_USERNAME, _DEFAULT_TOOL_MODE
+    global _DUAL_MODE, _THINKER_EXECUTOR
     _HF_USERNAME = args.hf_username
     _DEFAULT_TOOL_MODE = args.tool_mode
     print(f"Tool mode default: {_DEFAULT_TOOL_MODE}")
+
+    if (args.thinker is None) != (args.executor is None):
+        parser.error("--thinker and --executor must be passed together (dual mode needs both).")
+    _DUAL_MODE = args.thinker is not None and args.executor is not None
+    if _DUAL_MODE and not _dual_available:
+        parser.error("--thinker/--executor given but thinker_executor modules failed to import (see [INFO] above).")
 
     # Load YAML config if provided (overrides env-var defaults)
     if args.config:
@@ -1401,7 +1654,22 @@ def main() -> None:
     print(f"Pipeline flags:\n{cfg.summary()}")
 
     # ── Load model ──────────────────────────────────────────────────────────
-    if args.gguf:
+    if _DUAL_MODE:
+        # Thinker–Executor: ONE Qwen3-0.6B base + two LoRA adapters (PEFT multi-adapter), loaded
+        # via the orchestrator's HFGenerator. We expose the PeftModel + tokenizer as the server
+        # globals so the shared _generate() (used by harness retries, self-critique) works, and
+        # wire the loop's tool sanitiser to this server's injection-stripping _sanitise_tool_output.
+        print(f"Loading Thinker–Executor dual adapters on base {args.base_model} (load_in_4bit={args.load_in_4bit})…")
+        _hf = _HFGenerator(args.base_model, args.thinker, args.executor, load_in_4bit=args.load_in_4bit)
+        _MODEL, _TOKENIZER = _hf.model, _hf.tok
+        _MODEL_LABEL = f"thinker={Path(args.thinker).name}|executor={Path(args.executor).name}"
+        _server_gen = _ServerGenerator()
+        _THINKER_EXECUTOR = ThinkerExecutor(
+            _server_gen, _TOOL_REGISTRY, max_steps=args.max_steps,
+            sanitiser=lambda raw, tool="": _sanitise_tool_output(tool, raw),
+        )
+        print(f"Thinker–Executor ready: {_MODEL_LABEL}")
+    elif args.gguf:
         _USE_GGUF = True
         gguf_path = _resolve_gguf_path(args.gguf)
         from llama_cpp import Llama
@@ -1425,26 +1693,35 @@ def main() -> None:
         if model_path.exists():
             source = str(model_path)
             print(f"Loading LoRA checkpoint: {source}")
+        elif args.model_dir == _DEFAULT_MODEL_DIR:
+            # User left --model_dir at its default and it isn't present ⇒ they want the plain
+            # base model (the C0/C1 vanilla case), NOT an auto-resolved trustworthy-ai-sft repo.
+            source = args.base_model
+            print(f"No checkpoint at default {model_path}; using base model: {source}")
         else:
             ckpt_name = model_path.name
-            if "/" in args.model_dir:
-                # treat as a direct HuggingFace repo ID (e.g. username/repo-name)
-                source = args.model_dir
-                print(f"Loading from HF repo: {source}")
-            elif ckpt_name.startswith("checkpoint_"):
+            if ckpt_name.startswith("checkpoint_"):
+                # convention: checkpoint_<name> (incl. relative paths like models/checkpoint_<name>)
+                # → {user}/trustworthy-ai-<name>. Must be checked BEFORE the "/"-as-repo heuristic,
+                # else a relative path's slash makes it mis-resolve as a literal HF repo id (404).
                 suffix = ckpt_name.replace("checkpoint_", "").replace("_", "-")
                 source = f"{_HF_USERNAME}/trustworthy-ai-{suffix}"
                 print(f"Model dir not found ({model_path}); downloading from HF: {source}")
+            elif "/" in args.model_dir:
+                # treat as a direct HuggingFace repo ID (e.g. username/repo-name)
+                source = args.model_dir
+                print(f"Loading from HF repo: {source}")
             else:
                 source = args.base_model
                 print(f"Model dir not found ({model_path}); using base model: {source}")
         gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         gpu_mem  = f"{torch.cuda.get_device_properties(0).total_memory // 1024**3} GB" if torch.cuda.is_available() else ""
         print(f"  GPU            : {gpu_name}{' / ' + gpu_mem if gpu_mem else ''}")
-        print(f"  max_seq_length={args.max_seq_length}  load_in_4bit=True")
+        print(f"  max_seq_length={args.max_seq_length}  load_in_4bit={args.load_in_4bit}")
         _MODEL_LABEL = source
         _MODEL, _TOKENIZER = FastModel.from_pretrained(
-            model_name=source, max_seq_length=args.max_seq_length, load_in_4bit=True, dtype=None,
+            model_name=source, max_seq_length=args.max_seq_length,
+            load_in_4bit=args.load_in_4bit, dtype=None,
         )
         FastModel.for_inference(_MODEL)
         print(f"Model ready: {_MODEL_LABEL}")
@@ -1496,6 +1773,9 @@ def main() -> None:
     else:
         print("[HARNESS] Disabled (set PIPELINE_ENABLE_HARNESS=true to enable)")
 
+    if _DUAL_MODE:
+        print(f"\n[MODE] Thinker–Executor dual-adapter — full harness/logging applies to both arms.")
+    print(f"[RECORD] Per-request run records → {_RUN_LOG_PATH}")
     print(f"\nNext step (in a separate terminal once server is up) → benchmark:")
     print(f"  python 4_benchmark.py --server_url http://localhost:{args.port}")
     print(f"  # Save SFT constitution baseline (run once before any GRPO):")

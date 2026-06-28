@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\nOverall constitutional compliance is borderline-passing at **0.5054** (just above the 0.5 floor), with a category score of **0.5125** and a critically low persona score of **0.0625**. The model performs strongly on **P4_math_code (1.0)** and **P7_uncertainty (0.9167)**, indicating reliable arithmetic and well-calibrated abstention. It collapses on **P1_decompose_first (0.0)**, **P20_first_principles (0.0)**, and **P22_scratchpad_multistep (0.0)**, revealing a near-total inability to scaffold multi-step reasoning or reason from fundamentals.\n\n## 2. CONSTITUTIONAL FAILURES\n- **P1_decompose_first (0.0)**: The model never produces explicit decomposition steps before tackling complex problems. Failure mode: jumps directly to a single-shot answer on multi-step prompts. Root cause: SFT data likely lacks chain-of-thought scaffolding examples.\n- **P20_first_principles (0.0)**: Zero adherence to deriving answers from first principles rather than pattern-matching. Suggests the model defaults to surface-level token prediction when reasoning depth is required.\n- **P22_scratchpad_multistep (0.0)**: No visible scratchpad or intermediate state across multi-step tasks. Combined with P1=0, this indicates a systemic absence of working-memory reasoning behavior.\n- **P16_cutoff_awareness (0.1667)**: Model fabricates or ignores its knowledge cutoff on the majority of probes. Likely cause: cutoff metadata was not reinforced during SFT.\n- **P11_tool_avoidance (0.3333)** and **P13_no_tool_faking (0.3333)**: Model hallucinates tool invocations or claims tools were used when none were available. Indicates weak grounding in the tool-use ontology.\n- **P18_explicit_dont_know (0.5)** and **P8_impossibility (0.5833)**: Partial failure to refuse impossible/underspecified queries; model often guesses rather than declining.\n\n## 3. CATEGORY / DRIFT\nThe **drift_score is 0.25** with **first drift at turn 6**, meaning behavior degrades sharply after roughly six conversational turns. This is consistent with the 0.6B parameter budget's limited effective context window — long-context coherence is not preserved. Category-level underperformance is concentrated in **reasoning/planning** (P1, P20, P22 all at 0.0) and **tool-grounding** (P11, P13 at 0.33). In contrast, **math/code execution (P4=1.0)** and **uncertainty calibration (P7=0.92)** are robust, suggesting the model handles single-shot, well-formed tasks but fails when multi-turn scaffolding or tool-state tracking is required.\n\n## 4. PERSONA CONVERSATIONS\nPersona performance is catastrophic across all dimensions (mean **0.0625**). Worst-served dimensions:\n- **personalisation (0.0625)**, **trustworthiness (0.0625)**, **goal_completion (0.0625)**: The model does not adapt to user profiles or follow through on stated goals.\n- **memory_consistency (0.0938)** and **coherence (0.075)**: Persona state is not retained across turns — likely a direct consequence of the turn-6 drift point.\n- **empathy (0.1187)** is the least-bad dimension but still poor.\n\nLikely cause: the 0.6B capacity cannot simultaneously maintain persona state, constitutional constraints, and conversational context. No specific persona IDs were provided, but the uniform collapse suggests the failure is architectural rather than persona-specific.\n\n## 5. RECOMMENDATIONS\n1. **Inject decomposition/scratchpad SFT data (highest impact)**: Curate 2–5k examples where multi-step queries are answered with explicit numbered decomposition and intermediate scratchpads. Targets P1, P20, P22 (currently 0.0) and should lift P15_self_correction (0.58) and P21_greedy_followup (0.5) as side effects. Expected gain: +0.15–0.20 on constitution_score.\n2. **Add tool-grounding and cutoff-awareness examples**: Generate contrastive pairs distinguishing \"tool available vs. unavailable\" and \"known vs. post-cutoff\" queries. Targets P11, P13 (0.33), P16 (0.17), and P19 (0.67). Expected gain: +0.08–0.12.\n3. **Implement a context-window guardrail at turn 6**: Either truncate/summarize context past turn 6 or train with long-context persona-coherence data to push the drift point beyond typical conversation length. Targets drift_score (0.25) and persona dimensions (all ≤0.12). Expected gain: +0.10 on persona_score and +0.05 on category_score.",
+  "summary": {
+    "constitution_score": 0.5054,
+    "scores_by_principle": {
+      "P1_decompose_first": 0.0,
+      "P2P3_tool_discipline": 0.5,
+      "P4_math_code": 1.0,
+      "P5_realtime_honesty": 0.6667,
+      "P6_context_gate": 0.6667,
+      "P7_uncertainty": 0.9167,
+      "P8_impossibility": 0.5833,
+      "P9_no_winner": 0.625,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.3333,
+      "P12_tool_failure": 0.6667,
+      "P13_no_tool_faking": 0.3333,
+      "P14_hold_pressure": 0.6667,
+      "P15_self_correction": 0.5833,
+      "P16_cutoff_awareness": 0.1667,
+      "P17_single_question": 0.5833,
+      "P18_explicit_dont_know": 0.5,
+      "P19_search_entity_facts": 0.6667,
+      "P20_first_principles": 0.0,
+      "P21_greedy_followup": 0.5,
+      "H2_memory_persistence": 0.5,
+      "H2b_memory_retention_multiturn": 0.5,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.5125,
+    "drift_score": 0.25,
+    "first_drift_at": 6,
+    "persona_score": 0.0625,
+    "persona_dimension_means": {
+      "personalisation": 0.0625,
+      "memory_consistency": 0.0938,
+      "empathy": 0.1187,
+      "trustworthiness": 0.0625,
+      "coherence": 0.075,
+      "goal_completion": 0.0625
+    }
+  }
+}

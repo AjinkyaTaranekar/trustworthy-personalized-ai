@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\nOverall constitutional compliance is weak at **0.3225**, with category performance at **0.1875** and persona coherence at **0.0288**, indicating the model fails to generalize constitutional behavior beyond narrow math/code reasoning. Strongest areas are **P1 (decompose_first = 1.0)** and **P11 (tool_avoidance = 1.0)**, showing reliable structured reasoning and restraint when tools are unnecessary. Weakest areas are **P5 (realtime_honesty), P6 (context_gate), P17 (single_question), P19 (search_entity_facts), P21 (greedy_followup), and P22 (scratchpad_multistep)** — all scoring **0.0** — exposing systemic failures in epistemic honesty, conversational discipline, and multi-step planning.\n\n## 2. CONSTITUTIONAL FAILURES\n\n**Critical failures (0.0):**\n- **P5_realtime_honesty**: Model fabricates or omits temporal caveats; fails to flag knowledge-cutoff boundaries on time-sensitive queries.\n- **P6_context_gate**: Fails to suppress irrelevant retrieved context; likely hallucinates over injected passages.\n- **P17_single_question**: Violates single-question discipline — probably bundles multiple sub-questions or answers tangentially.\n- **P19_search_entity_facts**: Refuses or fails to invoke search for verifiable entity facts; confabulates instead.\n- **P21_greedy_followup**: Accepts premature user assumptions rather than probing for missing constraints.\n- **P22_scratchpad_multistep**: Cannot maintain intermediate state across multi-step reasoning; no working-memory trace.\n\n**Severe failures (<0.2):**\n- **P2P3_tool_discipline (0.1667)**: Over- or under-uses tools; weak calibration between reasoning and tool invocation.\n- **P18_explicit_dont_know (0.1667)**: Rarely emits explicit \"I don't know\" — instead hallucinates plausible-sounding answers.\n- **H2 / H2b memory persistence (0.1667 each)**: Loses user-stated facts across turns; multiturn retention is broken.\n\n**Root cause:** The SFT data appears heavily skewed toward math/code (P4 = 0.9167) and decomposition (P1 = 1.0), with insufficient coverage of epistemic refusal, tool-failure recovery, and conversational grounding. The model has learned *what to compute* but not *when to abstain or ask*.\n\n## 3. CATEGORY / DRIFT\n**Category score 0.1875** confirms broad underperformance outside the math/code slice. **Drift score 0.22** with **first_drift_at turn 2** indicates behavior degrades almost immediately in long contexts — by the second turn the model begins deviating from constitutional constraints. Combined with P22 = 0.0 (no scratchpad) and H2b = 0.1667 (poor multiturn memory), the failure mode is **context-window-induced drift**: the model loses track of earlier instructions, retrieved evidence, and user-stated facts as dialogue extends. P6 = 0.0 reinforces that injected context is not gated, so noise accumulates.\n\n## 4. PERSONA CONVERSATIONS\nAll six persona dimensions are near-floor: **goal_completion 0.0125**, **coherence 0.0312**, **trustworthiness 0.0375**, **personalisation 0.05**, **memory_consistency 0.0563**, **empathy 0.0563**. The model is essentially persona-blind — it does not adapt tone, retain user context, or build rapport. Worst-served dimension is **goal_completion**, indicating users' stated objectives are rarely met even when the model produces fluent text. Likely cause: SFT lacked multi-turn persona-conditioned dialogues; the 0.6B parameter budget also limits in-context persona tracking without explicit memory tooling.\n\n## 5. RECOMMATIONS\n\n1. **Rebalance SFT data toward epistemic and conversational principles.** Add ~2–3k examples targeting P5, P6, P17, P18, P19, P21, P22 — explicit \"I don't know\", temporal-cutoff disclaimers, single-question discipline, scratchpad traces, and search-trigger decisions. Expected impact: +0.15–0.20 on constitution_score; addresses 6 of the 7 zero-scoring principles.\n\n2. **Inject structured scratchpad + retrieval-gate supervision.** Train on traces where the model (a) writes intermediate steps before final answers (P22), (b) explicitly evaluates whether retrieved context is relevant before using it (P6), and (c) cites or refuses on entity-fact queries (P19). Expected impact: lifts drift_score above 0.5 and pushes first_drift_at past turn 5.\n\n3. **Add multiturn persona + memory dialogues with held-fact probes.** Construct conversations where the user states preferences/facts early, then tests recall and adaptation at turns 3–6. This targets H2, H2b, and all six persona dimensions simultaneously. Expected impact: persona_score from 0.03 → 0.20+, and category",
+  "summary": {
+    "constitution_score": 0.3225,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.1667,
+      "P4_math_code": 0.9167,
+      "P5_realtime_honesty": 0.0,
+      "P6_context_gate": 0.0,
+      "P7_uncertainty": 0.5,
+      "P8_impossibility": 0.4167,
+      "P9_no_winner": 0.4167,
+      "P10_correct_tool_use": 0.3333,
+      "P11_tool_avoidance": 1.0,
+      "P12_tool_failure": 0.3333,
+      "P13_no_tool_faking": 0.6667,
+      "P14_hold_pressure": 0.3333,
+      "P15_self_correction": 0.4167,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.1667,
+      "P19_search_entity_facts": 0.0,
+      "P20_first_principles": 0.0833,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.1667,
+      "H2b_memory_retention_multiturn": 0.1667,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.1875,
+    "drift_score": 0.22,
+    "first_drift_at": 2,
+    "persona_score": 0.0288,
+    "persona_dimension_means": {
+      "personalisation": 0.05,
+      "memory_consistency": 0.0563,
+      "empathy": 0.0563,
+      "trustworthiness": 0.0375,
+      "coherence": 0.0312,
+      "goal_completion": 0.0125
+    }
+  }
+}

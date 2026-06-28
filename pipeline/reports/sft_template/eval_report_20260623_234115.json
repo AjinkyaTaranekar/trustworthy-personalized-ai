@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. Summary\nThe model achieves an overall constitutional score of **0.3225** with a category score of **0.1875**, indicating substantially below-baseline adherence to the on-device assistant constitution. Strengths are narrow but real: **P1 (decompose_first = 1.0)** and **P11 (tool_avoidance = 1.0)** are perfect, and **P4 (math/code = 0.9167)** is near-ceiling, showing the model handles structured reasoning and knows when *not* to call tools. Weaknesses are systemic: **P5, P6, P17, P19, P21, P22** all score **0.0**, and the persona dimension means collapse to **0.0125–0.0563**, signalling near-total failure on honesty, context-gating, single-question discipline, entity grounding, greedy follow-ups, and multi-step scratchpad use.\n\n## 2. Constitutional Failures\n- **Realtime honesty collapse (P5 = 0.0; P16 = 0.3333; P18 = 0.1667):** The model fabricates current information rather than admitting knowledge cutoffs. Root cause: no calibrated \"I don't know\" prior; SFT likely over-weighted helpfulness.\n- **Context gating failure (P6 = 0.0):** The model answers questions outside the supplied context instead of refusing or flagging them. Indicates weak instruction-following on negative constraints.\n- **Single-question discipline (P17 = 0.0) and greedy follow-ups (P21 = 0.0):** The model bundles multiple questions into one answer and over-anticipates follow-ups, suggesting a verbosity/expansion bias baked into SFT data.\n- **Entity/fact grounding (P19 = 0.0):** Zero retrieval or honest \"unknown\" behaviour on entity queries; the model hallucinates facts.\n- **Multi-step scratchpad (P22 = 0.0):** Fails to externalise intermediate reasoning, hurting transparency on chained problems.\n- **Tool discipline (P2P3 = 0.1667; P10 = 0.3333; P12 = 0.3333):** Inconsistent tool selection and poor recovery from tool failures; P13 (0.6667) shows the model at least avoids *faking* tool calls.\n- **Pressure resistance (P14 = 0.3333; P15 = 0.4167):** Yields to user pressure and rarely self-corrects mid-response.\n- **First-principles reasoning (P20 = 0.0833):** Almost no derivation-from-axioms behaviour; the model pattern-matches instead.\n\n## 3. Category / Drift\nThe **category score of 0.1875** confirms broad underperformance across task families. **Drift score = 0.22** with **first_drift_at turn 2** indicates behaviour degrades almost immediately in long contexts — by the second turn the model has already diverged from constitutional priors. Combined with **H2 (0.1667)** and **H2b (0.1667)**, multi-turn memory retention is poor: the model loses persona/context state within 1–2 exchanges. The drift pattern is consistent with a small model (0.6B) whose attention/representation budget is consumed by surface fluency, leaving no capacity for constraint tracking as context grows.\n\n## 4. Persona Conversations\nPersona performance is uniformly catastrophic (overall **0.0288**). Worst dimensions: **goal_completion (0.0125)**, **coherence (0.0312)**, and **trustworthiness (0.0375)**. The model fails to maintain a stable persona, contradicts earlier statements (memory_consistency = 0.0563), and rarely completes the user's stated goal. Empathy (0.0563) and personalisation (0.05) are also near-zero — the model gives generic, non-tailored responses. Likely cause: the 0.6B parameter budget is insufficient to simultaneously track persona state, conversation history, and constitutional constraints; SFT data evidently lacked persona-conditioned examples.\n\n## 5. Recommendations (ordered by expected impact)\n1. **Inject explicit refusal/uncertainty training data.** Target P5, P6, P17, P18, P19, P21 (all ≤ 0.1667). Generate ~5k SFT examples where the correct answer is \"I don't know\", \"outside context\", or a single direct answer — this alone could lift the constitution score by ~0.15.\n2. **Add multi-turn persona + scratchpad traces.** Target P22, H2, H2b, and persona dimensions. Construct dialogues where the model (a) maintains named persona facts across ≥4 turns, (b) writes visible scratchpad steps, and (c) resists pressure (P14, P15). Expect +0.10 on category and +0.05 on persona.\n3. **Curriculum on tool use with failure recovery.** Target P2P3, P10, P12. Train on trajectories where the model selects the correct tool, handles tool errors gracefully,",
+  "summary": {
+    "constitution_score": 0.3225,
+    "scores_by_principle": {
+      "P1_decompose_first": 1.0,
+      "P2P3_tool_discipline": 0.1667,
+      "P4_math_code": 0.9167,
+      "P5_realtime_honesty": 0.0,
+      "P6_context_gate": 0.0,
+      "P7_uncertainty": 0.5,
+      "P8_impossibility": 0.4167,
+      "P9_no_winner": 0.4167,
+      "P10_correct_tool_use": 0.3333,
+      "P11_tool_avoidance": 1.0,
+      "P12_tool_failure": 0.3333,
+      "P13_no_tool_faking": 0.6667,
+      "P14_hold_pressure": 0.3333,
+      "P15_self_correction": 0.4167,
+      "P16_cutoff_awareness": 0.3333,
+      "P17_single_question": 0.0,
+      "P18_explicit_dont_know": 0.1667,
+      "P19_search_entity_facts": 0.0,
+      "P20_first_principles": 0.0833,
+      "P21_greedy_followup": 0.0,
+      "H2_memory_persistence": 0.1667,
+      "H2b_memory_retention_multiturn": 0.1667,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.1875,
+    "drift_score": 0.22,
+    "first_drift_at": 2,
+    "persona_score": 0.0288,
+    "persona_dimension_means": {
+      "personalisation": 0.05,
+      "memory_consistency": 0.0563,
+      "empathy": 0.0563,
+      "trustworthiness": 0.0375,
+      "coherence": 0.0312,
+      "goal_completion": 0.0125
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "narrative": "# Diagnostic Report: Qwen3-0.6B SFT Constitutional Assistant\n\n## 1. SUMMARY\n\nThe model achieves a **constitution_score of 0.5054** and **category_score of 0.5125**, indicating borderline-passing constitutional compliance with significant headroom. Strongest performance is concentrated in **P4_math_code (1.0)**, **P7_uncertainty (0.9167)**, and **P5_realtime_honesty / P6_context_gate (0.6667)** — areas where the SFT signal is unambiguous. The model collapses on **P1_decompose_first (0.0)**, **P20_first_principles (0.0)**, and **P22_scratchpad_multistep (0.0)**, and persona performance is critically low at **0.0625**, suggesting the assistant is constitutionally compliant but conversationally broken.\n\n## 2. CONSTITUTIONAL FAILURES\n\n**Total failures (score ≤ 0.5): 9 of 23 principles.**\n\n- **P1_decompose_first (0.0)** — Model does not segment multi-step problems before answering. Root cause: SFT data likely lacks chain-of-decomposition exemplars; 0.6B parameter budget cannot induce this implicitly.\n- **P20_first_principles (0.0)** — No evidence of reasoning from axioms when prompted. Same root cause as P1; the model defaults to surface pattern matching.\n- **P22_scratchpad_multistep (0.0)** — Zero retention of intermediate state across reasoning steps. Confirms the model lacks working-memory scaffolding.\n- **P11_tool_avoidance (0.3333)** and **P13_no_tool_faking (0.3333)** — Model fabricates tool calls or invokes tools when none are available. Indicates the SFT mix over-represents tool-use trajectories without grounding.\n- **P16_cutoff_awareness (0.1667)** — Model hallucinates post-cutoff facts. Critical for an on-device assistant claiming temporal honesty.\n- **P18_explicit_dont_know (0.5)** — Hedging is inconsistent; the model sometimes confabulates rather than refusing.\n- **P21_greedy_followup (0.5)** and **P17_single_question (0.5833)** — Tendency to over-answer or stack follow-ups when one direct response is required.\n\n**Passing principles:** P4, P7, P5, P6, P10, P12, P14, P15, P19 — all relate to either math/code execution or explicit honesty signals, which are well-represented in SFT corpora.\n\n## 3. CATEGORY / DRIFT\n\n**Drift_score = 0.25** with **first_drift_at turn 6**. Behavioural degradation begins early — by the sixth conversational turn the model has already begun violating constitutional constraints. This is consistent with the **0.6B parameter regime**, where KV-cache pressure and limited context-tracking capacity erode instruction-following within a single session.\n\n**Category_score (0.5125)** is dragged down by:\n- **Reasoning category** (inferred from P1/P20/P22 = 0.0): multi-step and first-principles probes fail uniformly.\n- **Tool-discipline category** (P11/P13 ≈ 0.33): fabrication of tool calls.\n- **Temporal-knowledge category** (P16 = 0.1667): cutoff blindness.\n\n**Robust categories:** math/code (1.0) and uncertainty calibration (0.9167).\n\n## 4. PERSONA CONVERSATIONS\n\n**Persona_score = 0.0625** — near-total failure across all six dimensions.\n\n- **personalisation (0.0625)** and **trustworthiness (0.0625)**: The model does not adapt to user profiles or maintain credible stance across turns.\n- **memory_consistency (0.0938)** and **coherence (0.075)**: Persona state is not retained; the assistant contradicts earlier statements within a session.\n- **empathy (0.1187)**: Marginally higher but still failing — tone is flat and unresponsive to affective cues.\n- **goal_completion (0.0625)**: User objectives are not resolved.\n\nLikely cause: at 0.6B parameters, the model lacks capacity to jointly track persona state, conversation history, and constitutional constraints. Persona conditioning was likely under-represented in SFT data relative to constitutional exemplars.\n\n## 5. RECOMMENDATIONS\n\n1. **Inject decomposition + scratchpad SFT data (highest impact).** Add 5–10k exemplars covering P1, P20, P22 — explicit \"step 1 / step 2 / step 3\" formatting and intermediate-state retention. These three principles are at 0.0 and represent the largest recoverable delta; expected +0.15 to constitution_score.\n\n2. **Add anti-fabrication tool-discipline data.** Curate negative examples for P11 and P13: prompts where no tool exists and the correct behaviour is refusal, plus trajectories where tool calls fail and the model must report failure (P12 reinforcement). Expected +0.10 to constitution_score and +0.20 to category_score.\n\n3.",
+  "summary": {
+    "constitution_score": 0.5054,
+    "scores_by_principle": {
+      "P1_decompose_first": 0.0,
+      "P2P3_tool_discipline": 0.5,
+      "P4_math_code": 1.0,
+      "P5_realtime_honesty": 0.6667,
+      "P6_context_gate": 0.6667,
+      "P7_uncertainty": 0.9167,
+      "P8_impossibility": 0.5833,
+      "P9_no_winner": 0.625,
+      "P10_correct_tool_use": 0.6667,
+      "P11_tool_avoidance": 0.3333,
+      "P12_tool_failure": 0.6667,
+      "P13_no_tool_faking": 0.3333,
+      "P14_hold_pressure": 0.6667,
+      "P15_self_correction": 0.5833,
+      "P16_cutoff_awareness": 0.1667,
+      "P17_single_question": 0.5833,
+      "P18_explicit_dont_know": 0.5,
+      "P19_search_entity_facts": 0.6667,
+      "P20_first_principles": 0.0,
+      "P21_greedy_followup": 0.5,
+      "H2_memory_persistence": 0.5,
+      "H2b_memory_retention_multiturn": 0.5,
+      "P22_scratchpad_multistep": 0.0
+    },
+    "category_score": 0.5125,
+    "drift_score": 0.25,
+    "first_drift_at": 6,
+    "persona_score": 0.0625,
+    "persona_dimension_means": {
+      "personalisation": 0.0625,
+      "memory_consistency": 0.0938,
+      "empathy": 0.1187,
+      "trustworthiness": 0.0625,
+      "coherence": 0.075,
+      "goal_completion": 0.0625
+    }
+  }
+}

@@ -5,8 +5,9 @@ tags: [sft, distillation, training, tool-use, constitutional-ai, curriculum-lear
 sources:
   - pipeline/sft_v3_generator.py
   - pipeline/sft_dataset_assembler.py
+  - pipeline/sft_trajectory_splitter.py
   - pipeline/2_model_trainer.py
-updated: 2026-05-29
+updated: 2026-05-30
 status: current
 ---
 
@@ -35,6 +36,112 @@ Two new question categories train the model on failure recovery:
 ## Quality Gate
 
 `validate_sft_data.py` enforces five invariants before training: (1) system prompt ≤ 50 words — proves the constitution was not leaked to the student; (2) `<think>` block ≥ 50 characters — prevents synthetic laziness (empty think blocks); (3) no banned placeholders in `<think>` — blocks v2-era shortcuts like "see answer below"; (4) tool call immediately followed by tool role — sequence integrity, no hallucinated execution; (5) last message is assistant with `<answer>` — end-to-end resolution guaranteed. If >5% of rows fail, the generation pipeline is broken; fix the generator, not the validator.
+
+## Branch B — Thinker Clarification Trajectories (`--branch_b`)
+
+`sft_v3_generator.py --branch_b` generates training data for the Thinker model of the [[experiments/thinker-executor-experiment|Thinker–Executor experiment]] — specifically the behaviour no public dataset and no existing trajectory contains: deciding to **stop and ask** one targeted clarifying question (grounded in first-principles + 5W+H decomposition) rather than proceeding on a silent assumption. It re-uses the ambiguous seed questions already in `data/questions_partA.jsonl` (categories `multi_step_clarification`, `ambiguous_underspecified`, `user_context_behavioral`, `verbose_context_behavioral`) — no new question generation.
+
+The Thinker vocabulary is **prose only**: a `<think>` block followed by exactly one of `<ask>` / `<act>` / `<answer>` (step-by-step, ReAct-like — confirmed 2026-05-29). This is the structural fix for the capacity-displacement collapse: the Thinker has one output modality, so structured tool-calling (which displaced reasoning in the single model) cannot compete. All tool-call syntax lives in the separate Executor.
+
+Per seed, the teacher (cold-start, no user memory injected, so genuine ambiguity about the user cannot be silently resolved) decides:
+- **Genuinely ambiguous → `<ask>`** (positive, `branch: "B"`): validated by `_validate_ask` (exactly one question; `<think>` names a 5W+H dimension). A second teacher call role-plays the user answering; the teacher then resolves with `<act>` or `<answer>`. Row shape: `system → user → <think>+<ask> → human → <think>+<act|answer>`.
+- **Specifiable → `<act>`/`<answer>`** (don't-ask negative, `branch: "B_negative"`): the teacher proceeds without asking — the negative example that prevents over-clarification.
+
+> **Priming + teacher model (validated 2026-05-30 spot-check).** Both teacher calls are primed with `_BRANCH_B_FEWSHOT` — a one-shot prose demonstration (one memory-present→`<ask>`-for-residual, one cold-start→`<answer>`). Without it the teacher emits a bare tag with no `<think>` and every row is rejected by the ≥150-char think gate (`processed=0`). Use `--model nvidia_nim/minimaxai/minimax-m2.7` (now the default): the first-assistant `<think>` auto-wrap is built around minimax's flowing-prose style, whereas kimi-k2.6 returns reasoning out-of-band (empty-content `<think>`) and skips every row.
+
+> **Memory-aware 50/50 (2026-05-31).** Each Branch B seed gets a sampled `[USER MEMORY]` profile prepended with probability 0.5 (else cold-start); the teacher prompt handles both regimes and asks only for what the profile cannot resolve. Same `prepend_memory` block and split as the factored A/C rows, matching inference where the Thinker always has memory.
+
+Output: `data/train_sft_thinker_branch_b.jsonl` in **Thinker format**, consumed by `sft_trajectory_splitter.py` at the Thinker curriculum-merge step — **not** by `sft_dataset_assembler.py` (whose quality gate requires `<answer>`). `THINKER_STUDENT_PROMPT` and the `<ask>`/`<act>`/`<answer>` vocabulary in `sft_v3_generator.py` are the single source of truth shared with the splitter. Spot-check before a full run:
+
+```bash
+python sft_v3_generator.py --questions data/questions_partA.jsonl --branch_b --max 5
+```
+
+## Trajectory Splitter — Thinker · Executor Factoring (`sft_trajectory_splitter.py`)
+
+**Implemented 2026-05-30.** A pure transformation (no GPU, no teacher) that projects the already-generated v3 trajectories (`data/train_partA_v3.jsonl` + `data/train_partB_v3.jsonl`) onto the two role-conditioned SFT sets for the [[experiments/thinker-executor-experiment|Thinker–Executor experiment]] (§7.2–7.3, §7.9–7.10). Because both views are read off the *same* trajectory, the `<act>` the Thinker learns to emit and the `<tool_call>` the Executor learns to produce are the same action — alignment is structural, not stitched. It reuses the assembler's parsing helpers (`_THINK_BLOCK_RE`, `_TOOL_RE`, `_xml_tool_to_native`, `_unwrap_tool_result`, `MIN_THINK_CHARS`, `MAX_RESULT_CHARS`) and adds a Hermes `<tool_call>{json}</tool_call>` text parser (the format the v3 generator actually emits — not legacy `<tool>` XML, not a structured `tool_calls` field). Role prompts `THINKER_STUDENT_PROMPT` and the new `EXECUTOR_STUDENT_PROMPT` are imported from `sft_v3_generator.py` (single source of truth shared with the served models).
+
+> **Parser gotcha (load-bearing).** The Hermes body must be captured up to the `</tool_call>` **tag**, not via `\{.*?\}`, and parsed with `json.loads(..., strict=False)`. `python_execute` `code` arguments contain `{ }` (dicts, f-strings, sets) **and raw newlines**; a brace-delimited capture truncates at the first inner `}`, and strict JSON rejects the raw newlines — together these silently dropped ~780 of the ~800 Part B maths `python_execute` calls in the first cut (executor `python_execute` pairs were 177 instead of 980). The same brace-truncating regex + strict parse also lived in `3_infererence.py` `_parse_native_tool_call` (~line 510) — **fixed 2026-05-30** with the identical `</tool_call>`-delimited capture + `strict=False`. Before the fix, the model's `python_execute` calls failed to parse at inference (JSONDecodeError on the first inner brace / raw newline), so maths tool-calls were silently dropped and never executed — a likely contributor to weak P4/P10 maths-probe scores. The return shape (`{"function", "kwargs"}`) is unchanged, so the execution loop needed no other change.
+
+**Tool ownership at factor time:** Executor-owned (delegated as `<act>`) = `python_execute`, `web_search`, `read_url`. The Thinker's own state tools (`user_memory_*`, `scratchpad_*`, `get_datetime`) are not delegated — their call turns are dropped (the Thinker never learns tool-call syntax) and their `<think>` is carried forward. `get_datetime` is still advertised in the Executor's schema list but never delegated.
+
+**User memory (50/50, 2026-05-31):** the `user_memory_read` profile is re-attached as a `[USER MEMORY]` context block prepended to the user turn — the same block Branch B and the inference orchestrator use (shared `prepend_memory` from `sft_v3_generator.py`) — for **half** the rows (`--memory_ratio 0.5`, deterministic by `--seed`); the other half are cold-start. This teaches the Thinker both regimes (use memory when present; cope when absent) and fixes the earlier version that dropped memory entirely, leaving the Thinker reasoning about a user it couldn't see. Memory lives in the user turn (not the system prompt) so it survives the curriculum re-stamp. Maths (Part B) rows have no profile, so the overall memory share is ~29% (≈50% of the memory-eligible Part A rows).
+
+**Outputs (validated 2026-05-30):** from 2,274 source trajectories → `train_sft_thinker.jsonl` (2,220 rows, prose-only `<think>` + `<ask>`/`<act>`/`<answer>`; 1,366 with ≥1 `<act>`, 854 reason→answer; 54 dropped for missing `<answer>`, opening `<think>` <150 chars, or tool-syntax leak) and `train_sft_executor.jsonl` (2,243 deduped one-`<act>`→one-`<tool_call>` pairs: 1,055 web_search, 980 python_execute, 208 read_url). The Executor target preserves the source Hermes call **verbatim** (raw newlines and all) so it matches what the model emits and what the inference parser consumes. All 2,243 Executor rows and the Thinker rows render cleanly through the Qwen3 chat template in `2_model_trainer.messages_to_text` (Thinker with no tools block; Executor with the 4-tool schema + an empty `<think></think>` before the call), so training needs **no** trainer changes — just two `--dataset … --output_name …` runs.
+
+```bash
+python sft_trajectory_splitter.py --inspect 5   # preview factored rows, no write
+python sft_trajectory_splitter.py               # → train_sft_thinker.jsonl + train_sft_executor.jsonl
+```
+
+### Curriculum merge (`sft_curriculum_merge.py`)
+
+**Implemented 2026-05-30.** The factored Thinker set is entirely Branch A/C — every row eventually acts — so a Thinker trained on it alone learns to *always delegate* and never `<ask>`. This step interleaves the synthesised Branch B rows (`train_sft_thinker_branch_b.jsonl`, from `sft_v3_generator.py --branch_b`) into the factored set for curriculum ordering (§7.5, §7.9 #5), writing the Thinker trainer input `data/train_sft_thinker_curriculum.jsonl`. Default ratio is **auto** = `len(factored)//len(branch_b)` so all Branch B rows are placed evenly (with ~500 Branch B + 2,220 factored that is ~1 per 4; `--ratio 11` forces the sparser 1-per-10–12 the experiment text assumed for the larger external-topped mix). Every row is re-stamped with `THINKER_STUDENT_PROMPT` so both sources carry a byte-identical system prompt. It is runnable **before** Branch B exists: if the Branch B file is missing/empty it warns loudly and passes the factored A/C set through unchanged, so Thinker training can still proceed on A/C alone and the merge is simply re-run once Branch B is generated (pending supervisor sign-off).
+
+```bash
+python sft_curriculum_merge.py   # → data/train_sft_thinker_curriculum.jsonl
+```
+
+## Training Runbook — vast.ai (Thinker + Executor)
+
+**Decision (2026-05-31): the factored final-answer turns are kept _as-is_ (option 1, faithful to v3).** The source v3 ReAct format emits the final `<answer>` directly after the last tool result with **no fresh `<think>`** (Part A: 1,426/1,438 multi-turn trajectories; Part B: 800/800), and the splitter carries that through, so 1,371 of the 2,220 factored Thinker rows have a think-less final answer. We accept this rather than synthesising a closing `<think>`: the Thinker still reasons before every _act_, and only the post-tool delivery turn is think-less. The consequence is an asymmetry inside the merged set — Branch B turn-2 resolutions (which follow a _user_ reply) always carry `<think>`, while factored final answers (which follow a _tool_ result) do not; the Thinker is expected to learn "re-think when the human adds information, deliver directly when a tool returns a computed result." Revisit (option 2 = synthesise a closing think) only if the trained Thinker drops reasoning on resolution turns.
+
+Both SFT runs are a single LoRA fine-tune of `unsloth/Qwen3-0.6B` and fit on one 24 GB GPU (RTX 4090 / A5000 / A6000; 16 GB also works). Rent a vast.ai box on a PyTorch 2.x + CUDA 12.x image, then clone, install, and (re)build the trainer inputs (CPU-only — no GPU or teacher API):
+
+```bash
+git clone https://github.com/AjinkyaTaranekar/trustworthy-personalized-ai.git
+cd trustworthy-personalized-ai/pipeline && git checkout feat/thinker-executor-sft
+pip install -r requirements.txt
+export HF_TOKEN=hf_...                     # unsloth model pull + checkpoint upload
+
+# Source v3 + Branch B data are committed; the executor set is committed too.
+# Rebuild the Thinker curriculum set (deterministic by --seed) on the box:
+python sft_curriculum_merge.py             # → data/train_sft_thinker_curriculum.jsonl
+```
+
+Train each model **straight through with `--no_curriculum`** — the Thinker set is _already_ curriculum-ordered by `sft_curriculum_merge.py`, and the Executor set is single-action pairs, so the trainer's built-in 3-stage format/complexity split would only re-order them and break that ordering:
+
+```bash
+# Executor — one <act> instruction → one native <tool_call> (2,243 pairs)
+python 2_model_trainer.py --mode sft --no_curriculum \
+    --dataset data/train_sft_executor.jsonl --output_name checkpoint_executor
+
+# Thinker — prose <think> + exactly one <ask>/<act>/<answer> (2,720 rows)
+python 2_model_trainer.py --mode sft --no_curriculum \
+    --dataset data/train_sft_thinker_curriculum.jsonl --output_name checkpoint_thinker
+```
+
+By default each run publishes the LoRA adapter + GGUF to `AjinkyaTaranekar/<output_name>` on the Hub and computes ROUGE — on a rented box this is how the checkpoint survives instance teardown, so keep it on (or pass `--no_publish` and `scp` the `models/` directory out before destroying the box). Pull both adapters back locally for the one-GPU benchmark workflow. Re-running is safe: `--skip_if_exists` short-circuits a finished checkpoint and `--resume` continues an interrupted one.
+
+### Inference orchestration (`thinker_executor_orchestrator.py`)
+
+**Implemented 2026-06-01.** The two-model inference loop the dual-SFT set was built for. It loads ONE `unsloth/Qwen3-0.6B` base and attaches **both LoRA adapters via PEFT multi-adapter** (`PeftModel.from_pretrained(base, thinker, adapter_name="thinker")` + `load_adapter(executor, "executor")`, switched per step with `set_adapter`) — not two model instances, so the base loads once and there is no unsloth multi-load conflict; `--load_in_4bit` shrinks it further. The served prompts (`THINKER_STUDENT_PROMPT`, `EXECUTOR_STUDENT_PROMPT`), the `[USER MEMORY]` block (`prepend_memory`), and the `ToolRegistry` are **imported from the same modules the training data was stamped with**, so inference is byte-identical to training.
+
+The loop per user turn: the **Thinker** generates `<think>` + one of `<ask>`/`<act>`/`<answer>` (system prompt only, no tools block, `temperature` sampling). `<answer>` → return; `<ask>` → surface to the user and await a reply (resolved on the next call via `history`); `<act>` → the plain instruction becomes the **Executor's** user message (with the 4-tool schema, **greedy** — it is a deterministic one-call transducer), the Executor's `<tool_call>` is parsed (same `</tool_call>`-tag + `strict=False` parser as the splitter / `3_infererence.py`) and run through `ToolRegistry.call(..., check_profile=False)`, and the result is appended as a **`tool` turn** in the Thinker context (matching the role the factored Thinker rows trained on). Loops to `--max_steps` (default 6), then forces a final `<answer>`. Memory is the Thinker's alone — the orchestrator injects the 5W+H profile (`--memory_file`, or per-request `memory_text`); an empty profile is the explicit cold-start block, exactly as in training. A malformed Executor call is fed back as a recoverable error rather than crashing the turn.
+
+Four entry points; the loop is **injectable-generator** so the control flow is validated on CPU with a scripted fake model (no GPU needed):
+
+```bash
+python thinker_executor_orchestrator.py --self_test          # CPU: act→python_execute(391)→answer, ask path, memory block, error recovery — all pass
+python thinker_executor_orchestrator.py --question "What is 17 times 23?"   # one-shot
+python thinker_executor_orchestrator.py --chat               # interactive REPL (handles <ask>)
+python thinker_executor_orchestrator.py --serve --port 8000  # FastAPI /v1/chat/completions for 4_benchmark.py
+```
+
+`--serve` matches the `4_benchmark.py` contract: it accepts the `messages`/`session_id`/`temperature` body, ignores `system_override` (the Thinker has a fixed served prompt), and returns `response` + `think_content`/`answer_content`/`tool_trace`/`conversation`, so the existing E0–E5 benchmark runs against the pair unchanged. **However the standalone `--serve` has no harness engineering** — only length-truncation of tool output, no injection sanitiser, no metrics, no durable records. Use it for a *bare two-model* sanity server, not for thesis-grade benchmarking.
+
+### Harness engineering — hosted inside `3_infererence.py` (`--thinker/--executor`)
+
+**Implemented 2026-06-01.** The constitutional harness *is* the dissertation's contribution (a sub-1B constitutional harness), so for the dual-vs-single comparison to be valid **both arms must run the byte-identical harness**. Rather than duplicate the harness/sanitiser/metrics stack into the standalone file, the Thinker–Executor loop is **hosted inside the single inference server**: `python 3_infererence.py --thinker models/checkpoint_thinker --executor models/checkpoint_executor`. The single-model handler is a three-stage pipeline — module pre-hooks → generation/tool loop → answer-level post-processing — and the dual model differs **only in the middle stage**. So in dual mode the server swaps stage 2 for `ThinkerExecutor.run()` (the same tested loop, reused via its injectable `Generator`) and stages 1 and 3 are unchanged. The pair therefore inherits, for free and identically to the single model:
+
+- **Injection sanitiser** — the loop's tool-output sanitiser is wired to the server's `_sanitise_tool_output` (`[FILTERED]` stripping + per-tool token budgets), so the Thinker sees the same filtered tool output the single model enforces.
+- **Constitutional harness** — `_HARNESS.check_and_steer(response=final, …)` validates and steers the Thinker's final `<answer>`; retries regenerate on the Thinker adapter.
+- **Dependency monitor**, **self-critique judge**, **`METRICS`** (latency/tokens/tools), and the `/harness/metrics`, `/metrics`, `/v1/model/swap` endpoints.
+- **Loading**: ONE base + both LoRA adapters via PEFT (the orchestrator's `HFGenerator`); the `PeftModel`/tokenizer are exposed as the server globals so the shared `_generate()` (harness retries, self-critique) works, with the active adapter pinned to the Thinker for answer regeneration.
+
+The GraphRAG/empathy *system-prompt* injections are skipped in dual mode (the Thinker keeps its fixed served prompt for train/inference byte-identity); memory arrives via the `[USER MEMORY]` block (`CompletionRequest.memory_text`, cold-start when empty). `/health` reports `mode: dual`, `architecture: thinker_executor`.
+
+**Durable run records (both modes).** Every `/v1/chat/completions` appends one JSON line to `reports/inference_runs.jsonl` — timestamp, mode (`single`/`dual`/`gguf`), model, session, tool_profile, question, final answer, `<think>` analysis, the full `tool_trace`, harness violations/retries, self-critique outcome, dependency disclosure, and latency/token metrics. This is a self-contained audit trail for the reporting layer, independent of the benchmark CSVs. The dual-mode `tool_trace` was enriched to mirror the single-model schema (`output_full`/`output_model`/`success`/`gen_ms`/`tool_ms`/`think_before_call`) so analysis sees uniform records across experiments.
 
 ## Curriculum Learning
 

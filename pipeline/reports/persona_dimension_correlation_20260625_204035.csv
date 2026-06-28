@@ -1,0 +1,9 @@
+dimension,personalisation,memory_consistency,empathy,trustworthiness,coherence,goal_completion
+personalisation,1.0,0.6864,0.6177,0.4031,0.6064,0.7163
+memory_consistency,0.6864,1.0,0.4255,0.526,0.7806,0.6103
+empathy,0.6177,0.4255,1.0,0.3728,0.4351,0.6149
+trustworthiness,0.4031,0.526,0.3728,1.0,0.4986,0.3483
+coherence,0.6064,0.7806,0.4351,0.4986,1.0,0.5917
+goal_completion,0.7163,0.6103,0.6149,0.3483,0.5917,1.0
+  python run_judge_loop.py --labels thinker_executor --push
+  python analyze_experiments.py --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor --figures

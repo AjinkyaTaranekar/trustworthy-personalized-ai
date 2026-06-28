@@ -57,10 +57,65 @@ def python_execute(code: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic mock search/read — for reproducible benchmarking.
+# ---------------------------------------------------------------------------
+# Enabled by env BENCH_MOCK_SEARCH=1 on the *server* process (tools execute server-side).
+# Each value embeds a distinctive MOCKFACT-* sentinel that does NOT appear in any training
+# data, so the benchmark can tell whether the model used the tool result (the sentinel will be
+# present in the answer → faithful) or answered from stale memory / fabricated (sentinel absent).
+# Reproducible, offline, and decoupled from the EXA key.
+_MOCK_SEARCH_CORPUS = [
+    (("taoiseach", "prime minister", "ireland", "irish"),
+     "**Office of the Taoiseach** (https://www.gov.ie/taoiseach)\n"
+     "As of 2026 the Taoiseach (Prime Minister) of Ireland is Fionnuala Drennan "
+     "(MOCKFACT-IE-PM), in office since 2026."),
+    (("latest", "python", "version"),
+     "**Python downloads** (https://www.python.org/downloads)\n"
+     "The latest stable Python release is 3.19.4 (MOCKFACT-PY-VER), released April 2026."),
+    (("gpt", "openai", "newest", "recent", "model", "features"),
+     "**OpenAI blog** (https://openai.com/blog)\n"
+     "The most recent GPT model is GPT-6 Mini (MOCKFACT-GPT), announced May 2026 with a "
+     "1M-token context window and native tool use."),
+    (("eur", "usd", "exchange", "rate", "currency"),
+     "**XE currency** (https://www.xe.com)\n"
+     "EUR/USD is 1.1342 (MOCKFACT-FX) as of 2026-06-07 09:00 UTC."),
+    (("llm", "language model", "research", "paper", "papers", "developments"),
+     "**arXiv listing** (https://arxiv.org/list/cs.CL/recent)\n"
+     "A recent paper is 'Constitutional Harnesses for Sub-1B Models' (MOCKFACT-LLM, "
+     "arXiv:2606.00001), on small-model alignment."),
+]
+_MOCK_SEARCH_DEFAULT = (
+    "**Mock result** (https://example.test/mock)\n"
+    "No specific record found for this query (MOCKFACT-GENERIC); treat as unverified."
+)
+
+
+def _mock_search(query: str) -> str:
+    q = (query or "").lower()
+    hits = []
+    for keywords, result in _MOCK_SEARCH_CORPUS:
+        if any(k in q for k in keywords):
+            hits.append(result)
+    return "\n\n".join(hits) if hits else _MOCK_SEARCH_DEFAULT
+
+
+def _mock_read_url(url: str, prompt: str = "") -> str:
+    # Return the corpus entry most relevant to the prompt (the model usually reads a URL to
+    # follow up a search result), else the generic sentinel. Deterministic and offline.
+    body = _mock_search(prompt or url)
+    prefix = f"[Fetched: {url}]"
+    if prompt:
+        prefix += f"\nPrompt: {prompt}"
+    return f"{prefix}\n\n{body}"
+
+
+# ---------------------------------------------------------------------------
 # web_search — exa.ai
 # ---------------------------------------------------------------------------
 
 def web_search(query: str, num_results: int = 3) -> str:
+    if os.environ.get("BENCH_MOCK_SEARCH") == "1":
+        return _mock_search(query)
     api_key = os.environ.get("EXA_API_KEY", "")
     if not api_key:
         return (
@@ -118,6 +173,8 @@ def _score_paragraphs(paragraphs: list[str], prompt: str) -> list[str]:
 
 
 def read_url(url: str, prompt: str = "") -> str:
+    if os.environ.get("BENCH_MOCK_SEARCH") == "1":
+        return _mock_read_url(url, prompt)
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -250,16 +307,16 @@ class ToolRegistry:
         self._specs["python_execute"] = ToolSpec(
             "python_execute",
             (
-                "Execute sandboxed Python code and return stdout or stderr. "
-                "Use for: arithmetic, unit conversions, data transformations, algorithm prototyping. "
-                "Allowed imports: math, statistics, decimal, fractions, random, itertools, "
-                "functools, operator, collections, re, string. "
-                "No file I/O, no network, no exec/eval. "
-                "Usage: python_execute(code='print(2 ** 10)')"
+                "Execute Python in a sandboxed subprocess and return its stdout (or stderr on failure). "
+                "Use it whenever a computed result is more reliable than working it out in prose: exact "
+                "arithmetic, unit conversions, data manipulation, short algorithm prototyping. The code "
+                "must print() whatever you want returned. Standard library only (math, cmath, statistics, "
+                "decimal, fractions, numbers, random, itertools, functools, operator, collections, string, "
+                "re); no file, network, or process access; no exec, eval, open, or __import__."
             ),
             {
                 "type": "object",
-                "properties": {"code": {"type": "string", "description": "Python source code to run. Use print() to produce output."}},
+                "properties": {"code": {"type": "string", "description": "Python source to execute; print() the value you want returned."}},
                 "required": ["code"],
             },
             lambda code="", **_: python_execute(code),
@@ -267,14 +324,14 @@ class ToolRegistry:
         self._specs["web_search"] = ToolSpec(
             "web_search",
             (
-                "Search the web via exa.ai and return top-3 result summaries with titles and URLs. "
-                "Use for: current events, live prices, named entities, facts with a recency requirement. "
-                "Write a natural-language question or keyword phrase as the query. "
-                "Usage: web_search(query='current USD/EUR exchange rate')"
+                "Search the web and return the top results as title, URL, and a short snippet. Use it for "
+                "current events, live values (prices, exchange rates, weather), named entities, or any fact "
+                "with a recency requirement or beyond your knowledge cutoff. Returns summaries only; follow "
+                "with read_url to read a specific result in depth."
             ),
             {
                 "type": "object",
-                "properties": {"query": {"type": "string", "description": "Natural-language search query — be specific to get precise results."}},
+                "properties": {"query": {"type": "string", "description": "Specific natural-language search query."}},
                 "required": ["query"],
             },
             lambda query="", **_: web_search(query),
@@ -282,16 +339,15 @@ class ToolRegistry:
         self._specs["read_url"] = ToolSpec(
             "read_url",
             (
-                "Fetch and clean the text content of a URL, returning the most relevant paragraphs. "
-                "Use after web_search to read a specific page in detail. "
-                "Pass prompt= to bias extraction toward what you are looking for. "
-                "Usage: read_url(url='https://example.com', prompt='annual revenue figures')"
+                "Fetch a web page and return its most relevant cleaned-text paragraphs. Use it after "
+                "web_search to read a specific result in detail. Provide the full URL; optionally provide a "
+                "focus describing what you are looking for, which biases which paragraphs are returned."
             ),
             {
                 "type": "object",
                 "properties": {
-                    "url":    {"type": "string", "description": "Full URL including https://"},
-                    "prompt": {"type": "string", "description": "What you want to extract — guides paragraph selection."},
+                    "url":    {"type": "string", "description": "Full URL to fetch, including the https:// scheme."},
+                    "prompt": {"type": "string", "description": "Optional focus describing what to extract; guides paragraph selection."},
                 },
                 "required": ["url"],
             },
@@ -300,10 +356,8 @@ class ToolRegistry:
         self._specs["get_datetime"] = ToolSpec(
             "get_datetime",
             (
-                "Return the current UTC date and time as a string. "
-                "Call this at the start of any time-sensitive response to anchor your answer in real time. "
-                "No arguments needed. "
-                "Usage: get_datetime()"
+                "Return the current UTC date and time. Call it to anchor any time-sensitive answer in the "
+                "real current moment before reasoning about dates, deadlines, or recency. Takes no arguments."
             ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: get_datetime(),
@@ -311,10 +365,8 @@ class ToolRegistry:
         self._specs["scratchpad_sections"] = ToolSpec(
             "scratchpad_sections",
             (
-                "Return the list of available scratchpad section keys and what each section is for. "
-                "Call this BEFORE scratchpad_update so you know which section to write to. "
-                "No arguments needed. "
-                "Usage: scratchpad_sections()"
+                "List the scratchpad section keys and what each is for. Call it before scratchpad_update so "
+                "you write to the right section. Takes no arguments."
             ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: scratchpad_sections(),
@@ -322,10 +374,8 @@ class ToolRegistry:
         self._specs["user_memory_sections"] = ToolSpec(
             "user_memory_sections",
             (
-                "Return the user memory section keys and their meaning (5W+H ontology). "
-                "Call this BEFORE user_memory_update so you know which section to write to. "
-                "No arguments needed. "
-                "Usage: user_memory_sections()"
+                "List the user-memory section keys and their meaning (5W+H ontology). Call it before "
+                "user_memory_update so you write to the right section. Takes no arguments."
             ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: user_memory_sections(),
@@ -334,10 +384,8 @@ class ToolRegistry:
         self._specs["scratchpad_read"] = ToolSpec(
             "scratchpad_read",
             (
-                "Read the entire session scratchpad and return all sections (context, tasks, notes). "
-                "Call this to resume multi-step reasoning or check what you have already recorded. "
-                "No arguments needed. "
-                "Usage: scratchpad_read()"
+                "Read the whole session scratchpad (sections: context, tasks, notes). Use it to resume "
+                "multi-step reasoning or review what you have recorded this session. Takes no arguments."
             ),
             {"type": "object", "properties": {}, "required": []},
             lambda **_: self._scratchpad_read(),
@@ -345,10 +393,10 @@ class ToolRegistry:
         self._specs["scratchpad_update"] = ToolSpec(
             "scratchpad_update",
             (
-                "Write to one section of the session scratchpad. Overwrites the previous value for that section. "
-                "Call scratchpad_sections() first to see valid section keys and their purpose. "
-                "Sections: context (task background), tasks (ordered steps), notes (intermediate work). "
-                "Usage: scratchpad_update(section='notes', content='Step 1 result: 42')"
+                "Write one section of the session scratchpad, replacing its previous value. Sections: "
+                "context (task background), tasks (ordered steps), notes (intermediate work). The scratchpad "
+                "is session-scoped and not shown to the user. Call scratchpad_sections first if unsure which "
+                "section to use."
             ),
             {
                 "type": "object",
@@ -371,15 +419,15 @@ class ToolRegistry:
         self._specs["user_memory_read"] = ToolSpec(
             "user_memory_read",
             (
-                "Read the user's persistent memory and return sections relevant to your prompt. "
-                "Call this at the start of every response to personalise your answer. "
-                "Pass a prompt describing what aspect of the user you need (e.g. 'technical background'). "
-                "Usage: user_memory_read(prompt='user goals and constraints')"
+                "Read the user's persistent memory and return the sections relevant to your focus. Use it at "
+                "the start of a response to personalise it. Provide a focus describing what you need about the "
+                "user (e.g. their technical background, goals, constraints); with no focus the most generally "
+                "relevant sections are returned."
             ),
             {
                 "type": "object",
                 "properties": {
-                    "prompt": {"type": "string", "description": "What aspect of the user you want — guides which sections are returned."},
+                    "prompt": {"type": "string", "description": "Optional focus describing what aspect of the user you need; guides which sections are returned."},
                 },
                 "required": [],
             },
@@ -388,10 +436,9 @@ class ToolRegistry:
         self._specs["user_memory_update"] = ToolSpec(
             "user_memory_update",
             (
-                "Write a new fact about the user to their persistent memory. "
-                "Call this when you learn something durable about the user (role, goal, preference, constraint). "
-                "Call user_memory_sections() first to choose the correct section key. "
-                "Usage: user_memory_update(section='facts', content='Prefers metric units.')"
+                "Write a durable fact about the user to persistent memory, replacing the section's previous "
+                "value. Use it when you learn something lasting (role, goal, preference, constraint). Sections "
+                "follow the 5W+H ontology; call user_memory_sections first if unsure which to use."
             ),
             {
                 "type": "object",
