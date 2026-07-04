@@ -167,6 +167,7 @@ Catalog of everything in the wiki. Regenerated on every ingest. One line per ent
 - [[decisions/2026-05-14-scratchpad-tool]] — scratchpad working memory + P24/P25 principles + partial-capability honesty training (spec + plan in docs/superpowers/)
 - [[decisions/2026-05-03-research-question-reframe]] — operational hypothesis added: on-device 0.6B model vs frontier models; psychological grounding for constitution; human evaluation rubric introduced
 - [[decisions/2026-06-28-reasoning-tier-weighting]] — P1 decompose + P20 first-principles moved to the Tier-2 substrate in the purpose weighting; reasoning family made coherent; score-audited (ranking unchanged)
+- [[decisions/2026-07-04-tier-map-completion]] — H2b (tier 2, personalisation) + P22_scratchpad (tier 3, tool) added to the canonical map; 25-defined/23-scored/21-covered accounting fixed; score-audited (deltas ≤ 0.008, ordering unchanged); 5-tier scheme rejected in favour of a weight sensitivity analysis
 
 ## Questions
 

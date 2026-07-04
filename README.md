@@ -804,6 +804,18 @@ python analyze_experiments.py \
 
 It pairs the latest report of each suite per label, prints the ladder with the four **isolating deltas** (bootstrap 95% CIs where item-level data exists), keeps the constitution suite as **rule-based (primary) and combined (secondary) rows separately** to avoid LLM-judge circularity, and writes `experiment_ladder_<ts>.csv`, `experiment_ladder_<ts>.tex` (**two** dissertation tables: a clean headline ladder plus a separate depth/tool **diagnostics** table), and `experiment_h3_failures_<ts>.csv` (probes the top rung still fails or regresses on — the H3 limits evidence). Add `--figures` for the **five core** dissertation figures, or `--figures --extended_figures` for all nine.
 
+For the **comparative (head-to-head) lens**, rank all conditions' answers per question with `compare_report.py --judge` (anonymised, principle-aware, letter-grade rubric), then render its dissertation figures and tables offline:
+
+```bash
+python compare_report.py --labels vanilla_base vanilla_tools sft_template sft_constitution thinker_executor \
+    --reports_dir results --judge --judge_model <judge>
+python rank_figures.py --reports_dir results     # -> results/dissertation_assets/fig_rank_*.pdf + tab_rank_*.tex
+```
+
+`rank_figures.py` emits six single-purpose figures (weighted win share; H2H score per suite; per-tier profile; rank distribution; grade profile; principle × condition heatmap), two LaTeX tables, and `rank_figures_captions.tex` with captions that define every metric. All headline metrics are 0–1 and **higher is better**: the **H2H score** is the share of rival answers beaten, averaged over questions (1.0 always best of the group, 0.5 mid-field; tied rivals count half) — it replaces the old mean-rank and Borda columns with one direction and one scale.
+
+If some comparisons fail (unparseable judge output), add `--resume`: it reuses every successful verdict from the newest `comparison_rank_*.json` and re-judges only the missing/failed questions (retries after a greedy parse failure sample at temperature 0.3, so deterministic failures don't repeat). `--resume_from <path>` pins a specific rank JSON.
+
 ---
 
 ## Context degradation study

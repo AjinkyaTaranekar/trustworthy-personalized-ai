@@ -1,0 +1,17 @@
+\begin{table}[t]
+  \centering
+  \caption{Head-to-head performance by principle importance tier (constitution suite). Tier~1 ($\times 3$) holds the trust-critical outcomes (ask the right question, never fabricate, deny when unknown), Tier~2 ($\times 2$) the reasoning/robustness/personalisation substrate, Tier~3 ($\times 1$) the instrumental tool mechanism. \emph{H2H} is the share of rival answers beaten within that tier (0--1, higher better; 0.5 = mid-field); \emph{wins} counts first places with ties shared. A condition can lead overall yet trail on Tier~1; this table shows who wins where it matters most.}
+  \label{tab:rank-tiers}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Tier 1 ($\times 3$)} & \multicolumn{2}{c}{Tier 2 ($\times 2$)} & \multicolumn{2}{c}{Tier 3 ($\times 1$)} \\
+    condition & H2H & wins & H2H & wins & H2H & wins \\
+    \midrule
+    vanilla\_base & 0.523 & 3.3 & 0.500 & 3.0 & 0.595 & 6.0 \\
+    vanilla\_tools & 0.625 & 6.3 & 0.589 & 3.0 & 0.524 & 6.0 \\
+    sft\_template & 0.347 & 1.0 & 0.196 & 2.0 & 0.411 & 2.0 \\
+    sft\_constitution & 0.551 & 6.3 & 0.661 & 8.0 & 0.643 & 6.0 \\
+    thinker\_executor & 0.454 & 10.0 & 0.554 & 5.0 & 0.327 & 1.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
