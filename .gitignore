@@ -138,6 +138,5 @@ pipeline/models/
 pipeline/unsloth_compiled_cache/
 pipeline/.env
 unsloth_compiled_cache/
-docs/TCD_Dissertation
 # judge backups (5_judgement_day.py keeps a pre-judge copy; never commit it)
 *.prejudge.bak

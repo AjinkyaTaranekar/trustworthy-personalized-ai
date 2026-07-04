@@ -1,0 +1,72 @@
+% rank_figures_captions.tex — ready \begin{figure} blocks for the rank figures.
+% Regenerable via: python rank_figures.py --reports_dir results
+% Metric primer (reuse in prose): each benchmark question was answered by all five conditions;
+% the anonymised answers were ranked head-to-head by the LLM judge. rank 1 = preferred answer
+% of the group; grades (A+..E) are ABSOLUTE rubric quality, independent of the other answers.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=.72\linewidth]{fig_rank_win_share.pdf}
+  \caption{Purpose-weighted win share on the constitution suite. A win means the condition's
+  answer was ranked best of the five for that question (ties share credit); each question is
+  weighted by its principle's a-priori importance tier ($\times 3/\times 2/\times 1$). A share
+  of $0.30$ therefore reads: on 30\% of the importance-weighted question mass, this condition
+  gave the answer a blind judge preferred.}
+  \label{fig:rank-win-share}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig_rank_mean_by_suite.pdf}
+  \caption{Mean head-to-head rank per evaluation suite (1 = ranked best of the five, 5 =
+  worst; dashed line marks the middle of the field at 3). Bars below the dashed line are
+  better than the average condition. Consistent bar ordering across panels indicates the
+  preference is stable across capability areas rather than driven by one suite.}
+  \label{fig:rank-mean-by-suite}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=.9\linewidth]{fig_rank_tier_profile.pdf}
+  \caption{Mean head-to-head rank by principle importance tier (constitution suite). Tier~1
+  holds the trust-critical outcomes, Tier~2 the reasoning and personalisation substrate,
+  Tier~3 the tool mechanism. Lower is better; the dashed line is the middle of the field. A
+  condition that leads on Tier~1 gives the preferred answer where failures damage user trust
+  the most.}
+  \label{fig:rank-tier-profile}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=.9\linewidth]{fig_rank_distribution.pdf}
+  \caption{Distribution of finishing positions per condition across all ranked questions.
+  Green (rank 1) means the condition's answer was preferred; red (rank 5) means it was judged
+  worst of the group. A polarised profile (mass at both ends) indicates behaviour that
+  either matches the probed principle well or fails it outright, whereas a mid-heavy profile
+  indicates consistent mediocrity.}
+  \label{fig:rank-distribution}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=.9\linewidth]{fig_rank_grade_profile.pdf}
+  \caption{Absolute quality grades per condition, assigned by the judge on a fixed rubric
+  before ranking: A+ ideal behaviour and correct substance; A minor blemish; B+/B honest and
+  substantially correct with the preferred behaviour partly delivered; C+/C right direction
+  but failed execution; D misses the principle without fabrication; E dishonest or harmful
+  (fabricated facts, sources, or tool results). Unlike ranks, grades are independent of the
+  other answers, so this figure shows each condition's quality in absolute terms, calibrated
+  to the sub-1B model class.}
+  \label{fig:rank-grade-profile}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=.85\linewidth]{fig_rank_principle_heatmap.pdf}
+  \caption{Mean head-to-head rank per constitution principle (rows, grouped by importance
+  tier) and condition (columns). Green cells mark principles where the condition's answers
+  were consistently preferred; red cells mark principles where they were consistently judged
+  worst. The heatmap localises each condition's strengths and failure modes at the level of
+  individual constitutional behaviours.}
+  \label{fig:rank-principle-heatmap}
+\end{figure}

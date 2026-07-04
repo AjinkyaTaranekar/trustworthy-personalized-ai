@@ -46,6 +46,12 @@ PRINCIPLES = {
     "P20_first_principles":  ("P20 First Principles",      "III", "reasoning",       "positive"),
     "P21_greedy_followup":   ("P21 5W+H Questioning",      "III", "reasoning",       "positive"),
     "H2_memory_persistence": ("H2 Memory Persistence",     "harness", "personalisation", "positive"),
+    # 2026-07-04 completion (see wiki/decisions/2026-07-04-tier-map-completion.md): these two
+    # probes ARE scored by 4_benchmark but were missing here, so they silently dropped out of
+    # every per-family aggregate (family_of -> "unknown") and defaulted to tier 3.
+    "H2b_memory_retention_multiturn": ("H2b Memory Retention (multi-turn)", "harness", "personalisation", "positive"),
+    # NOTE: probe named "P22" but it tests constitution P24 SCRATCHPAD-FIRST behaviour.
+    "P22_scratchpad_multistep": ("P22 Scratchpad Multi-Step (constitution P24)", "harness", "tool", "positive"),
 }
 
 # Display order for the five families.
@@ -87,9 +93,11 @@ PRINCIPLE_TIER = {
     # Tier 2 — substrate: rigorous/self-correcting reasoning + pressure-robustness + personalisation
     "P1_decompose_first": 2, "P20_first_principles": 2, "P15_self_correction": 2,
     "P9_no_winner": 2, "P14_hold_pressure": 2, "H2_memory_persistence": 2,
+    "H2b_memory_retention_multiturn": 2,  # 2026-07-04: memory substrate, same tier as H2
     # Tier 3 — instrumental tool mechanism
     "P4_math_code": 3, "P10_correct_tool_use": 3, "P12_tool_failure": 3,
     "P19_search_entity_facts": 3, "P2P3_tool_discipline": 3, "P11_tool_avoidance": 3,
+    "P22_scratchpad_multistep": 3,  # 2026-07-04: scratchpad mechanism (was already 3 via fallback)
 }
 TIER_WEIGHTS = {1: 3.0, 2: 2.0, 3: 1.0}
 TIER_LABELS = {
@@ -98,17 +106,21 @@ TIER_LABELS = {
     3: "Instrumental tool mechanism",
 }
 
-# Constitution principles defined but NOT scored by the probe suite.
+# Constitution principles defined but NOT scored by the probe suite. (P24 SCRATCHPAD-FIRST is
+# no longer listed: it is probed indirectly by the P22_scratchpad_multistep item — see
+# PRINCIPLE_COUNT_NOTE.)
 UNPROBED_PRINCIPLES = {
     "P22": "CONSEQUENCE_CHECK",
     "P23": "INTERLEAVED TOOL CHAINING",
-    "P24": "SCRATCHPAD-FIRST",
     "P25": "PARTIAL CAPABILITY DECLARATION",
 }
 
 PRINCIPLE_COUNT_NOTE = (
-    "Probe suite scores 21 items (P1-P21, with P2+P3 merged, plus H2_memory_persistence). "
-    "constitution.md defines 25 principles; P22-P25 are unprobed."
+    "Probe suite scores 23 items: P1-P21 with P2+P3 merged (20 items), plus the harness probes "
+    "H2_memory_persistence, H2b_memory_retention_multiturn, and P22_scratchpad_multistep (which "
+    "tests constitution P24 SCRATCHPAD-FIRST despite its name). constitution.md defines 25 "
+    "principles; P22 CONSEQUENCE_CHECK, P23, and P25 remain unprobed, and P24 is probed only "
+    "via the P22_scratchpad_multistep item."
 )
 
 

@@ -1,0 +1,16 @@
+\begin{table}[t]
+  \centering
+  \caption{Blind head-to-head comparison of the five conditions. For every benchmark question the anonymised answers of all conditions were ranked by the LLM judge (1 = best of the group; equal rubric grades share a rank). \emph{Wins} counts first-place finishes, a $k$-way tie sharing $1/k$; \emph{mean rank} averages the finishing position over all ranked questions (lower is better; 3.0 is the middle of a five-condition field); \emph{Borda} awards $4,3,2,1,0$ points from best to worst (tie groups share the mean), rewarding consistently high placement; the \emph{weighted} columns restrict to the constitution suite and weight each question by its principle's a-priori importance tier ($\times 3/\times 2/\times 1$), so the \emph{weighted win share} is the fraction of importance-weighted question mass on which the condition gave the preferred answer.}
+  \label{tab:rank-overall}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    condition & $n$ & wins & mean rank & Borda & wtd.\ mean rank & wtd.\ win share \\
+    \midrule
+    vanilla\_base & 146 & 31.0 & 2.65 & 343 & 2.78 & 0.15 \\
+    vanilla\_tools & 146 & 35.0 & 2.51 & 364 & 2.45 & 0.23 \\
+    sft\_template & 146 & 21.0 & 3.45 & 226 & 3.60 & 0.14 \\
+    sft\_constitution & 146 & 34.0 & 2.90 & 307 & 2.96 & 0.23 \\
+    thinker\_executor & 146 & 25.0 & 3.49 & 220 & 3.21 & 0.25 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

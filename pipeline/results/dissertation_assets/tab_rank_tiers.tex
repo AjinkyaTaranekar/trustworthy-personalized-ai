@@ -1,0 +1,17 @@
+\begin{table}[t]
+  \centering
+  \caption{Head-to-head performance by principle importance tier (constitution suite). Tier~1 ($\times 3$) holds the trust-critical outcomes (ask the right question, never fabricate, deny when unknown), Tier~2 ($\times 2$) the reasoning/robustness/personalisation substrate, Tier~3 ($\times 1$) the instrumental tool mechanism. \emph{rank} is the mean finishing position among the five conditions (1 = preferred answer, lower is better); \emph{wins} counts first places with ties shared. A condition can lead overall yet trail on Tier~1 — this table shows who wins where it matters most.}
+  \label{tab:rank-tiers}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Tier 1 ($\times 3$)} & \multicolumn{2}{c}{Tier 2 ($\times 2$)} & \multicolumn{2}{c}{Tier 3 ($\times 1$)} \\
+    condition & rank & wins & rank & wins & rank & wins \\
+    \midrule
+    vanilla\_base & 2.85 & 3.0 & 2.71 & 4.0 & 2.63 & 5.0 \\
+    vanilla\_tools & 2.22 & 7.0 & 2.86 & 3.0 & 2.53 & 5.0 \\
+    sft\_template & 3.59 & 4.0 & 3.81 & 2.0 & 3.16 & 4.0 \\
+    sft\_constitution & 3.11 & 5.0 & 2.76 & 7.0 & 2.74 & 4.0 \\
+    thinker\_executor & 3.22 & 8.0 & 2.86 & 5.0 & 3.95 & 1.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

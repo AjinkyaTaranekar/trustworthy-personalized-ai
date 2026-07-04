@@ -1,0 +1,8 @@
+1. In Dissertation should I go with first person or third person perspective? 
+2. Can the figures and tables from a cited source be used in the dissertation, and if so, how should they be cited?
+3. Show the new results and written part of the dissertation.
+4. While writing the dissertation, I have created at much more granular level, should I include all the details in the final version or summarize them?
+5. Is it okay to include names like ChatGPT, Claude, and Gemini in the dissertation? As they are currently well known, however they are closed source so we don't have access to their inner workings. Should I include them in the dissertation or not? Or just mention them like frontier models in the introduction and not go into details about them?
+6. Date for presentation. And what to prepare for it? (24th July, Friday)
+7. Also one interesting thing I found at fundamental level that I think I should include somewhere in the dissertation. Current language models are left to right directional, due to which they need to rely on heavy chain of thoughts to self correct, howeverr that is not the case with humans, who can process information in a more holistic manner. We can self correct our previous thoughts as well, recently I was reading about diffusion models, which are bidirectional in nature, and I think that is a more human like way of processing information. I think this is an interesting point to include in the dissertation.
+8. Ideal timeline for completing the presentation and dissertation and submitting it.
