@@ -1,0 +1,31 @@
+\begin{table}[t]
+  \centering
+  \caption{Head-to-head results for \texttt{vanilla\_tools} (overall H2H 0.583, purpose-weighted constitution H2H 0.600). \emph{H2H} is the share of rival answers beaten (0--1, higher is better; 0.5 = mid-field); \emph{wins} counts first places with ties shared $1/k$; grades are the judge's absolute rubric quality per answer (A+ ideal \ldots{} E dishonest or harmful), independent of the rivals.}
+  \label{tab:rank-card-vanilla-tools}
+  \begin{tabular}{lrrr}
+    \toprule
+    & $n$ & wins & H2H \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Evaluation suites}} \\
+    \quad constitution & 69 & 15.3 & 0.583 \\
+    \quad category & 35 & 9.0 & 0.604 \\
+    \quad drift & 25 & 6.3 & 0.615 \\
+    \quad adversarial & 14 & 1.5 & 0.500 \\
+    \quad persona & 8 & 2.0 & 0.531 \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Principle families (constitution suite)}} \\
+    \quad reasoning & -- & -- & 0.500 \\
+    \quad honesty & -- & -- & 0.767 \\
+    \quad tool & -- & -- & 0.604 \\
+    \quad robustness & -- & -- & 0.625 \\
+    \quad personalisation & -- & -- & 0.708 \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Importance tiers (constitution suite)}} \\
+    \quad Tier 1 ($\times 3$) & 27 & 6.3 & 0.625 \\
+    \quad Tier 2 ($\times 2$) & 21 & 3.0 & 0.589 \\
+    \quad Tier 3 ($\times 1$) & 21 & 6.0 & 0.524 \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Grade distribution:} A+:~7 \quad A:~22 \quad B+:~19 \quad B:~30 \quad C+:~17 \quad C:~19 \quad D:~12 \quad E:~24} \\
+    \bottomrule
+  \end{tabular}
+\end{table}

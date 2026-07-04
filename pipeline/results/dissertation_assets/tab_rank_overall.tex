@@ -1,16 +1,16 @@
 \begin{table}[t]
   \centering
-  \caption{Blind head-to-head comparison of the five conditions. For every benchmark question the anonymised answers of all conditions were ranked by the LLM judge (1 = best of the group; equal rubric grades share a rank). \emph{Wins} counts first-place finishes, a $k$-way tie sharing $1/k$; \emph{mean rank} averages the finishing position over all ranked questions (lower is better; 3.0 is the middle of a five-condition field); \emph{Borda} awards $4,3,2,1,0$ points from best to worst (tie groups share the mean), rewarding consistently high placement; the \emph{weighted} columns restrict to the constitution suite and weight each question by its principle's a-priori importance tier ($\times 3/\times 2/\times 1$), so the \emph{weighted win share} is the fraction of importance-weighted question mass on which the condition gave the preferred answer.}
+  \caption{Blind head-to-head comparison of the five conditions. For every benchmark question the anonymised answers of all conditions were ranked by the LLM judge; all metrics run 0--1 with higher better. The \emph{H2H score} is the share of rival answers a condition beat, averaged over questions (a tied rival counts half): 1.0 means ranked above every rival on every question, 0.5 is the middle of the field. \emph{Wins} counts first places, a $k$-way tie sharing $1/k$. The \emph{weighted} columns restrict to the constitution suite and weight each question by its principle's a-priori importance tier ($\times 3/\times 2/\times 1$); the \emph{weighted win share} is the fraction of importance-weighted question mass on which the condition gave the preferred answer. \emph{Grade points} averages the judge's absolute rubric grades (A+ $=1.0$ \ldots{} E $=0.0$), independent of the other answers.}
   \label{tab:rank-overall}
   \begin{tabular}{lrrrrrr}
     \toprule
-    condition & $n$ & wins & mean rank & Borda & wtd.\ mean rank & wtd.\ win share \\
+    condition & $n$ & wins & H2H score & wtd.\ H2H & wtd.\ win share & grade pts \\
     \midrule
-    vanilla\_base & 146 & 31.0 & 2.65 & 343 & 2.78 & 0.15 \\
-    vanilla\_tools & 146 & 35.0 & 2.51 & 364 & 2.45 & 0.23 \\
-    sft\_template & 146 & 21.0 & 3.45 & 226 & 3.60 & 0.14 \\
-    sft\_constitution & 146 & 34.0 & 2.90 & 307 & 2.96 & 0.23 \\
-    thinker\_executor & 146 & 25.0 & 3.49 & 220 & 3.21 & 0.25 \\
+    vanilla\_base & 151 & 31.3 & 0.551 & 0.527 & 0.153 & 0.539 \\
+    vanilla\_tools & 151 & 34.2 & 0.583 & 0.600 & 0.215 & 0.575 \\
+    sft\_template & 151 & 13.3 & 0.358 & 0.312 & 0.062 & 0.391 \\
+    sft\_constitution & 151 & 43.2 & 0.589 & 0.596 & 0.285 & 0.563 \\
+    thinker\_executor & 151 & 29.0 & 0.419 & 0.464 & 0.285 & 0.393 \\
     \bottomrule
   \end{tabular}
 \end{table}

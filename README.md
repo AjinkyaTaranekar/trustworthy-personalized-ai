@@ -812,7 +812,9 @@ python compare_report.py --labels vanilla_base vanilla_tools sft_template sft_co
 python rank_figures.py --reports_dir results     # -> results/dissertation_assets/fig_rank_*.pdf + tab_rank_*.tex
 ```
 
-`rank_figures.py` emits six single-purpose figures (weighted win share; mean rank per suite; per-tier profile; rank distribution; grade profile; principle × condition heatmap), two LaTeX tables, and `rank_figures_captions.tex` with captions that define every metric (mean rank, win share, Borda, grades).
+`rank_figures.py` emits six single-purpose figures (weighted win share; H2H score per suite; per-tier profile; rank distribution; grade profile; principle × condition heatmap), two LaTeX tables, and `rank_figures_captions.tex` with captions that define every metric. All headline metrics are 0–1 and **higher is better**: the **H2H score** is the share of rival answers beaten, averaged over questions (1.0 always best of the group, 0.5 mid-field; tied rivals count half) — it replaces the old mean-rank and Borda columns with one direction and one scale.
+
+If some comparisons fail (unparseable judge output), add `--resume`: it reuses every successful verdict from the newest `comparison_rank_*.json` and re-judges only the missing/failed questions (retries after a greedy parse failure sample at temperature 0.3, so deterministic failures don't repeat). `--resume_from <path>` pins a specific rank JSON.
 
 ---
 
