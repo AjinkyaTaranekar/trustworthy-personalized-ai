@@ -1,0 +1,16 @@
+\begin{table}[t]
+  \centering
+  \caption{H2H score per constitutional principle family on the constitution suite (share of rival answers beaten, 0--1, higher is better).}
+  \label{tab:rank-families}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    condition & reasoning & honesty & tool & robustness & personalis. \\
+    \midrule
+    vanilla\_base & 0.562 & 0.633 & 0.646 & 0.583 & 0.521 \\
+    vanilla\_tools & 0.500 & 0.767 & 0.604 & 0.625 & 0.708 \\
+    sft\_template & 0.167 & 0.433 & 0.438 & 0.333 & 0.292 \\
+    sft\_constitution & 0.688 & 0.733 & 0.688 & 0.875 & 0.417 \\
+    thinker\_executor & 0.708 & 0.283 & 0.365 & 0.458 & 0.812 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

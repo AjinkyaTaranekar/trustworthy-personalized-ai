@@ -1,0 +1,8 @@
+CRITICAL FORMAT RULES — violation invalidates the training example:
+1. Open with <think> containing flowing narrative reasoning (minimum 150 characters). NO headers, NO rule numbers, NO "CAPABILITY_CHECK:", NO "5W+H:", NO bullet lists inside <think>.
+2. Place ALL tool calls after </think> and before <answer> using: <tool>tool_name(arg='...')</tool>
+3. FIRST tool calls after </think>: call user_memory_sections() to learn section keys, then user_memory_read() to fetch user context — use the result to personalise your response.
+4. For multi-step problems: call scratchpad_sections() to learn section keys, then use scratchpad_update/scratchpad_read to track intermediate state.
+5. Close EVERY response with <answer>...</answer>. If and only if the user explicitly stated a personal fact (name, job, goal, constraint), call user_memory_update(section='<key from user_memory_sections>', content='...') immediately before <answer>. Do NOT call it for math or factual questions.
+6. NEVER output these phrases: "see answer below", "inferred from question", "none flagged", "CAPABILITY_CHECK:", "PRINCIPLE_", "5W+H:", "CONSEQUENCE_CHECK:".
+7. After EVERY [TOOL_RESULT] block, open a NEW <think>...</think> block to reason about what you just learned before calling another tool or writing <answer>. This is mandatory — never skip straight from a tool result to the next tool call or to <answer> without re-thinking.

@@ -35,10 +35,19 @@ Named methods or paradigms.
 | --- | ----- | ------- |
 | `rl` | 14 | Reinforcement learning (any algorithm) |
 | `sft` | 3 | Supervised fine-tuning |
+| `instruction-tuning` | 2 | Fine-tuning on instruction-response data to unlock zero/few-shot task following (FLAN/InstructGPT lineage) |
+| `rlhf` | 1 | Reinforcement learning from human feedback (preference model + PPO alignment) |
+| `alignment` | 3 | Aligning model behaviour to human intent/values (HHH: helpful/honest/harmless); superset of `rlhf` and `constitutional-ai` |
+| `unlearning` | 2 | Removing specific data/knowledge from a trained model (right-to-be-forgotten, federated unlearning) |
+| `catastrophic-forgetting` | 1 | Loss of general capability when fine-tuning on narrow data; mitigations (distribution-aligned rehearsal, entropy-gated loss) |
+| `guardrails` | 1 | Post-hoc programmable safety/control layer around an LLM (runtime rails), contrasted with an in-model constitution |
+| `membership-inference` | 1 | Attack inferring whether a record was in the training set — canonical privacy-leakage measure |
 | `cot` | 6 | Chain-of-Thought prompting |
 | `rag` | 3 | Retrieval-Augmented Generation (pattern) |
 | `retrieval` | 4 | Retrieval mechanisms generally (supersets `rag`) |
 | `lora` | 1 | Low-Rank Adaptation fine-tuning |
+| `quantisation` | 1 | Reducing weight/activation precision (4-bit NF4, GGUF/Int4) for memory-efficient training or on-device inference (British spelling) |
+| `scaling` | 1 | Scaling laws — loss/capability as a power law in parameters, data, and compute; the "capability needs scale" backdrop |
 | `tokenisation` | 2 | BPE / subword tokenisation (British spelling) |
 | `prompting` | 3 | Prompt-engineering methods (no weight updates) |
 | `distillation` | 4 | Teacher → student knowledge transfer |
@@ -91,6 +100,10 @@ Concrete artefacts with their own pages in `entities/`.
 | Tag | Count | Meaning |
 | --- | ----- | ------- |
 | `evaluation` | 3 | Benchmark / evaluation methodology |
+| `llm-as-judge` | 1 | Using an LLM to score model outputs; the project's automated judge — biases and calibration live here |
+| `safety-tax` | 1 | The capability/reasoning cost paid for safety alignment, and methods that reduce it |
+| `hallucination` | 1 | Generation of unfaithful or fabricated content; the faithfulness-vs-factuality distinction |
+| `abstention` | 1 | Knowing and saying when not to answer; honest uncertainty on unanswerable/underspecified questions as a trust axis |
 | `memorisation` | 1 | Memorisation-vs-reasoning distinction |
 | `caveat` | 1 | Paper documenting a limitation of prevailing technique |
 | `trade-off` | 1 | Explicit accuracy-vs-efficiency analysis |

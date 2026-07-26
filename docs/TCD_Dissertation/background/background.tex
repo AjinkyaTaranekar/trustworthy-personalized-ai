@@ -1,0 +1,655 @@
+\chapter{Background and Literature Review}
+\label{chap:background}
+
+% ===================== GUIDELINE AUDIT 2026-07-25 -- BACKGROUND =====================
+% Marking sheet: "Background Research & Literature Review" carries 15%. Full audit:
+% docs/TCD_Dissertation/GUIDELINE_COMPLIANCE.md
+%
+% (1) [background/LR 15%] CHAPTER BALANCE -- the highest-value structural issue in the document.
+%     Measured: this chapter is 8,995 live words with 68 citations; the State of the Art chapter,
+%     which carries the actual critical comparison, is 1,427 words with 15. The marking sheet's
+%     50-60% band reads "More descriptive than critical/analytical", and the 70+ band asks for a
+%     "Critical and analytical perspective" and "Exceptional ability to relate theoretical
+%     knowledge to project work". As it stands the descriptive textbook material (tokenisation,
+%     embeddings, attention, the human-vs-machine philosophical walk) outweighs the critical
+%     material by six to one, which is the shape the lower band describes.
+%     ACTION: the [TRIM-CANDIDATE], [COMPRESS] and [CUT] blocks already in this file identify
+%     ~4-5 pages that can go without losing a single load-bearing fact -- specifically the
+%     four-gap consciousness/embodiment/causality walk, BOTH OpenAI tokeniser screenshots
+%     (Figure~\ref{fig:tokenizer}, Figure~\ref{fig:space_in_tokenizer} -- a screenshot of a
+%     third-party web tool is decoration, not evidence), the duplicate "making models small"
+%     preview, and the LoRA/quantisation derivations. Execute those cuts and spend the recovered
+%     space on critical content: the two-sided FLAN reading drafted at the [AUDIT 2026-07-24]
+%     block in Section~\ref{subsec:supervised-fine-tuning-for-behaviour-alignment}, and the
+%     Menke & Tan Qwen-family finding drafted in state-of-the-art.tex. Both are analysis the
+%     70+ band rewards and both are currently missing from the live text.
+%
+% (2) [background/LR 15%] CITATION MISATTRIBUTION, live in this chapter -- see the paragraph
+%     beginning "Reinforcement learning is set aside on purpose", flagged inline below. Corrected
+%     wording is in the [AUDIT-FIX 2026-07-24] block in introduction.tex.
+%
+% (3) [background/LR 15%] ONE-SIDED CITATION. The FLAN paragraph cites only the upside. FLAN's
+%     own finding is that instruction tuning DEGRADES generalisation below ~8B -- the precise risk
+%     a 0.6B target must answer. Citing only the half that supports the argument is the opposite
+%     of the "critical and analytical perspective" the 70+ band asks for. The [AUDIT 2026-07-24]
+%     block at that paragraph already drafts the two-sided clause; apply it.
+%
+% (4) [presentation 10%] THIRD PERSON. The guideline states "Use third person as much as possible".
+%     This chapter carries 13 of the document's 15 live first-person slips. Each is fixed inline
+%     below as a DROP-IN.
+%
+% (5) [presentation 10%] CONTRACTIONS. The guideline states "Avoid use of contractions". Nine live
+%     instances in this chapter, fixed inline below.
+%
+% (6) [presentation 10%] SPELLING. Live misspellings a spell-checker would catch (a guideline
+%     checklist item): "recognizable" (also non-British), "typicall", "constituionally",
+%     "prefered", "inorder", "studing". Fixed inline below and in the existing POLISH blocks.
+% ====================================================================================
+%
+% ---- GUIDELINE 2026-07-25 | presentation (10%) | DROP-IN SWEEP: THIRD PERSON ----------------
+% Guideline: "Use third person as much as possible: avoid phrases such as 'I think', 'I guess',
+% 'I suppose'." Anchored by the opening words of each live paragraph, in document order. Some
+% overlap existing POLISH blocks; where they do, the POLISH wording already removes the pronoun
+% and this entry is a cross-check rather than a second edit.
+%
+%  "The primary goal of this dissertation":
+%  "The intuition behind that is something humans" (transformer subsec):
+%     REPLACE  "our brain immediately maps"  ->  "the reader immediately maps"
+%     (the existing POLISH block at this paragraph already carries both.)
+%
+% ---- GUIDELINE 2026-07-25 | presentation (10%) | DROP-IN SWEEP: CONTRACTIONS ----------------
+% Guideline: "Avoid use of contractions (e.g. use 'cannot' instead of 'can't', 'do not' instead
+% of 'don't')." Nine live instances, anchored by paragraph opener, in document order.
+%
+%  "The model is trained to produce \emph{plausible} text":
+%     REPLACE  "it's taught to understand what comes after this, it's never taught why"  ->  "it is taught what comes after this, but never why"   (POLISH block here carries the same fix)
+%  "However, the method leans on the model reading its own answer":
+%     REPLACE  "and since it's a single direction attention"  ->  "and because its attention runs in a single direction"
+%  "Anthropic's original Constitutional AI Framework runs in two stages":
+%     REPLACE  "The revised answers are collected to use inorder to fine-tune"  ->  "The revised answers are then collected and used to fine-tune"   (also fixes "inorder")
+% ---------------------------------------------------------------------------------------------
+
+A personal assistant that keeps its user's data on the device can be no more trustworthy than the small model at its core, and that model behaves nothing like the person it appears to answer as. This chapter builds the foundations needed to see why: how a language model turns text into tokens and tokens into fluent output, why that fluency cannot be taken for understanding, and which established techniques shrink a capable model to a size a device can run and then adapt it to a written set of principles. Each foundation laid here is one that a later design decision draws upon, and the system they build towards is shown as a whole in Figure~\ref{fig:architecture}.
+
+The primary goal of this dissertation is to develop a trustworthy and personalised AI system that operates effectively while preserving user privacy, and achieving it requires several key concepts and techniques. This chapter provides the background and literature review for those topics. It opens with the question ``What distinguishes human and machine intelligence?'' (Section~\ref{sec:human-vs-ai}), which leads into the foundations of modern language models (Section~\ref{sec:foundations}): tokens, embeddings, the transformer and its attention mechanism, the relationship between model scale and capability, dataset preparation, and the key techniques (knowledge distillation, quantisation and parameter-efficient adaptation) by which small models are produced, closing on a second question, ``why trustworthiness cannot be assumed''. It then turns to on-device AI and the privacy trade-off (Section~\ref{sec:on-device-ai-and-the-privacy-capability-trade-off}), the principles behind Anthropic's Constitutional AI framework (Section~\ref{sec:constitutional-ai}), and how a model is adapted through supervised and parameter-efficient fine-tuning (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}). How a model's behaviour is steered and grounded at inference time, through the system prompt, the tools it is given and the state it is provided, is covered in Section~\ref{sec:inference-time-steering}. The role of personalisation, and how the model gathers context through 5W+H (Who, What, When, Where, Why and How) questioning, is developed in Section~\ref{sec:personalisation-and-user-modelling}, and, because on-device inference is limited by hardware, Section~\ref{sec:multi-model-and-thinker-executor-architectures} asks whether a multi-model Thinker--Executor approach is viable. Each section reviews the current state of research, highlights its limitations, and shows how this work addresses the resulting gaps, which are drawn together in Section~\ref{sec:related-work-summary-and-novelty-gap}.
+
+\break
+
+% [TRIM-CANDIDATE | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical): This section (human vs machine, consciousness/qualia, embodied
+% cognition, causal understanding, meta-cognition) is the most philosophical and the
+% least load-bearing for a measurement-focused dissertation; its one essential payload
+% is the behavioural stance (measure what the model does, not what it "understands"),
+% which the final paragraph states. If shortening, compress the four-gap discussion to a
+% single paragraph that lands the behavioural stance and keep Table~\ref{tab:human-vs-ai};
+% ~1 page saved without touching any result or method.
+\section{What Distinguishes Human and Machine}
+\label{sec:human-vs-ai}
+
+A person who answers a question is not the same as a model that answers one, however alike the two may read, and several design decisions in this dissertation follow from that single distinction. A person understands a question \cite{tomasello2008origins}, judges what is relevant to the listener \cite{clark1996usinglanguage, sperberwilson1995relevance}, draws on lived and embodied experience \cite{barsalou2008grounded, bruner1990acts}, and can recognise when they do not know \cite{flavell1979metacognition}. A language model does none of this: it predicts the next token from those before it, having been trained only to continue text plausibly \cite{vaswani2023attentionneed, brown2020languagemodelsfewshotlearners}. Table~\ref{tab:human-vs-ai} sets the two side by side. The gap that matters most for what follows is the last one: a person can gauge the edge of their own knowledge and say so, whereas a model has no reliable read on its own uncertainty and presents a guess in the same confident register as a fact \cite{bender2021stochasticparrots}. This is the cognitive root of both hallucination \cite{ji2024surveyhallucinationnaturallanguage} and the difficulty models have in abstaining when a question is unanswerable \cite{wen2025knowlimitssurveyabstention, kirichenko2025abstentionbenchreasoningllmsfail}.
+
+The contrast is easiest to see as a list of the things a competent human brings to a conversation that a current model only appears to (Table~\ref{tab:human-vs-ai}). A person offers genuine understanding: they ask the right question rather than answering the wrong one, take a real interest, make sense of a messy situation by breaking it into its parts, and judge what matters in context \cite{tomasello2008origins, clark1996usinglanguage}. A model, by construction, offers pattern matching in place of understanding, reaction in place of proactive inquiry, retrieval in place of discovery, and statistical correlation in place of meaning \cite{bender2021stochasticparrots}. A common linguistic tell of AI-written text is its fluency, length and sentence pattern.
+
+\begin{table}[H]
+  \centering
+  \caption{Human vs AI Communication Pattern.}
+  \label{tab:human-vs-ai}
+  \begin{tabular}{ll}
+    \hline
+    Human interlocutor & Current language model \\
+    \hline
+    Understanding as grasp of meaning   & Pattern matching over form, not meaning \\
+    Proactive, well-aimed questions     & Reactive next-token continuation \\
+    Genuine interest and intent         & Simulated interest, no intrinsic goal \\
+    Discovery and sense-making          & Retrieval and statistical recombination \\
+    Relevance judgement in context      & Context-window-bounded salience \\
+    Empathy as felt concern             & Empathy expressed in text only \\
+    ``I do not know'' when uncertain    & Confident output regardless of certainty \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The dissertation takes a deliberate methodological position rather than a philosophical one. It makes no claim that the model understands, feels or is conscious, because none of these is observable, a point developed with the black-box nature of the model in Section~\ref{sec:foundations}. It adopts instead a \emph{behavioural} stance \cite{skinner1953sciencehumanbehavior}: it specifies how a trustworthy, personalised assistant should behave and measures whether the model behaves that way, treating ``understanding'' as out of scope and ``behaving as if it understood'' as the testable target, which is developed in Section~\ref{subsec:psychological-foundations} and given a measurable notion of trustworthiness in Section~\ref{subsec:why-trustworthiness}. With the distinction fixed, the next section opens the mechanism that produces both this fluency and its limits, summarised end-to-end in Figure~\ref{fig:lm-pipeline}.
+
+\section{Foundations of Language Models}
+\label{sec:foundations}
+
+A language model is a form of artificial intelligence: a computational model that predicts sequences of text. This section introduces the fundamental components of a modern language model, together with the key concepts that surround them.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\footnotesize, node distance=6mm,
+      stage/.style={draw, rounded corners, align=center, minimum height=1.25cm,
+        text width=2.3cm, fill=tcd_blue!7, inner sep=4pt, font=\scriptsize},
+      note/.style={align=center, font=\scriptsize\itshape, text width=2.5cm, text=black!55}]
+    \node[stage] (text) {\textbf{Text}\\``2+2 is''};
+    \node[stage, right=of text] (tok)  {\textbf{Tokens}\\sub-word units\\ \texttt{[17][10][374]}};
+    \node[stage, right=of tok]  (emb)  {\textbf{Embeddings}\\one learned\\vector per token};
+    \node[stage, right=of emb]  (attn) {\textbf{Transformer}\\attention mixes\\the vectors};
+    \node[stage, right=of attn] (pred) {\textbf{Next token}\\a score for every\\possible next word};
+    \draw[->, thick] (text) -- (tok);
+    \draw[->, thick] (tok)  -- (emb);
+    \draw[->, thick] (emb)  -- (attn);
+    \draw[->, thick] (attn) -- (pred);
+    \node[note, below=3mm of tok]  {digits are split, so place value is lost};
+    \node[note, below=3mm of attn] {cost grows as $O(T^2)$: a fixed, finite context window};
+    \node[note, above=4mm of pred] {highest-scoring token is emitted, appended, then fed back in};
+    \draw[->, dashed, black!55] (pred.north) to[out=110, in=70] (text.north);
+  \end{tikzpicture}
+  \caption{How a language model turns text into the next word. The string is split into sub-word
+  \emph{tokens}; each token becomes a learned \emph{embedding} vector; the \emph{transformer} mixes those
+  vectors through \emph{attention} so that each word is read in the light of the others; and the model
+  emits a score for every possible next word, appends the most likely one, and repeats (dashed arrow). Two
+  properties recur throughout this dissertation: numbers are fragmented at the token step, which is why the
+  model cannot be trusted to calculate; and attention's quadratic cost fixes a finite \emph{context
+  window}, which is why a persistent scratchpad is needed to carry information across a long conversation.}
+  \label{fig:lm-pipeline}
+\end{figure}
+%
+% [COMPRESS 2026-07-24 | point 1/2/3 | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical; multiple targeted trims, no single drop-in text): With Figure~\ref{fig:lm-pipeline} in place, the four foundations
+% subsections can be tightened to what the dissertation later reuses, while the figure preserves the
+% walk-through a non-LLM examiner needs. Specific trims (net ~1.5--2 pages recoverable):
+%  - Tokenisation (Section~\ref{subsec:tokenisation-decoding}): keep the one payload "numbers are fragmented
+%    at tokenisation, so place value is lost"; the two OpenAI-tokeniser screenshots (Figure~\ref{fig:tokenizer},
+%    Figure~\ref{fig:space_in_tokenizer}) are decorative and are already flagged for removal (~1 page).
+%  - Embeddings (Section~\ref{subsec:word-embeddings}): the king-man+woman analogy and the cosine equation
+%    can each be stated in one sentence; delete the transition tail "Thus, the need of attention is introduced
+%    in the next subsection...".
+%  - Attention (Section~\ref{subsec:transformer-attention}): keep the query--key--value intuition and the
+%    O(T^2)/context-window payload; cut the BERT/bi-directional aside to a single clause.
+%  - Delete the inter-subsection chaining sentences now redundant with the figure, e.g. "...which is the
+%    subject of the next subsection" (end of Section~\ref{subsec:tokenisation-decoding}).
+
+% [TRIM-CANDIDATE / STYLE 2026-07-24 | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical): The three foundations subsections that follow (tokenisation,
+% embeddings, transformer/attention) are standard textbook material an MSc examiner can
+% be assumed to know. Keep the two payloads this dissertation actually reuses later, that
+% numbers are shredded at tokenisation (motivates the code-for-maths principle) and that
+% attention is O(T^2) with a bounded context window (motivates the scratchpad), and
+% consider compressing the rest if the chapter runs long. ~1--2 pages recoverable.
+% STYLE (professional register): remove the conversational asides that read as blog tone rather than
+% academic prose and state the point plainly instead -- specifically "interestingly, indivisible is quite
+% divisible in world of tokens" (tokenisation subsec), "just like peers influences the person" (embeddings
+% subsec), "turns them into typewriters rather than just readers" (transformer subsec), and "the data
+% quietly teaches itself" (training subsec). Removing the figures of speech tightens the tone and the line
+% count without losing any technical content.
+\subsection{Tokenisation, Decoding, and Determinism}
+\label{subsec:tokenisation-decoding}
+
+A language model needs to process the raw text or corpus by breaking it into recognisable pre-determined units, and those units are partial words, called \emph{tokens}. The model maintains a fixed dictionary of these tokens, which is the \emph{vocabulary}. The vocabulary is built using Sennrich et al.'s \emph{Byte Pair Encoding} \cite{sennrich2016neuralmachinetranslationrare}, it starts from the single characters in a given corpus and as it iterates, it keeps gluing characters together based on how often that pair turns up in the corpus. Mathematically, a tokeniser is a function $\tau$ that maps a character string to a sequence of integer identifiers drawn from a fixed vocabulary $V$, and Byte Pair Encoding builds $V$ by initialising it with the set of characters and then repeatedly applying the merge that replaces the most frequent adjacent pair $(a,b)$ with a single new symbol $ab \in V$, stopping once $|V|$ reaches a chosen size.
+
+Common words like ``many'', ``words'', ``map'', ``to'' and ``the'' each map to a single token, whereas a rarer word is spelt out by dividing into fragments that occur more often in the corpus (for example, ``indivisible'' is split into ``indiv'' and ``isible'', interestingly, indivisible is quite divisible in world of tokens). Moreover, special \emph{unicode characters} such as emojis are likewise split across multiple tokens. The trade-off is deliberate here, a vocabulary holding every whole word would be impractically large in size and would contain millions of words, whereas a sub-word vocabulary stays compact by creating building blocks of units.
+
+This small detail has a surprisingly large consequence that will repeat throughout this dissertation. Interestingly, numbers are also segmented by the same rule, so a figure like 1234567890 is not one quantity to the model but a random series of fragments, because of which the place value of each digit is lost here. What makes numbers special is not just the value of digit but place of that digit as well, since the place of a digit scales its value by powers of ten. Similarly, the token assigned to ``I'm'' and `` I'm'' differs, adding a leading space to the same word produced an entirely different token number assigned to the former altogether.
+
+Humans read and understand text with a rich, multidimensional sense of meaning, but the tokenisation algorithm discards the structure and positional information behind several words. In order to convey both the meaning of a word and its relative position within the text, a language model must learn to represent each token as a point in a multidimensional space, which is the subject of the next subsection.
+
+
+\subsection{Word Embeddings and Representations}
+\label{subsec:word-embeddings}
+
+Language contains many words which carry different meanings based on how they are used with other words in the sentence. A token itself is a number denoting that sub-word, from the vocabulary dictionary, due to which this number on itself does not carry any significant meaning, so the first move is to build a list of numbers called an \emph{embedding}. Embeddings represent a single point in a vast vector space of multidimensional meanings where these similar words in terms of usage, meaning and synonyms are close together in the vector space.
+
+Mathematically, the embeddings are derived as a lookup in the learned matrix $E$ that holds one $d$-dimensional row per vocabulary entry, so a token with id $i$ becomes the row vector $E_i$ of length $d$, and the closeness of two words is calculated as the cosine of their vectors,
+
+\begin{equation}\label{eq:cosine}
+  \cos(E_i, E_j) = \frac{E_i \cdot E_j}{\lVert E_i\rVert \, \lVert E_j\rVert} .
+\end{equation}
+
+Meaning of a word lives not in just position but also in the \emph{directions} of this vector. Consider this famous example from Mikolov et al.\ \cite{mikolov2013efficientestimationwordrepresentations}, say from ``king'' when ``man'' is subtracted and then ``woman'' is added, lands almost exactly on the word ``queen'',
+
+\begin{equation}\label{eq:analogy}
+  E_{\text{king}} - E_{\text{man}} + E_{\text{woman}} \approx E_{\text{queen}} ,
+\end{equation}
+
+These embeddings give one fixed point per word, which is not ideal in languages, as there are many words which serve different meanings based on the context they are used in, for example ``bank'' in ``river bank'' differs entirely from the ``bank account''. Thus, the need for attention is introduced in the next subsection that reshapes each word's vector layer by layer in the light of the words around it, so the very same word can arrive at a different meaning depending on the company it keeps \cite{devlin2019bertpretrainingdeepbidirectional}, just like peers influences the person.
+
+Similarly, the vectors do not carry ordering on their own. A word embedding is the same whether the word sits at the beginning or the end of a sentence, however order matters as it changes meaning entirely, for example ``the dog bit the man'' and ``the man bit the dog'' share every token but not their sense. Here, attention compares the words of a passage as an unordered set, so position has to be supplied to the model deliberately rather than assumed. The original transformer did this by adding a fixed positional signal to each embedding \cite{vaswani2023attentionneed}; however newer models instead use \emph{rotary position embedding} (RoPE) \cite{su2023roformerenhancedtransformerrotary}, which encodes how far apart two words are rather than where each sits, which is part of why a model can cope with text longer than it was trained on.
+
+
+
+\subsection{The Transformer, Attention, and the Context Window}
+\label{subsec:transformer-attention}
+
+The underlying engine behind every modern language model was first introduced by Google back in 2017, as the transformer model, in a very famous paper, ``Attention is all you need'' \cite{vaswani2023attentionneed}. The intuition behind that is something humans do naturally without even noticing while reading: on meeting the word ``it'' in a paragraph, a reader immediately maps it to the noun it refers to, glancing at the few earlier words that matter and ignoring the rest. The Attention mechanism performs an analogous operation for every word at once. Consider, for each word the model poses a small question (a \emph{query}); every other word offers a small label (a \emph{key}); and wherever a query and a key match, the model draws in that word's content (its \emph{value}). This query--key--value operation is repeated many times over, allowing the model to track agreement, reference and the various threads of information across a whole passage, and thereby to judge which details in the text matter most.
+
+Mathematically, the attention is described as the \emph{scaled dot-product attention}
+\cite{vaswani2023attentionneed}, by collecting the per-token queries, keys and values into matrices $Q$, $K$ and $V$, where a single attention layer computes
+
+\begin{equation}\label{eq:attention}
+  \mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right)V ,
+\end{equation}
+
+where $d_k$ is the dimension of the keys and the $\sqrt{d_k}$ factor keeps the dot products in a stable range. In plain terms, the model compares every word in the text with every other word; if the text doubles in length, that comparison work roughly quadruples. This is the $O(T^{2})$ cost, and it is why the amount of text the model can consider at once --- its \emph{context window} --- is fixed and finite. Several such attention functions are run in parallel and their outputs concatenated, giving \emph{multi-head} attention, so that different heads can specialise in different relations. Because the models used here are \emph{autoregressive} and decoder-only, a causal mask forbids any position from attending to a later one, so the model predicts each token from only the tokens before it, which is precisely the ``predict the next word'' objective it is trained to maximise. The attention of Equation~\eqref{eq:attention} is also where the cost comes from: forming $QK^{\top}$ compares every position with every other, so both compute and memory grow as $O(T^{2})$ in the sequence length $T$, the quadratic bound that fixes the size of the model's context window.
+
+A strength of attention is also its limitation: it compares every word with every other word, so its cost grows with the square of the text length, which bounds the span the model can consider at once --- its \emph{context window}. The context window therefore is fixed of different language model and cannot be stretched forever. This is quite being noticed when a long document is shared with models the quality gradually slips as the chat grows long. This is exactly why the whole conversation cannot simply be pasted back in on every turn, and it is why modern language models are built with a harness around them which stores a small, structured note of what the user told, where work is done, how it is done, a 5W+H scratchpad (Section~\ref{sec:inference-time-steering}).
+
+On a side note, not every transformer reads in the same direction, left--to--right. A model like BERT or Diffusion can read both ways at once, which is typically bi-directional attention, this brings advantage of looking at the words before and after a gap, which makes it strong at understanding tasks such as filling in a blank \cite{devlin2019bertpretrainingdeepbidirectional}, whereas the models used here read strictly left to right, predicting the next word from the ones so far, adding it, and going again. This left-to-right habit is what turns them into typewriters rather than just readers, this also means they cannot go back and fix an earlier mistake the way a person edits a sentence. The Qwen3 language model is one of these left-to-right writers with a built-in space to think before it answers (the \texttt{<think>} block) and the ability to call external tools \cite{yang2025qwen3technicalreport}.
+
+
+\subsection{How Language Models Are Trained: Web-Scale Pretraining and World Data}
+\label{subsec:training-and-world-data}
+
+Training a language model requires a large corpus of text; this text is presented to the model as, say, a sentence with last position kept as blank which model is asked to now predict what comes after this. This next word prediction goes on the loop, nudging its internal weights using learning rate a little every time it guesses wrong, and since the next word is present in the training data, nothing has to be labelled, the data quietly teaches itself. The text used for this training is called \emph{world data}, which is basically a snapshot of all public written, such as web pages scraped at the scale of the whole internet (Common Crawl), forum discussions, digitised books and reference works like Wikipedia. However, an interesting observation is that training a language model on the written data alone enables it to perform tasks it was not explicitly trained for as seen today in ChatGPT or Gemini. The answer is not fully understood, GPT-3 first showed this behaviour, as reported by Brown et al.\ \cite{brown2020languagemodelsfewshotlearners}, which was termed as emergent point.
+
+After pretraining, a model can continue text beautifully but does not actually do as it is told. In order to have an instruction-following model, it is first shown examples of instructions paired with good answers so it learns to follow a request rather than just carry it on \cite{wei2022finetunedlanguagemodelszeroshot}, after which it is then tuned with answers that are preferred, classically based on human feedback \cite{ouyang2022traininglanguagemodelsfollow}. The dissertation builds on, from a written constitution \cite{bai2022constitutionalaiharmlessnessai}, as the small model is the product of exactly this pipeline, and the only stage touched here is the last one, adapting it cheaply on a single GPU rather than retraining it from scratch (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}).
+
+The preparation of this raw data is now where much of the quality actually comes from, and getting it right has become a craft of its own \cite{liang2026nextgenerationllmtrainingdatacentric}. In practice the raw web is cleaned and filtered to throw away the junk, the step that first turned Common Crawl \cite{commoncrawl} into something usable \cite{raffel2023exploringlimitstransferlearning} and that later recipes sharpened until carefully filtered web text \cite{penedo2024finewebdatasetsdecantingweb}, near-identical documents are stripped out so the model neither wastes effort nor memorises them word for word \cite{lee2022deduplicatingtrainingdatamakes}, the blend of sources is tuned because the proportions themselves change what the model ends up good at \cite{xie2023doremioptimizingdatamixtures}, and time and again a smaller pile of clean, textbook-quality text beats a far larger noisy one \cite{gunasekar2023textbooksneed}, a lesson this dissertation leans on directly when it picks the training data later (Section~\ref{subsec:training-data-quality-vs-quantity}). The catch, and the reason all of this matters for trust, is that world data is only lightly curated and is written by and about real people, so the model faithfully soaks up its mistakes and biases and can even memorise and later blurt out private snippets, which is the seed of both the unreliability  (Section~\ref{subsec:why-trustworthiness}) and the whole privacy argument for keeping everything on the user's own device (Section~\ref{sec:on-device-ai-and-the-privacy-capability-trade-off}).
+
+\subsection{Scale, Capability, and Emergent Brittleness}
+\label{subsec:scale-capability}
+
+A model's \emph{parameters} are simply the adjustable numbers it learns, and their count, here the dissertation uses one such model Qwen3 with about 0.6 billion against the hundreds of billions of a frontier system. Kaplan et al.'s scaling laws showed that this budget buys capability smoothly and predictably \cite{kaplan2020scalinglawsneurallanguage}: empirically the model's loss falls as a power law in the number of (non-embedding) parameters $N$, roughly $L(N) \approx (N_c / N)^{\alpha_N}$ for constants $N_c$ and $\alpha_N$ estimated from data, with parallel laws in dataset size and compute. Put simply, adding parameters lowers the model's error along a smooth, predictable curve, but with diminishing returns --- each doubling of size helps less than the one before. But the question that actually matters is the reverse one, what is the first thing to go when the budget shrinks? It is not, for the most part, raw knowledge, a small model can still give the capital of France. What goes first is \emph{reliability}, the ability to carry a chain of reasoning to its end, to use a tool the same way every time, or to follow an instruction that has merely been reworded \cite{rainone2025replacingthinkingtoolusage}. The picture to keep is the bright student who knows all the words but loses the thread halfway through a long, nested sentence, the vocabulary is there, the sustained control is not.
+
+This is why throughout the dissertation measurement is done on what the model \emph{does} on fixed tests rather than trust stories about what it ``knows'', because a small model that is merely rephrased can flip from right to wrong \cite{salido2025othersgeneraltechniquedistinguish}, and at this size the honest question is no longer how much it knows but how dependably it behaves. This same fragility is the seed of the trade-off this dissertation keeps returning to, that pushing a 0.6B model to reason, use tools and obey a constitution all at once tends to make one of them crack just as another is strengthened.
+
+
+% [TRIM -- REMOVE or fold into one sentence, saves ~0.5pp | DROP-IN] ACTION: DELETE the two live paragraphs of this subsection (starting "In order to fit a model onto a device" through "set later with the training configuration in Chapter~\ref{chap:methodology}."), OR CONSIDER folding them to one sentence naming the four options and forwarding to the LoRA subsection (judgement call). Reason: This subsection previews four ways
+% to make models small (train-from-scratch, distillation, quantisation, LoRA), but three of the
+% four are then covered properly where they are actually used: LoRA gets its own subsection with
+% the maths (subsec:low-rank-adaptation-lora), quantisation/QLoRA is re-explained there too, and
+% distillation is defined again in subsec:supervised-fine-tuning-for-behaviour-alignment. Academic
+% view: this is a duplicate preview. Cut it, or reduce to one sentence that names the four options
+% and forwards to the LoRA subsection.
+\subsection{Making Models Small: Distillation, Quantisation, and Parameter-Efficient Adaptation}
+\label{subsec:making-models-small}
+
+In order to fit a model onto a device such as a phone or an IoT device, there are a few different strategies: a small model can be trained from scratch, as projects like MobiLlama do \cite{thawakar2024mobillamaaccuratelightweightfully}; a big ``teacher'' model can be distilled into a small ``student'' that imitates it; the model can be \emph{quantised}, storing each of the model's numbers in fewer bits (say four instead of sixteen) to shrink its memory footprint; or the model can be left untouched and learn only a small add-on, which is what parameter-efficient methods like LoRA do \cite{hu2021loralowrankadaptationlarge}. None of these is free: a teacher has to exist in the first place, quantisation throws away precision, and an add-on can only bend the model so far.
+
+In this dissertation LoRA is used to train and quantisation to deploy, the two are not combined while training as the rounding error from quantising hurts a small model proportionally more than a large one, simply because there are fewer numbers to spread that error across, so squeezing a model below a billion parameters down to four bits while training it would chip away at the very capability being measured, which is why fine-tuning is done in sixteen bits and four-bit quantisation is kept only for the deployed model, following research of Dettmers et al.\ \cite{dettmers2023qloraefficientfinetuningquantized}. The exact knobs are set later with the training configuration in Chapter~\ref{chap:methodology}.
+
+
+\subsection{Why Trustworthiness Cannot Be Assumed}
+\label{subsec:why-trustworthiness}
+
+The model is trained to produce \emph{plausible} text, based on the world data, it is taught to understand what comes after this, but never why this comes after this. That gap between predicting what comes next and understanding why is where the question of trust arises. The \emph{true} text is never shown, which is why labelled data or a human feedback loop becomes important, as model can state a falsehood in exactly the same confident voice it uses for a fact, the failure known as hallucination \cite{ji2024surveyhallucinationnaturallanguage}. Put bluntly, fluency is no evidence of being right, and the reader is given no surface clue to tell the two apart.
+
+Three threads from the pages above sharpen this. Because the model's skill is statistical rather than grounded, simply rewording a question can flip it from right to wrong, so it is behaviour, not recalled trivia, that must be tested \cite{salido2025othersgeneraltechniquedistinguish}; because numbers are shredded at tokenisation, it cannot be trusted to compute and must lean on a tool; and because it has soaked up lightly filtered text written by and about real people, it can memorise and later repeat private content \cite{carlini2021extractingtrainingdatalarge}, with attacks able to tell whether a given record was in its training set \cite{shokri2017membershipinferenceattacksmachine}, so the model itself, not just the network it sits on, is a privacy risk. For all these reasons trustworthiness is treated as something to be engineered and measured against named, checkable requirements rather than taken on faith \cite{huang2024trustllmtrustworthinesslargelanguage, euhleg2019}, which is the work of the rest of this chapter, a written constitution (Section~\ref{sec:constitutional-ai}) baked into the weights (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}) and grounded at run time by a deterministic serving layer of prompts and tools (Section~\ref{sec:inference-time-steering}).
+
+
+\section{On-Device AI and the Privacy--Capability Trade-off}
+\label{sec:on-device-ai-and-the-privacy-capability-trade-off}
+
+A central tension in the modern AI space is the trade-off between privacy and capability. A generally available assistant backed by a model hosted on cloud infrastructure is highly capable, but it runs in a handful of data centres, so the user's data must not only leave the device on every request, it may also leave the user's own jurisdiction. A model that runs on the device keeps the data where it belongs, but a device can only run a much smaller model, and a smaller model is less capable. Working within this design space means asking which of the capabilities lost by moving to a smaller model are recoverable, either by training the model (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}) or by structuring the runtime around it (Section~\ref{sec:inference-time-steering}). The question this chapter keeps returning to is therefore never whether a 0.6 billion parameter model can match a frontier model, which it plainly cannot, but whether it can be made good enough for the everyday tasks of a personal assistant while the data stays on the device. The GDPR subsection that follows fixes the legal end of this trade-off, what the law requires of any system that holds a person's data (Section~\ref{subsec:gdpr-and-the-case-for-local-inference}); the capability end, what a model in the 0.5 to 1 billion parameter class can realistically do, is surveyed with the rest of the current state of the art in Section~\ref{sec:sota-on-device}.
+
+
+\subsection{GDPR and the Case for Local Inference}
+\label{subsec:gdpr-and-the-case-for-local-inference}
+
+
+Holding a user's data brings the legal layer directly into the design and turns it into a hard constraint. The user model built here stores a profile of the person, and that profile is personal data, in places the most sensitive kind. The General Data Protection Regulation (GDPR) sets out what this means: Article~4 defines what counts as personal data, Article~5 says it may be used only for the purpose it was collected for, Article~9 places special protection around sensitive categories such as health, and Article~17 gives the person the right to have it erased \cite{gdpr2016}. The EU AI Act goes further, placing assistants of this kind in its high-risk class \cite{europeanparliament2024regulationeu20241689}. The risk is not only that data travels, but that the model itself can be made to leak what it has seen: Shokri et al.'s membership-inference attacks show that one can often tell whether a given record was in a model's training data \cite{shokri2017membershipinferenceattacksmachine}, so controlling the pipe is not the same as controlling the model. As the motivation argued, consent forms and data-processing agreements reduce the risk of moving data off the device but do not remove it, and federated learning only trades the transmission problem for an unsolved unlearning problem \cite{nguyen2026computationcommunicationefficientfederated, staufer2025llmsforgetquantifyingpersonal}. The point carried forward is this: once a system holds special-category data under a purpose-limitation rule, sending it to the cloud becomes a legal liability, which is why everything that follows assumes the model runs on the device.
+
+The verbatim text of the four load-bearing provisions, Articles~4(1), 5(1)(b), 9(1) and 17(1), is reproduced in Appendix~\ref{chap:gdpr-articles}. Taken together these are why a profile of the user is not ordinary data: Article~9 places the thought-process data the user model stores in the most protected class, Article~5 forbids quietly repurposing it, and Article~17 demands it be erasable, an obligation an on-device store can meet but a model that has absorbed the data into its weights cannot easily honour.
+
+\section{Constitutional AI}
+\label{sec:constitutional-ai}
+
+The question of model safety and trustworthiness was first raised at scale by Anthropic, in order to create models that are aligned to a safety-first mechanism. This dissertation focuses towards how to make a small model behave \emph{well}, that is, safely, honestly and helpfully, inside that limit. There are two broad ways to shape a model after it has been pretrained. The older one, Reinforcement Learning from Human Feedback (RLHF), shows the model many of its own answers, has people rate them, trains a second ``reward'' model to copy those ratings, and then nudges the model towards the answers that score well. The other, Constitutional AI, swaps those case-by-case human ratings for an explicit written list of values, a \emph{constitution}, that the model is trained and checked against \cite{bai2022constitutionalaiharmlessnessai}; the constitution Anthropic publishes for its own Claude models is a public example of such a document \cite{anthropic2023claudesconstitution}. The second approach is scrutable where the defined values sit out in the open, in a document format which a person can actually read and argue with, rather than being buried inside thousands of private judgements in the massive training data.
+
+What pushed Anthropic towards a written constitution was a set of problems that grew worse as their models became more capable. The first was cost and human strain, teaching a model to be harmless the older way meant paying people to read thousands of the model's most toxic outputs and label them, which is slow, expensive and unpleasant work for the labellers. The second was that this did not scale, since a model already stronger than the average rater in some area cannot be corrected reliably by that rater, so leaning on human judgement was always going to run out of road. The third was a recurring tension, training hard for harmlessness made the model evasive, refusing even reasonable questions with a flat refusal rather than engaging, so helpfulness and harmlessness pulled against each other. The fourth was opacity, the values the model ended up with were locked inside the preference labels and could not be read back or amended. Constitutional AI was Anthropic's answer to all four at once, since it moves the harm labelling from a person to the model reading a written rule, so it scales and spares the labellers, it produces a model that is harmless but still willing to explain its objection rather than stonewall, and because the values live in a document anyone can read and argue with, they are open to inspection and revision in a way a set of private ratings is not \cite{bai2022constitutionalaiharmlessnessai}. Scrutability is not incidental here; it is what makes the method checkable, since a benchmark can only test compliance against principles that are written down.
+
+However, the method leans on the model reading its own answer, using self-correction it spots where it broke a principle, and rewriting it, a step that quietly assumes a model should be capable enough to find and fix its own mistakes, and since it uses single-direction attention, it must generate enough chain-of-thought reasoning to correct itself, which a 0.6B model simply cannot, and which even an 8B model already struggles with \cite{zhang2025constitutioncollapseexploringconstitutional}. The position taken here is that it is the \emph{constitution} that defines the approach, not the particular training algorithm: this dissertation takes a different route at the fundamental level, baking compliance into the weights by supervised fine-tuning (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}) and grounding the model at run time through a deterministic serving layer of prompts and tools (Section~\ref{sec:inference-time-steering}), both of which a small model supports.
+
+The scale at which this idea has been demonstrated matters as much as the idea itself, because every published constitutional result sits one to two orders of magnitude above the 0.6-billion-parameter model used here. How far down the scale of model size the recipe has been shown to hold, from Anthropic's original work through the sub-8B replications, is surveyed in the state of the art (Section~\ref{sec:sota-cai-scale}); the open question the rest of this dissertation returns to is which parts of that recipe survive the drop below one billion parameters.
+
+% [TRIM -- COMPRESS, saves ~0.4pp | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical): The two-stage critique-and-revise / RLAIF mechanism described
+% here is already summarised in the parent section above (the RLHF-vs-CAI paragraph and the
+% four-pressures paragraph). Academic view: the mechanistic detail is fine but overlaps; the only
+% non-duplicated content is the Pareto/Elo result. Consider merging this subsection's first
+% paragraph into the section above and keeping just the results paragraph.
+\subsection{Anthropic's Constitutional AI Framework}
+\label{subsec:anthropics-constitutional-ai-framework}
+
+Anthropic's original Constitutional AI Framework runs in two stages \cite{bai2022constitutionalaiharmlessnessai}. First, in the first stage of training a prompt is given to the model and it writes an answer; the model is then asked to \emph{critique} that answer against the written constitution laid by the Anthropic guideline (``does this break any principle, and how?''), after which it is asked to \emph{revise} it into a compliant version. The revised answers are collected in order to fine-tune the model so that compliant answers become its default in its weights. In the second stage, reinforcement learning is introduced: the model is asked to produce pairs of answers and, instead of a person picking the better one, another AI model does the picking by consulting the constitution, which is why the result is called learning from AI feedback.
+
+A further finding is that asking the model to reason step by step (chain of thought) during the critique stage improves both the performance and the transparency of the process, an early sign of the reasoning-and-compliance coupling that this dissertation later measures as the safety tax at the 0.6B scale. The models are harmless but non-evasive: the model can engage with a harmful request by explaining its objection rather than issuing a bare refusal, and that engaged-refusal style is the behaviour the constitution of Chapter~\ref{chap:methodology} asks of the small model as well.
+
+\section{Supervised Fine-Tuning and Parameter-Efficient Adaptation}
+\label{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}
+
+To reuse the pre-trained base model and constitutionally align it, the ideal approach is to perform the reinforcement-learning stage, however, for small models the reinforcement-learning stage struggles, as noted by Zhang \cite{zhang2025constitutioncollapseexploringconstitutional} so the approach taken is baking into weights using \emph{supervised fine-tuning}: taking the already-pretrained model and carrying on training it on a small, carefully chosen set of examples so its weights shift towards the behaviour those examples show. It is chosen because at this size it is the sensible choice: it needs comparatively few examples, it trains stably, and paired with the low-rank trick below it adjusts the model without painting over what it already knows \cite{ding2025improvedsupervisedfinetuninglarge}.
+
+% [APPLIED 2026-07-25] The Rainone misattribution was corrected in the live text at all six
+% sites (introduction x2, background, state-of-the-art, conclusion, discussion x2). RAGEN
+% \cite{wang2025ragenunderstandingselfevolutionllm} now carries the 0.5B RL-collapse evidence and
+% Rainone is cited only for what it shows. The instruction block below is retained as the record of
+% what was wrong and why; do NOT re-apply it.
+% [GUIDELINE 2026-07-25 | background/LR (15%) | DROP-IN] CITATION MISATTRIBUTION -- site 2 of 4.
+% The clause below attributes 0.6B reinforcement-learning instability to Rainone et al. Their
+% smallest model is Llama-1B, not 0.6B, and their finding is the opposite in direction: a training
+% -FORMAT choice (Chain-of-Edits) makes RL work at 1B-3B, with the advantage reversing at 8B. The
+% full correction is drafted in the [AUDIT-FIX 2026-07-24] block in introduction.tex.
+%   REPLACE  "but at 0.6B the small model's noisy outputs make that reward signal shaky, and the
+%             approach is empirically unstable here \cite{rainone2025replacingthinkingtoolusage},"
+%   ->       "but below one billion parameters the model's noisy outputs make that reward signal
+%             shaky: RAGEN reports multi-turn RL collapse on a 0.5B model
+%             \cite{wang2025ragenunderstandingselfevolutionllm},"
+% \cite{wang2025ragenunderstandingselfevolutionllm} is already in ref.bib and currently uncited, so
+% no new source is needed. Keep the Rainone citation only where it supports what it actually shows
+% (small-model reasoning brittleness, partly recoverable through structured tool use).
+% NB the paragraph immediately following this one -- "The instability at 0.6B is observed by Wei et
+% al." -- cites Beyond ReAct, which DOES exclude Qwen3-0.6B from its RL phase. That paragraph is
+% correct as written and is the proper support for the supervised-only decision; leave it.
+Reinforcement learning is set aside on purpose. Methods like GRPO improve a model by sampling its own outputs over and over and rewarding the good ones, but below one billion parameters the model's noisy outputs make that reward signal shaky, and the approach is empirically unstable at this scale: RAGEN reports multi-turn reinforcement-learning collapse on a 0.5B model \cite{wang2025ragenunderstandingselfevolutionllm}, whereas supervised fine-tuning gives dependable gains and LoRA lets it add new behaviour while keeping the old \cite{hu2021loralowrankadaptationlarge}. This is a decision for the present scale, not a verdict on the method: supervised fine-tuning can only imitate the behaviour its examples already show, while reinforcement learning could in principle reward good outcomes the examples never demonstrated, so revisiting GRPO or process-reward variants as small-model RL matures is a natural extension \cite{shao2024deepseekmathpushinglimitsmathematical, yu2025dapoopensourcellmreinforcement}.
+
+% [CUT 2026-07-24 | point 1/3 | DROP-IN] ACTION: NO CHANGE in Background -- KEEP this paragraph (its de-duplication cut is made in state-of-the-art.tex, not here; this paragraph is the home of the fact). Reason: De-duplication (Background <-> State of the Art). The fact that Beyond ReAct's
+% 0.6B planner could not be stabilised for reinforcement learning appears both here and in the State of the
+% Art (Section~\ref{sec:sota-planner-executor}). Its load-bearing use is HERE, as the justification for the
+% supervised-only decision, so this is its home: KEEP this paragraph. The State of the Art should retain only
+% the planner--executor architecture and benchmark (the small-planner/large-executor novelty point) and
+% back-reference this section for the instability rather than re-telling it (see the paired note there).
+% No cut in Background.
+The instability at 0.6B is reported by Wei et al., who trained Beyond ReAct's planner model with supervised fine-tuning at four scales, Qwen3-0.6B, 1.7B, 4B and 8B, and all four trained successfully under SFT; but when those models moved to the GRPO reinforcement-learning stage, the 0.6B variant had to be \emph{excluded outright}, because the RL phase could not be stabilised at that scale \cite{wei2025reactplannercentricframeworkcomplex}. For rapid iteration on the framework, and to make a small model reliable first, this dissertation targets supervised fine-tuning, and reinforcement learning appears only as future work, for models better in architecture and larger in parameter count (Chapter~\ref{chap:conclusion}).
+
+\subsection{Supervised Fine-Tuning for Behaviour Alignment}
+\label{subsec:supervised-fine-tuning-for-behaviour-alignment}
+
+To align the model with behaviour the mechanism is simple: if every example the model is trained on shows constitutional compliance, the model slowly shifts towards producing that kind of answer by default: it picks up statistically the ``compliant distribution'', the statistical shape of what a good response looks like. This is the same idea as the now standard practice of instruction-tuning, teaching a base model to follow requests by showing it many instruction-and-response pairs, as in FLAN, Alpaca and OpenHermes \cite{wei2022finetunedlanguagemodelszeroshot, taori2023alpaca, teknium2024openhermes}. This dissertation introduces not a new mechanism here, but rather a way to generate the content of such examples, which are chosen to demonstrate a particular principle in action.
+
+By contrast it is worth separating the two meanings of the word distillation. In \emph{knowledge} distillation a big teacher model trains a small student to copy its idea, way of thinking, the core pattern of providing output. However, the dissertation follows more closely towards \emph{behaviour} distillation, where there is no teacher in the loop at training time, only a fixed set of curated examples that already carry the target behaviour, so the constitution enters the weights through the examples themselves. The limitation to this mechanism is straightforward: because the model has learned a fixed distribution, it has no guaranteed defence against prompts that fall outside it, such as deliberately adversarial ones, and that out-of-distribution surface is exactly what the fourth hypothesis sets out to map, and the reason a runtime layer is still needed on top of whatever is baked in.
+
+The track record of this mechanism is what justifies trusting it with a constitution. Wei et al.\ showed with FLAN that instruction-tuning a 137-billion-parameter model on a broad collection of tasks lifted its \emph{zero-shot} performance above the larger GPT-3 (175B) on 20 of the 25 datasets evaluated \cite{wei2022finetunedlanguagemodelszeroshot}, establishing that a modest supervised pass can unlock behaviour that pretraining left dormant. The same study, however, found this recipe to reverse below roughly eight billion parameters, degrading rather than improving generalisation, which is the precise risk a 0.6B target must answer and which the experiments of Chapter~\ref{chap:experiments-results} are designed to test. Taori et al.\ then showed with Alpaca how far the cost floor had fallen: a 7B LLaMA model fine-tuned on 52,000 instruction-response pairs generated by a teacher model, at a total training cost of under \$600, produced a usably instruction-following assistant \cite{taori2023alpaca}, and community collections such as OpenHermes industrialised the same recipe \cite{teknium2024openhermes}. The lesson carried into this dissertation is that the mechanism is proven and cheap; what is new here is only the \emph{content} of the examples, each chosen to demonstrate a constitutional principle in action.
+
+% [TRIM -- COMPRESS the maths, saves ~0.4pp | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical): LoRA is standard practice an MSc examiner knows; the
+% $W=W_0+BA$ derivation and the quantisation step-size formula $\hat{w}=s\cdot\mathrm{round}(w/s)$ can
+% each be cut to a single clause. Keep the one payload this dissertation actually relies on: why it
+% stays at 16-bit rather than 4-bit at 0.6B (rounding error hurts a small model proportionally more).
+% Drop the two display equations and the GPT-3 175B parameter-count anecdote.
+\subsection{Low-Rank Adaptation (LoRA)}
+\label{subsec:low-rank-adaptation-lora}
+
+For any machine learning algorithm, a model's behaviour and decisions live in its \emph{weights}, which are big tables of numbers it formulates in equations to turn an input into an output, and fine-tuning all of them at once is both expensive and risky, because it can paint over the general competence the model has already arrived with. LoRA sidesteps this by freezing the original weights completely and learning only a small, compact correction to add on top of the existing frozen weights \cite{hu2021loralowrankadaptationlarge}. Mathematically, the adapted weight is $W = W_0 + BA$, where the original $d \times k$ weight matrix $W_0$ is frozen and the update is the product of two much smaller matrices, $B$ of size $d \times r$ and $A$ of size $r \times k$, with rank $r \ll \min(d,k)$. Here, ``Low rank'' simply means $r$ is kept small, so the number of trained parameters falls from $dk$ to $r(d+k)$, a tiny fraction of the whole, and the base knowledge is preserved while the new behaviour is bolted on. This approach saves a lot of computational time and energy, by allowing reusability of an existing model. The savings are not marginal: on GPT-3 175B, Hu et al.\ report cutting the number of trainable parameters by a factor of roughly 10,000 and the GPU memory needed for training by about three times, while matching or beating full fine-tuning quality \cite{hu2021loralowrankadaptationlarge}, which is what makes single-GPU adaptation of a pretrained model a routine operation rather than a data-centre job. 
+
+A second choice is how precisely to store the numbers. \emph{Quantisation} keeps them in fewer bits to save memory at the cost of some rounding, mapping a weight to $\hat{w} = s \cdot \mathrm{round}(w / s)$ for a step size $s$, so each stored value carries a small error of at most $s/2$; the popular QLoRA recipe of Dettmers et al.\ trains LoRA adapters on top of a four-bit base, and their headline demonstration was fine-tuning a 65-billion-parameter model on a single 48\,GB GPU while preserving full 16-bit task performance \cite{dettmers2023qloraefficientfinetuningquantized}. Sixteen-bit LoRA is deliberately used here in the dissertation instead, because that rounding error costs a small model proportionally more than a large one, a 65B model has a hundred times more weights over which to absorb the same per-weight error than a 0.6B model, so quantising during training would eat into the very capability being measured. The exact settings, the rank, the scaling factor and the decision to stay at sixteen bits, are tuned empirically and given with the training configuration in Chapter~\ref{chap:methodology}.
+
+\subsection{Training Data Quality vs. Quantity}
+\label{subsec:training-data-quality-vs-quantity}
+
+The natural assumption in training models is that more training data is always better, but for shaping \emph{behaviour} and \emph{alignment} that is not true. Zhou et al.\ made this point with LIMA: a 65-billion-parameter LLaMA model fine-tuned on 1,000 carefully curated prompt-response pairs, with no reinforcement learning and no human preference data, produced responses that human judges rated equivalent to or better than GPT-4's in 43\% of side-by-side comparisons, rising to 58\% against Bard and 65\% against the RLHF-trained DaVinci003 \cite{zhou2023limaalignment}. A thousand good examples, in other words, taught the model the \emph{style and shape} of good behaviour, because the knowledge was already present in the pretrained weights, though LIMA's optimism rests on a 65B base and is treated here as an upper bound, not a guarantee at 0.6B. The training set here is deliberately small in that spirit, each example a ``gold response'' written to demonstrate one principle clearly, so what matters is not the size of the set but its coverage, whether all the principles are represented and represented well.
+
+\section{Inference-Time Steering and Grounding}
+\label{sec:inference-time-steering}
+
+Supervised fine-tuning bakes compliance into the weights once during the training process, however compliance can be regulated at the second lever as well which is at \emph{inference time}, the point where the model is actually answering a user. The method for this is called the \emph{harness engineering}, in which ordinary deterministic software is wrapped around the model at generation time, supplying the standing instructions, the tools it may call, and the state it cannot hold on its own. These two halves complement each other and bring a significant difference in accuracy.
+
+Wei et al.\ showed that chain-of-thought prompting, the instruction to write the working before the answer, lifted PaLM~540B from 17.9\% to 56.9\% on the GSM8K maths benchmark, a tripling from a prompt alone \cite{wei2023chainofthoughtpromptingelicitsreasoning}. Yao et al.'s ReAct interleaved that reasoning with actions, letting the model check facts against a live API mid-answer, and beat the imitation and reinforcement-learning baselines by 34\% and 10\% absolute on the ALFWorld and WebShop agent benchmarks while reducing hallucination on HotpotQA and FEVER \cite{yao2023reactsynergizingreasoningacting}. Shinn et al.'s Reflexion closed the loop by feeding verbal self-critique into the next attempt, raising GPT-4's pass@1 on the HumanEval coding benchmark from roughly 80\% to 91\% \cite{shinn2023reflexionlanguageagentsverbal}. The difference is that these methods draw \emph{more} out of a model that is already capable, whereas the serving layer in this work must \emph{supply} the structure a small model cannot hold on its own, and the price of that structure is only the harness software, which is why it is attractive at 0.6B (Table~\ref{tab:inference-steering}). The subsections that follow climb from the weakest such mechanism to the strongest: a system prompt that steers but cannot bind, deterministic guardrails that validate what the model emits, and a scratchpad that carries reasoning state across turns.
+
+\begin{table}[t]
+  \centering
+  \caption{What inference-time structure buys without changing a weight: the cited papers' headline results on large models, and where this dissertation's 0.6B serving layer sits.}
+  \label{tab:inference-steering}
+  \begin{tabular}{p{3.2cm}p{4.6cm}p{5.6cm}}
+    \hline
+    Mechanism & What it adds at run time & Reported effect \\
+    \hline
+    Chain-of-thought \cite{wei2023chainofthoughtpromptingelicitsreasoning} &
+      write the working before the answer & GSM8K $17.9\% \to 56.9\%$ (PaLM 540B) \\
+    ReAct \cite{yao2023reactsynergizingreasoningacting} &
+      interleave reasoning with tool actions & $+34\%$ / $+10\%$ absolute on
+      ALFWorld / WebShop; fewer hallucinations on HotpotQA, FEVER \\
+    Reflexion \cite{shinn2023reflexionlanguageagentsverbal} &
+      verbal self-critique fed into the next attempt & HumanEval pass@1
+      $\sim\!80\% \to 91\%$ (GPT-4) \\
+    This work's serving layer (Chapter~\ref{chap:methodology}) &
+      single-source system prompt, live tool execution, per-probe tool profiles,
+      persistent 5W+H state & grounding alone lifts the untrained 0.6B baseline
+      (Table~\ref{tab:rank-lineage}) \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsection{System Prompts and Instruction Injection}
+\label{subsec:system-prompts-and-instruction-injection}
+
+
+The simplest way to steer a model is using the \emph{system prompt}, which is a standing instruction placed before every conversation, for example ``you are a careful assistant who reasons step by step using First Principles''. This sets the intended behaviour from the model for entire conversation, however, it does not bind the model: the model is free to ignore the instruction, and the smaller the model the more often it does, because a 0.6B model pays attention to its instructions less reliably than a large one.
+
+This weakness is not just theoretical. An entire fleet of \emph{jailbreaks} and \emph{prompt injections} is based on this: the user can input a deliberately crafted message while having conversation with the model which can override or sneak past the system prompt, even for the large frontier models. Perez and Ribeiro demonstrated two attack families against production GPT-3 endpoints with simple handcrafted text: \emph{goal hijacking}, where an ``ignore previous instructions'' payload redirects the model to the attacker's goal, and \emph{prompt leaking}, where the model is talked into revealing the system prompt itself \cite{perez2022ignorepreviouspromptattack}. Worse, Zou et al.\ showed the attacks need not be handcrafted at all: sometimes automatically optimised adversarial suffixes, trained only on open models, transfer to commercial chatbots and defeat their alignment on a large share of tested harmful behaviours \cite{zou2023universaltransferableadversarialattacks}. If instructions can be overridden this reliably on frontier models, a 0.6B model's grip on its system prompt deserves no benefit of the doubt. A good system prompt is therefore necessary but never sufficient; it raises the odds of good behaviour without ever guaranteeing it, and that gap between a tendency and a guarantee is the whole reason deterministic checking appears alongside it, which the next subsection describes.
+
+\subsection{Guardrails and Deterministic Validation}
+\label{subsec:guardrails-validation}
+
+The strongest form of inference-time control in the literature follows a simple three-step pattern: the model \emph{generates} an answer, a deterministic layer \emph{validates} it against a written policy, and on failure the system \emph{retries}, handing the model a short corrective note that names the broken rule and asks for a fix. This is recognisably Anthropic's critique-and-revise loop \cite{bai2022constitutionalaiharmlessnessai}, except that here, at a smaller scale, the critic is no longer a large capable model, so the capability a 0.6B model lacks, reliable self-critique, is supplied by code. General-purpose guardrail libraries such as Rebedea et al.'s NeMo Guardrails and Rajpal's Guardrails AI industrialise this pattern \cite{rebedea2023nemoguardrailstoolkitcontrollable, guardrailsai}. The approach is not free of risk: a badly written rule can make things worse, and no fixed rule set can foresee every edge case; but the compute cost is small and the determinism is the property that matters here, since the same input always gives the same verdict, so the check can be trusted and repeated.
+
+\subsection{Scratchpad Architectures for Reasoning}
+\label{subsec:scratchpad-architectures-for-reasoning}
+
+A model normally produces an answer in one pass, predicting words one after another with nowhere to ``work things out'', typically a human has a scratchpad to note important things while doing a task. Wei et al.'s chain-of-thought prompting changes this by asking the model to write its intermediate steps before committing to an answer, in effect handing it a scratchpad to think on \cite{wei2023chainofthoughtpromptingelicitsreasoning}, and Yao et al.\ and Shinn et al.\ stretch the same idea into taking actions and reflecting on their results with ReAct and Reflexion \cite{yao2023reactsynergizingreasoningacting, shinn2023reflexionlanguageagentsverbal}. 
+
+The dissertation structurises this scratchpad with 5W+H fields (Who, What, When, Where, Why, How) which are carried from one turn to the next, building up what has been learned about the user instead of being rebuilt from scratch each time, which is what lets a model with a small, finite context window keep a coherent picture of the user across a long conversation rather than forgetting the early turns as they scroll out of view. 
+
+\section{Personalisation and User Modelling}
+\label{sec:personalisation-and-user-modelling}
+
+When the same question is asked by two different people it often ``should'' deserve two different answers, for example a request for say ``a quick workout'' can mean different things to a young child, a marathon runner, a pregnant woman, someone recovering from an injury, or an older person. A simple request but answer to this would vary significantly based on who and when they are asking. Delivering that needs a \emph{user model}, a structured, persistent record of what the system knows about the person that is using it, and because that record is personal data it has to ideally stay on user device for the privacy reasons set out earlier. However, when a brand new user arrives the system knows nothing yet, the \emph{cold start} problem, and there are two ways to deal with it: give the user general suggestions, which read as generic, or start gathering context as the conversation goes, which this system does through the 5W+H probing described next \cite{akbar2024hitlpipa}.
+
+The production memory systems that make this personalisation work, and the measured cost of doing it carelessly, are surveyed with the rest of the current state of the art in Section~\ref{sec:sota-personalisation}. The danger that survey establishes, and that the design here is built to avoid, is \emph{over-personalisation} \cite{spadea2025avoidingoverpersonalizationruleguidedknowledge, hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}, a system that tailors itself so tightly that it becomes an echo chamber, or quietly builds a profile the user never sees, and the answer taken here is to make the user model \emph{scrutable} and \emph{correctable}, something the user can look at and overrule. The design lesson read off that evidence is selective, bounded injection: the 5W+H card feeds the model a small, structured slice of the user model rather than an open-ended memory dump, precisely because, as the OP-Bench results show, more memory is measurably not better.
+
+\subsection{Psychological Foundations}
+\label{subsec:psychological-foundations}
+
+Two of this dissertation's central words, \emph{trustworthy} and \emph{empathetic}, are borrowed from psychology. The stance taken is behaviourist in the methodological sense: when supervised fine-tuning shapes a model by reinforcing desired responses through example, a behaviour is strengthened by what follows it and the learner is judged by what it does rather than by what it is presumed to understand. Which means when a response is called trustworthy or empathetic, the claim is about observable behaviour, not about an inner state \cite{skinner1953sciencehumanbehavior}.
+
+Trust gets its structure from the model of Mayer, Davis and Schoorman, which splits a person's willingness to be vulnerable into three perceived qualities of the other party: ability (competence at the task), benevolence (acting in the user's interest rather than the system's), and integrity (sticking to a consistent set of principles) \cite{mayer1995integrativetrust}, and the constitution maps onto this triad closely: the tool and reasoning principles serve ability, the well-being and personalisation principles serve benevolence, and holding the same principles under pressure is integrity by definition. Empathy is treated the same way, as a multidimensional construct measured only as it is \emph{expressed in language}: Davis's account separates perspective-taking from empathic concern \cite{davis1983empathyiri}, and Sharma et al.'s EPITOME scores a reply on observable communication mechanisms drawn from text-based support conversations \cite{sharma2020computationalapproachunderstandingempathy}. Grounding the persona dimensions in these named constructs rather than in intuition is what lets the evaluation answer the fair question of a reader from outside computer science, namely whether the marking scheme measures anything real, with a citation rather than an assertion.
+
+
+\subsection{The 5W+H Framework for Context Gathering}
+\label{subsec:the-5w-h-framework-for-context-gathering}
+
+Context is gathered using the 5W+H framework, a set of questions --- Who, What, When, Where, Why and How --- borrowed from journalism, where it is the standard checklist for covering a story, and adapted here to dialogue (Table~\ref{tab:5wh}). The six questions are close to exhaustive yet barely overlap, so a handful of fields can capture most of what matters about a request, and each maps directly onto a belief category in the user model, so the frame is not only a prompting device but the \emph{shape} of what gets stored, in the spirit of Ramos et al.'s scrutable natural-language user profiles \cite{ramos2024transparentscrutablerecommendationsusing}: what the model asks and what it remembers share one structure.
+
+ Choosing a fixed frame over free-form memory is a deliberate trade. A free-form memory, where the system jots down whatever it likes in natural language, is more expressive but hard to inspect, audit or reason over, whereas the 5W+H frame is bounded and auditable: every stored item has an obvious home and it maps cleanly onto the graph described next. 
+
+\begin{table}[t]
+  \centering
+  \caption{The 5W+H frame and what each dimension captures about the user.}
+  \label{tab:5wh}
+  \begin{tabular}{ll}
+    \hline
+    Dimension & What it captures \\
+    \hline
+    Who & the user's identity, roles and relationships \\
+    What & their goals and current tasks \\
+    When & timing, deadlines and routines \\
+    Where & situational and physical context \\
+    Why & the motivation behind a request \\
+    How & preferred style and manner of assistance \\
+    \hline
+  \end{tabular}
+\end{table}
+
+
+\subsection{Belief Persistence and the User Model Graph}
+\label{subsec:belief-persistence-and-the-user-model-graph}
+
+Storing and retrieving user beliefs is itself a design choice. A flat key-value store cannot express how one belief bears on another, so a \emph{graph} is used instead, nodes (beliefs) joined by edges (relations), which can record that a user's goal \emph{depends on} a particular constraint \cite{wang2026memmachinegroundtruthpreservingmemorypersonalized, yang2026graphbasedagentmemorytaxonomy}, exactly the interdependence a flat store throws away. It is organised around five semantic categories, goals, tasks, skills, styles and contexts, and one edge type is special: a \texttt{USER\_CORRECTED} edge lets the user overwrite what the system thinks it knows without the original belief being silently deleted, so the history of corrections stays on the record.
+
+\section{From a Single Model to Specialisation}
+\label{sec:multi-model-and-thinker-executor-architectures}
+
+The foundations above build towards a single trade-off on which the rest of this dissertation turns, the alignment tax and, in its reasoning-specific form, the safety tax: at 0.6B a single model cannot hold reasoning, tool use and constitutional compliance at the same time, and training that strengthens one of them tends to weaken another. If this is a genuine limit of scale rather than a curable shortage of data, then no amount of better training of one model will remove it, and the structural alternative is \emph{specialisation}, splitting the work between one model that reasons (the Thinker) and one that acts (the Executor), so that neither pays the full three-way cost at once. That idea is not new; how it has been realised in current systems, and why every prior version keeps its executor in the cloud, is surveyed in Chapter~\ref{chap:state-of-the-art} (Section~\ref{sec:sota-planner-executor}), which closes on the gap this dissertation fills.
+
+% ==================================================================================================
+% [DRAFT 2026-07-25 | background/LR (15%) + reader comprehension] THE FOUNDATION-PAYOFF TABLE.
+%
+% DIAGNOSIS FIRST, so the size of this is justified. This chapter has 26 sections and subsections and
+% exactly ONE forward reference into Chapter~\ref{chap:experiments-results} or
+% Chapter~\ref{chap:discussion}. That single number is the whole problem: nine thousand words of
+% foundations that never tell the reader what they are for. It is also precisely why the chapter
+% reads as "more descriptive than critical/analytical" (the 50-60 marking band) despite containing
+% genuinely load-bearing material -- the material IS load-bearing, but the load is never shown.
+%
+% This table fixes it in one page. Every row says: here is a property established in the background,
+% here is the design decision it forced, here is where that decision is tested. After it, no examiner
+% can ask "why was the tokenisation section here?" -- and, more importantly, a reader who has just
+% finished nine thousand words of foundations gets the whole chapter back as a single structure.
+%
+% Place at the very END of this chapter, as its closing asset, and add one sentence before it:
+%   "Table~\ref{tab:foundation-payoff} draws the chapter together by naming, for each foundation laid
+%    here, the design decision it forces and the experiment in which that decision is tested."
+%
+% VERIFY every row against your own design before making it live, and correct any that overstate.
+% Trim rows for foundations you decide to cut -- a row disappearing is itself a good signal that the
+% foundation was not load-bearing and the cut was right.
+%
+% \begin{table}[p]
+%   \centering\small
+%   \caption{What each foundation buys. Every property established in this chapter forces a specific
+%     design decision, and every decision is tested somewhere in Chapter~\ref{chap:experiments-results};
+%     the chapter contains no foundation that is not paid off.}
+%   \label{tab:foundation-payoff}
+%   \begin{tabular}{@{}p{3.0cm}p{3.7cm}p{3.7cm}p{2.6cm}@{}}
+%     \toprule
+%     Foundation & Property it establishes & Design decision it forces & Where tested \\
+%     \midrule
+%     Tokenisation (Section~\ref{subsec:tokenisation-decoding})
+%       & digits are fragmented, so place value is lost
+%       & precise arithmetic must be executed as code, never computed mentally (P4)
+%       & tool-discipline family \\
+%     Attention cost (Section~\ref{subsec:transformer-attention})
+%       & cost grows as $O(T^2)$, so the context window is finite
+%       & a 5W+H scratchpad carries state across turns instead of re-pasting the conversation
+%       & context-drift suite \\
+%     Web-scale pretraining (Section~\ref{subsec:training-and-world-data})
+%       & lightly filtered text is memorised and can be repeated
+%       & the model must run on the device; nothing is transmitted
+%       & Section~\ref{sec:privacy-preserving-ai} \\
+%     Scale and capability (Section~\ref{subsec:scale-capability})
+%       & reliability fails before knowledge does
+%       & measure what the model \emph{does} on fixed probes, not what it recalls
+%       & the whole benchmark design \\
+%     GDPR Articles~9 and~17 (Section~\ref{subsec:gdpr-and-the-case-for-local-inference})
+%       & thought-process data is special-category and must be erasable
+%       & the user model is an inspectable on-device graph, not knowledge absorbed into weights
+%       & scrutability of the user model \\
+%     Constitutional AI (Section~\ref{sec:constitutional-ai})
+%       & the recipe depends on self-critique, which fails below 8B
+%       & the teacher reads the constitution and the student never does (asymmetric distillation)
+%       & Experiment~2 \\
+%     C3AI typology (Section~\ref{subsec:mr-constitution})
+%       & prohibitions instil more readily than generative instructions
+%       & principles are grouped into families so the two kinds can be scored apart
+%       & first hypothesis \\
+%     LIMA (Section~\ref{subsec:training-data-quality-vs-quantity})
+%       & a small curated set can align a model; coverage beats volume
+%       & the corpora are sized for principle coverage, and size-matched to each other
+%       & Experiment~1 versus~2 \\
+%     LoRA and quantisation (Section~\ref{subsec:low-rank-adaptation-lora})
+%       & rounding error costs a small model proportionally more
+%       & train at sixteen bits; quantise only at deployment
+%       & Table~\ref{tab:lora-config} \\
+%     System prompts (Section~\ref{subsec:system-prompts-and-instruction-injection})
+%       & an instruction steers but never binds, and can be overridden
+%       & a deterministic serving layer sits alongside the prompt rather than trusting it
+%       & \texttt{vanilla\_tools} condition \\
+%     Guardrails (Section~\ref{subsec:guardrails-validation})
+%       & a deterministic check returns the same verdict every time
+%       & rule probes are kept beside the judge as a judge-free anchor
+%       & every score reported \\
+%     Over-personalisation (Section~\ref{sec:personalisation-and-user-modelling})
+%       & added memory measurably degrades answers
+%       & bounded 5W+H injection rather than an open memory dump
+%       & persona suite \\
+%     Trust and empathy constructs (Section~\ref{subsec:psychological-foundations})
+%       & both are validated multidimensional constructs, not intuitions
+%       & the persona rubric dimensions are operationalised from them
+%       & persona suite \\
+%     Planner--executor (Section~\ref{sec:multi-model-and-thinker-executor-architectures})
+%       & every prior system keeps its executor in the cloud
+%       & both roles are 0.6B and on-device, run sequentially
+%       & Experiment~3 \\
+%     \bottomrule
+%   \end{tabular}
+% \end{table}
+%
+% ---- COMPANION CONVENTION: "FORWARD DEBT", worth adopting throughout the chapter ----------------
+% The table above works retrospectively. The same effect works prospectively, and costs one clause.
+% Wherever a foundation is introduced, name the debt at the moment it is incurred, e.g.:
+%   Tokenisation:  "...place value is lost. This is why the constitution forbids the model to compute
+%                   mentally (P4), and why arithmetic failures are scored separately in
+%                   Section~\ref{subsec:mr-suites-metrics}."
+%   Attention:     "...the context window is therefore fixed and finite, which is the constraint the
+%                   5W+H scratchpad of Section~\ref{subsec:scratchpad-architectures-for-reasoning}
+%                   exists to work around, and which the drift suite measures directly."
+% Two or three of these per section is enough. The reader stops experiencing the chapter as a tour of
+% topics and starts experiencing it as a chain, which is the difference the marking sheet is naming
+% when it contrasts "critical and analytical" with "descriptive".
+% ==================================================================================================
+
+% [DRAFT 2026-07-25 | reader retention | DEVICE A -- CHAPTER-CLOSING BRIDGE]
+% What to carry forward, the question now open, the chapter that answers it. Append as the last
+% paragraph of the chapter (after Table~\ref{tab:foundation-payoff} if that is adopted). To apply,
+% delete the "% " prefix.
+%
+% The foundations above establish what a small language model is and where it gives way: it predicts text rather than understanding it, it fragments numbers, it can attend to only a bounded span at once, and what fails first as its parameter budget shrinks is reliability rather than knowledge. What they do not establish is how far anyone has yet succeeded in making such a model behave. The next chapter therefore turns from mechanism to evidence, putting one question to each of four separate research literatures: how far down the scale of model size has this been shown to work, and what is left unclaimed at the size this dissertation works at?
+
+% ==================================================================================================
+% [DRAFT 2026-07-25 | reader retention | DEVICE D -- SECTION TAKEAWAY LINES, with exact text]
+%
+% WHY: this is what makes shallow reading work. An examiner short of time, or a reader who has just
+% absorbed nine thousand words, needs one line per section stating the single thing to carry forward.
+% Twenty words each. They also serve as a cutting test: a section whose takeaway line is hard to
+% write is usually a section that should be cut, and two of the lines below were genuinely hard.
+%
+% FORM: one italicised sentence as the last line of the section, set off from the prose:
+%   \emph{To carry forward: <the one thing>.}
+%
+% Exact text per section of THIS chapter, in document order. Adjust any that overstate:
+%
+% Section~\ref{sec:human-vs-ai} (What Distinguishes Human and Machine):
+%   \emph{To carry forward: a model has no reliable read on its own uncertainty, so it states a guess
+%   in the same confident register as a fact; this dissertation therefore measures what the model
+%   does, and treats what it ``understands'' as out of scope.}
+%
+% Section~\ref{subsec:tokenisation-decoding} (Tokenisation):
+%   \emph{To carry forward: numbers are fragmented into sub-word pieces, so place value is lost and
+%   the model cannot be trusted to calculate --- which is why the constitution requires arithmetic to
+%   be executed as code rather than performed mentally.}
+%
+% Section~\ref{subsec:word-embeddings} (Embeddings):
+%   \emph{To carry forward: a word's meaning depends on its neighbours, so a fixed vector per word is
+%   not enough, and the mechanism that fixes this is also the one that bounds how much text the model
+%   can consider at once.}
+%
+% Section~\ref{subsec:transformer-attention} (Transformer and Attention):
+%   \emph{To carry forward: attention compares every word with every other, so its cost grows with
+%   the square of the text length and the context window is finite --- which is why a persistent
+%   scratchpad, rather than a longer prompt, is what carries information across a conversation.}
+%
+% Section~\ref{subsec:training-and-world-data} (Training and world data):
+%   \emph{To carry forward: the model learns from lightly filtered text written by and about real
+%   people, so it can memorise and later repeat private content --- the model itself, not only the
+%   network it sits on, is a privacy risk.}
+%
+% Section~\ref{subsec:scale-capability} (Scale and capability):
+%   \emph{To carry forward: as the parameter budget shrinks it is reliability that fails first, not
+%   knowledge --- so the honest question at this scale is not how much the model knows but how
+%   dependably it behaves.}
+%
+% Section~\ref{sec:on-device-ai-and-the-privacy-capability-trade-off} (Privacy--capability trade-off):
+%   \emph{To carry forward: the question is never whether a 0.6 billion parameter model can match a
+%   frontier model, which it plainly cannot, but which of the capabilities lost by shrinking can be
+%   recovered by training the model or by structuring the runtime around it.}
+%
+% Section~\ref{sec:constitutional-ai} (Constitutional AI):
+%   \emph{To carry forward: the constitution defines the approach, but the critique-and-revise
+%   algorithm does not survive the drop below one billion parameters --- so the principles must be
+%   taught by a teacher that can read them, to a student that cannot.}
+%
+% Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation} (SFT and LoRA):
+%   \emph{To carry forward: supervised fine-tuning can only imitate the behaviour its examples
+%   already demonstrate, so everything depends on what those examples contain --- which is why the
+%   content of the training data, not the act of training, is the variable this study manipulates.}
+%
+% Section~\ref{sec:inference-time-steering} (Inference-time steering):
+%   \emph{To carry forward: a system prompt steers but never binds, so what a small model cannot hold
+%   on its own has to be supplied by deterministic code around it rather than asked for in words.}
+%
+% Section~\ref{sec:personalisation-and-user-modelling} (Personalisation):
+%   \emph{To carry forward: more memory is measurably not better, so the user model here is bounded,
+%   inspectable and correctable by the user rather than an open store the system draws on freely.}
+%
+% THE SAME DEVICE IS WORTH APPLYING to the five suites in Section~\ref{subsec:mr-suites-metrics}, to
+% each experiment's Results subsection, and to each hypothesis in Section~\ref{sec:answering-hypotheses}
+% -- roughly twenty lines across the document. In the Results chapter the takeaway line should carry
+% the NUMBER, not just the direction, e.g. \emph{To carry forward: better data bought compliance
+% (0.175 to 0.485) and bought back none of the reasoning (empty-trace rate 4.3\% to 91.3\%).}
+% ==================================================================================================

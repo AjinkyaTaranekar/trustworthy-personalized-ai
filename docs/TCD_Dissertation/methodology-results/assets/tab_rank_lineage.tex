@@ -1,0 +1,16 @@
+\begin{table}[t]
+  \centering
+  \caption{Training lineage on the ablation ladder: each stage changes one ingredient, so \emph{$\Delta$ vs pred.} isolates its purpose-weighted head-to-head value (all metrics 0--1, higher is better).}
+  \label{tab:rank-lineage}
+  \begin{tabular}{lrrrr}
+    \toprule
+    condition & wtd.\ H2H & $\Delta$ vs pred. & H2H (all) & wtd.\ win share \\
+    \midrule
+    vanilla\_base & 0.527 & -- & 0.551 & 0.153 \\
+    vanilla\_tools & 0.600 & +0.073 & 0.583 & 0.215 \\
+    sft\_template & 0.312 & -0.287 & 0.358 & 0.062 \\
+    sft\_constitution & 0.596 & +0.284 & 0.589 & 0.285 \\
+    thinker\_executor & 0.464 & -0.132 & 0.419 & 0.285 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

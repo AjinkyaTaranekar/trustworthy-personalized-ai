@@ -1,0 +1,234 @@
+\chapter{State of the Art}
+\label{chap:state-of-the-art}
+
+% ===================== GUIDELINE AUDIT 2026-07-25 -- STATE OF THE ART =====================
+% This chapter carries most of the weight of the 15% "Background Research & Literature Review"
+% criterion, because it holds the critical comparison rather than the textbook exposition.
+% Full audit: docs/TCD_Dissertation/GUIDELINE_COMPLIANCE.md
+%
+% (1) [background/LR 15%] THIS CHAPTER IS TOO SHORT FOR THE WORK IT HAS TO DO. Measured: 1,427
+%     live words and 15 citations, against Background's 8,995 words and 68 citations. The marking
+%     sheet rewards "thorough review of the literature demonstrating extensive knowledge of
+%     past/current work/authors in the field" and a "Critical and analytical perspective" at 70+;
+%     it penalises work that is "More descriptive than critical/analytical" at 50-60. The critical
+%     material is here and it is thin, while the descriptive material is in Background and is
+%     abundant. ACTION: move length from Background to here (see the Background audit header for
+%     the specific cuts). Two pieces of genuinely critical content are already drafted in comments
+%     and not yet live -- the Menke & Tan Qwen-family self-critique finding (the [AUDIT 2026-07-19]
+%     block below) and the two-sided FLAN reading (in background.tex). Both belong in the live text.
+%
+% (2) [background/LR 15%] ORPHAN TABLE. Table~\ref{tab:cai-at-scale} is never referenced from any
+%     sentence in the dissertation -- it is the only float in the document with no \ref pointing at
+%     it. A table no prose introduces reads as decoration, and the presentation criterion asks for
+%     "excellent use of figures, tables, and diagrams". FIX: in the live paragraph starting "So far
+%     constitutional compliance has been tested", REPLACE the closing of the sentence
+%       "...not even dependable across models of similar size \cite{menke2025effectiveconstitutionalaismall}."
+%     ->  "...not even dependable across models of similar size \cite{menke2025effectiveconstitutionalaismall}. Table~\ref{tab:cai-at-scale} sets out how far down the scale each published result reaches."
+%     This table is also the chapter's strongest single asset for the novelty argument, because it
+%     is what shows the 0.6B row is empty -- it should be pointed at, not left to be found.
+%
+% (3) [background/LR 15%] CITATION MISATTRIBUTION -- site 3 of 4, flagged inline below.
+%
+% (0) [background/LR 15%] *** THE REAL CAP ON THIS CRITERION -- READ THIS FIRST. *** Measured
+%     2026-07-25. Trimming and reorganising will NOT lift this criterion past the low 70s, because
+%     the limit is DEPTH and ENGAGEMENT, not layout. Four measurements:
+%
+%     (a) DEPTH PER FRONT. This chapter covers four research fronts with 3-5 distinct works each:
+%         on-device small models 5 works / ~268 words; constitutional alignment at reducing scale
+%         3 works / ~328 words; planner--executor 3 works / ~464 words; personalisation memory
+%         4 works / ~250 words. Constitutional alignment is THE front the contribution stands on,
+%         and it rests on three sources. The 70+ band asks for a "thorough review... demonstrating
+%         extensive knowledge of past/current work/authors in the field"; three works is not that.
+%
+%     (b) ENGAGEMENT. Of 103 works cited anywhere in the live text, 51 (50%) are cited ONCE and
+%         never returned to; only 19 are cited three or more times. Breadth of reading is evident,
+%         sustained engagement with it is not.
+%
+%     (c) SYNTHESIS. Only 12% of citations in the Background and 18% here group two or more sources
+%         in a single \cite. The prose is overwhelmingly one-claim-one-source. A top-band review
+%         synthesises -- "several authors report X \cite{a,b,c}" -- and converts agreement and
+%         DISAGREEMENT between sources into an argument. The Discussion already does this best (33%);
+%         the literature chapters should match it.
+%
+%     (d) VENUE PROFILE. 87 of the 103 cited works are @misc (arXiv preprints or web pages); only
+%         12 @article and 3 @inproceedings. This is partly honest -- the field does publish to arXiv
+%         first -- but as it stands it reads as though only arXiv was searched. FIX CHEAPLY: add a
+%         short review-method paragraph to this chapter stating the search strategy, the inclusion
+%         criteria, the date window, and explicitly that preprints dominate because peer review lags
+%         the field by 12-18 months at this pace. That single paragraph directly answers the band's
+%         "data collection & analysis" wording, which nothing in the chapter currently addresses.
+%
+%     THE GOOD NEWS: the reading is largely ALREADY DONE and sitting uncited in bibs/ref.bib (74
+%     uncited entries). Several are directly on-topic and their absence is conspicuous enough that
+%     an examiner who knows the field could reasonably ask why they were not engaged with:
+%       - \cite{xu2025thinkertrainingllmshierarchical} "Thinker: Training LLMs in Hierarchical
+%         Thinking..." -- a system literally named Thinker, doing hierarchical thinking. Experiment~3
+%         must engage with this or explain how it differs.
+%       - \cite{chen2025panguembeddedefficientdualsystem} "Pangu Embedded: An Efficient Dual-system
+%         LLM Reasoner with Metacognition" -- a dual-system reasoner, on-device. Closest prior art to
+%         the Thinker--Executor contribution and currently unmentioned.
+%       - \cite{berrayana2025plannerexecutorcollaborationdiscrete} "Planner and Executor:
+%         Collaboration between Discrete Diffusion and Autoregressive Models" -- belongs in
+%         Section~\ref{sec:sota-planner-executor}, which currently rests on three works.
+%       - \cite{abdin2024phi3technicalreporthighly} "Phi-3: A Highly Capable Language Model Locally
+%         on Your Phone" -- the canonical on-device small-model paper; its absence from
+%         Section~\ref{sec:sota-on-device} is the most conspicuous single gap.
+%       - \cite{song2026systematicevaluationondevicellms} and \cite{husom2025sustainablellminferenceedge}
+%         -- systematic on-device evaluation and edge energy cost; both support the thermal/energy
+%         argument currently carried by Tummalapalli alone.
+%       - \cite{menschikov2026personalaisystematiccomparisonknowledge} "PersonalAI: A Systematic
+%         Comparison of Knowledge Graph Storage and Retrieval" -- directly supports the user-model
+%         graph design choice in Section~\ref{subsec:belief-persistence-and-the-user-model-graph},
+%         which currently justifies the graph on two citations.
+%       - \cite{krishnan2025advancingmultiagentsystemsmodel} -- MCP is in the Nomenclature but no
+%         MCP work is cited anywhere.
+%     Integrating these is a few days of writing, not new reading, and it is what moves this
+%     criterion from the low 70s into the high 70s. Prioritise the two fronts the contribution
+%     actually stands on: constitutional alignment at reducing scale, and planner--executor.
+%
+% (4) [background/LR 15%] FACTUAL ERROR in the opening paragraph, already caught by the
+%     [STYLE/AUDIT-FIX 2026-07-24] block below but not applied: "Apple rolled out with its
+%     three-billion-parameter Foundation Model in partner with Google" -- Apple's AFM is not a
+%     Google partnership, and Gemma~4 is Google's separate model. An examiner who knows the field
+%     will notice. Apply the drafted replacement.
+% ==========================================================================================
+
+Every part of the design in Figure~\ref{fig:architecture} has a research literature of its own, and this chapter locates the contribution by reading four of them side by side: how much a phone-sized model can be asked to do, how far constitutional alignment has been shown to reach as models shrink, how planning and execution have been divided across separate models, and how a personal memory can be added without eroding capability. Each front is shown to stop short of a single assistant that is at once constitutional, tool-grounded, small enough for a device, and free of any cloud component, which is the gap the dissertation sets out to close.
+
+Before the framework of this dissertation can be built, this chapter introduces the field's current research and hot topics, because almost every design decision taken later in this work is a response to a limit that some existing system has already run into. This chapter shows four major research fronts. The first is the on-device small language model, how much a model small enough to live on a phone can actually be asked to do (Section~\ref{sec:sota-on-device}). The second is constitutional alignment, the idea of teaching a model to behave by a written set of rules, and how far down the scale of model size it has so far been shown to hold (Section~\ref{sec:sota-cai-scale}). The third is the planner--executor pattern, the practice of splitting a hard task across one model that plans and another that acts (Section~\ref{sec:sota-planner-executor}). And the fourth is personalisation memory, the store of remembered facts that lets an assistant tailor its answers to a particular person (Section~\ref{sec:sota-personalisation}). 
+
+\section{On-Device Small Language Models Today}
+\label{sec:sota-on-device}
+
+As privacy concerns have grown, the largest mobile platforms have committed to on-device processing, a shift the European Data Protection Supervisor frames as handling personal data without transmitting it beyond the device \cite{edps2025ondeviceai}. Apple ships a three-billion-parameter on-device Foundation Model and Google a phone-class Gemma~4 (Section~\ref{sec:motivation}), but both run only on flagship hardware, leaving the low-end and older handsets this dissertation targets unserved \cite{tummalapalli2026llminferenceedgemobile}.
+
+% [AUDIT 2026-07-24 | correctness nuance on a recurring gloss | DROP-IN] ACTION: REPLACE  "a brittleness Rainone et al. attribute to scale itself rather than to training choices"  ->  "a brittleness Rainone et al. tie to the interaction of small scale with free-form chain-of-thought, and show can be partly recovered by structured tool use \cite{rainone2025replacingthinkingtoolusage}"   (only the specific "scale itself, not training choices" wording overstates -- it slightly INVERTS Rainone et al.'s actual thesis; full rationale below. NOTE: already applied at all sites per the [APPLIED 2026-07-25] block below -- retained as the record of what was wrong.)
+% The clause below, "a brittleness Rainone
+% et al. attribute to scale itself rather than to training choices", also appears (in spirit) in the
+% background and the discussion, and it slightly INVERTS Rainone et al.'s actual thesis. Per
+% wiki/sources/papers/replacing-thinking-with-tool-usage.md, their central claim is the opposite: a
+% training-FORMAT choice -- recasting reasoning as structured edits to a code tool (Chain-of-Edits)
+% rather than free-form language CoT -- rescues genuine reasoning in 1B-3B models at the SAME scale
+% (CoE beats a CoT baseline ~50x at 1B), and the advantage REVERSES at 8B. So the failure is attributed
+% to scale INTERACTING WITH the free-form CoT training choice, and is demonstrably fixable by a different
+% training choice; it is not attributed to "scale itself rather than training choices". The broader use
+% here (small models are brittle at multi-step reasoning) is sound; only the specific "scale itself, not
+% training choices" clause overstates. Also note Rainone's models are Llama-1B/3B/8B (not 0.6B), and the
+% 8B crossover means their result must not be read upward from 0.6B. RECOMMEND softening to, e.g.:
+% "...a brittleness Rainone et al. tie to the interaction of small scale with free-form
+% chain-of-thought, and show can be partly recovered by structured tool use \cite{rainone2025replacingthinkingtoolusage}."
+% [APPLIED 2026-07-25] The Rainone misattribution was corrected in the live text at all six
+% sites (introduction x2, background, state-of-the-art, conclusion, discussion x2). RAGEN
+% \cite{wang2025ragenunderstandingselfevolutionllm} now carries the 0.5B RL-collapse evidence and
+% Rainone is cited only for what it shows. The instruction block below is retained as the record of
+% what was wrong and why; do NOT re-apply it.
+% [GUIDELINE 2026-07-25 | background/LR (15%) | DROP-IN] CITATION MISATTRIBUTION -- site 3 of 4.
+% The [AUDIT 2026-07-24] block directly above already establishes the correction and drafts the
+% replacement clause; it has not been applied. For the avoidance of doubt, the drop-in is:
+%   REPLACE  "a brittleness Rainone et al.\ attribute to scale itself rather than to training
+%             choices \cite{rainone2025replacingthinkingtoolusage}"
+%   ->       "a brittleness Rainone et al.\ tie to the interaction of small scale with free-form
+%             chain-of-thought, and show can be partly recovered by structured tool use
+%             \cite{rainone2025replacingthinkingtoolusage}"
+% Apply the same correction at the three other sites (introduction.tex Scope and Assumptions,
+% background.tex "Reinforcement learning is set aside on purpose", conclusion.tex GRPO future work)
+% so the four references to this source agree with one another and with the source.
+Models below a billion parameter class like say Qwen3-0.6B, SmolLM and the smaller Gemma models, are small enough to run on a phone; however, they sit below the size range where almost all constitutional-AI research has so far been done \cite{yang2025qwen3technicalreport, thawakar2024mobillamaaccuratelightweightfully}. As the background sets out (Section~\ref{subsec:scale-capability}), what fails first at this scale is reliability rather than knowledge: the model still recalls facts, but it struggles to reason over several steps, call tools dependably, and follow an instruction once it is reworded, a brittleness Rainone et al.\ tie to the interaction of small scale with free-form chain-of-thought reasoning, and show can be partly recovered through a more structured reasoning format \cite{rainone2025replacingthinkingtoolusage}. A reasonable objection is that benchmark scores understate how useful a small model is in practice; the reply is that the probes used here measure how the model behaves rather than how much trivia it recalls, so the weaknesses they expose are properties of behaviour, not artefacts of a knowledge test.
+
+\section{Constitutional Alignment at Reducing Scale}
+\label{sec:sota-cai-scale}
+
+So far constitutional compliance has been tested for large sizes of parameter models, around eight billion parameters and up. A recent study for ``Constitution or Collapse'' reports that an eight-billion Llama~3, more than thirteen times the size of the model used in the dissertation, struggles to hold full compliance \cite{zhang2025constitutioncollapseexploringconstitutional}, and a separate study of self-critique in small reasoning models finds its usefulness sharply decreases so it is not even dependable across models of similar size \cite{menke2025effectiveconstitutionalaismall}.
+
+Zhang's Llama~3-8B replication of the constitution on a smaller model is instructive, because each result carries a lesson for going smaller \cite{zhang2025constitutioncollapseexploringconstitutional}. Replacing Anthropic's reinforcement-learning stage with the cheaper Direct Preference Optimisation (DPO), Zhang reduced the attack success rate on the HeX-PHI red-team benchmark by 40.8\%, from 71\% to 42\%, so the constitutional signal transfers down to 8B. It did so, however, at a 9.8\% cost in helpfulness on MT-Bench, an average score falling from 6.05 to 5.46. Zhang concludes that self-improvement is an \emph{emergent} capability that does not generalise downward, which is why this dissertation does not ask the Qwen3-0.6B model to critique itself: the critique is produced instead by a frontier-scale teacher at data-generation time and by deterministic rules at run time. In the same area, Chac\'on Menke and Tan find that the usefulness of self-critique in small reasoning models varies sharply from one design to the next, so it is not dependable even across models of similar size \cite{menke2025effectiveconstitutionalaismall}.
+
+% [AUDIT 2026-07-19 | coverage | DROP-IN] ACTION: CONSIDER (judgement call, not mechanical): APPEND to the live Menke & Tan paragraph (ending "...it is not dependable even across models of similar size \cite{menke2025effectiveconstitutionalaismall}.") a clause naming the model family, e.g. "..., and, tellingly for the model family used here, harm detection during self-critique breaks down specifically in Gemma-2 and Qwen2.5 at 7--9B while only the reasoning-distilled model benefits."   (coverage, not correctness -- the Menke & Tan sentence is already accurate.)
+%  Rationale: per wiki/sources/papers/effective-cai-small-llms.md, their sharpest finding is architecture-SPECIFIC and directly load-bearing here -- harm detection during self-critique breaks down in Gemma-2-9B and Qwen2.5-7B (the models simply fail to flag harm at the critique step), while only the reasoning-distilled DeepSeek-R1-Distill-Llama-8B benefits. Since this dissertation's base is Qwen3-0.6B, "Qwen fails at self-critique even at 7B" is the single strongest external justification for not asking the 0.6B student to critique itself.
+\begin{table}[H]
+  \centering
+  \caption{Constitutional AI results by model scale}
+  \label{tab:cai-at-scale}
+  \begin{tabular}{p{3.4cm}p{2.2cm}p{8.5cm}}
+    \hline
+    Study & Scale & Headline outcome \\
+    \hline
+    Anthropic CAI \cite{bai2022constitutionalaiharmlessnessai} & $\sim$52B &
+      Pareto improvement: more harmless \emph{and} more helpful than RLHF
+      (crowdworker Elo); harmless but non-evasive style \\
+    Constitution or Collapse \cite{zhang2025constitutioncollapseexploringconstitutional} & 8B &
+      Attack success rate $71\% \to 42\%$ ($-40.8\%$, HeX-PHI), at $-9.8\%$
+      helpfulness (MT-Bench $6.05 \to 5.46$); model collapse from noisy
+      self-revisions \\
+    Small-model self-critique \cite{menke2025effectiveconstitutionalaismall} & small &
+      usefulness of self-critique swings sharply between designs of similar size \\
+    \textbf{This dissertation} & \textbf{0.6B} & measured in
+      Chapter~\ref{chap:experiments-results}; no prior constitutional
+      measurement exists at this scale \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\section{Planner--Executor and Multi-Agent Decomposition}
+\label{sec:sota-planner-executor}
+
+In software engineering, a common technique for writing code is pair programming, in which two people work on one codebase, one planning ahead and one implementing. By analogy, Wei et al.'s Beyond ReAct trains a dedicated Planner model to emit a complete plan in advance, a Directed Acyclic Graph (DAG) of tool calls, before execution begins, on the argument that step-by-step interleaved reasoning tends to fall into ``local optimisation traps'' in which each step is locally plausible but the sequence is globally suboptimal; with a Qwen3-8B Planner driving a GPT-4o Executor it reaches a 59.8\% end-to-end success rate on the StableToolBench benchmark against 48.2\% for a GPT-4 ReAct baseline, using fewer inference steps per task than any compared method \cite{wei2025reactplannercentricframeworkcomplex}. Molinari and Ciravegna apply the same separation to enterprise tasks with Reason-Plan-ReAct \cite{molinari2025reasonplanreactreasonerplannersupervisingreact}, and Zywot et al.\ pose the broader question directly, whether several small agents can together outperform a single large one \cite{zywot2026smallagentscollaboratebeat}. Two details of Beyond ReAct matter most here. First, its Planner was trained at exactly the scales this dissertation studies (0.6B--8B), the smallest of which motivates the supervised-only decision taken in Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}. Second, and this is the consistent pattern across the prior work, the planner is small while the executor is large and cloud-hosted, which breaks the on-device privacy argument this work begins from (Figure~\ref{fig:planner-executor-lineage}). The contribution here is to remove the large component and make \emph{both} models 0.6B and both constitutionally trained; the obvious objection, that two 0.6B models total 1.2B, is answered by running them \emph{sequentially}, so that peak memory at any instant is that of a single 0.6B model, and peak memory, not total parameter count, is what on-device deployment constrains. Sequencing is not free: it adds coordination overhead and the risk that an error in the Thinker's plan propagates into the Executor's actions, but rather than dismissing these, the work treats them as outcomes to be measured.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\footnotesize,
+      model/.style={draw, rounded corners, fill=black!4, align=center,
+        minimum height=1.15cm, text width=2.5cm, font=\scriptsize},
+      cloud/.style={draw, rounded corners, fill=black!15, align=center,
+        minimum height=1.15cm, text width=2.5cm, font=\scriptsize},
+      bnd/.style={draw, dashed, rounded corners, inner sep=7pt}]
+    \node[model] (p1) at (0,0) {small planner\\(on-device)};
+    \node[cloud, right=2.2cm of p1] (p2) {large executor\\(cloud-hosted)};
+    \draw[->, thick] (p1) -- node[above, font=\scriptsize\itshape]{plan} (p2);
+    \node[bnd, fit=(p1), label={[font=\scriptsize\itshape]below:device}] {};
+    \node[bnd, fit=(p2), label={[font=\scriptsize\itshape]below:cloud: data leaves the device}] {};
+    \node[anchor=west, font=\scriptsize\bfseries] at (-1.6,1.1) {Prior planner--executor systems \cite{wei2025reactplannercentricframeworkcomplex, molinari2025reasonplanreactreasonerplannersupervisingreact}};
+    \node[model] (t1) at (0,-3.1) {0.6B Thinker\\(on-device)};
+    \node[model, right=2.2cm of t1] (t2) {0.6B Executor\\(on-device)};
+    \draw[->, thick] (t1) -- node[above, font=\scriptsize\itshape]{plan} (t2);
+    \node[bnd, fit=(t1)(t2), label={[font=\scriptsize\itshape]below:one on-device boundary; run sequentially}] {};
+    \node[anchor=west, font=\scriptsize\bfseries] at (-1.6,-2.0) {This work};
+  \end{tikzpicture}
+  \caption{Planner--executor lineage: prior systems \cite{wei2025reactplannercentricframeworkcomplex, molinari2025reasonplanreactreasonerplannersupervisingreact} pair a small planner with a large cloud executor, whereas this work makes both roles on-device 0.6B models \cite{zywot2026smallagentscollaboratebeat}.}
+  \label{fig:planner-executor-lineage}
+\end{figure}
+
+\section{Personalisation and Memory Systems}
+\label{sec:sota-personalisation}
+
+In order to keep the know-how about the user which it has learned about, it needs to retain memory, a store of remembered facts that can sit beside the model and is consulted on every turn, and this pattern is by now well established in production. Feng et al.\ establish that an external memory does change how a model behaves \cite{feng2026doespersonalizedmemoryshape}, while Chhikara et al.'s Mem0 and Wang et al.'s MemMachine show it at scale, the memory living in inspectable storage outside the weights rather than being absorbed irretrievably into them \cite{chhikara2025mem0buildingproductionreadyai, wang2026memmachinegroundtruthpreservingmemorypersonalized}.
+
+Using OP-Bench, a benchmark of 1,700 human-verified instances across 20 users built from long-horizon dialogues, Hu et al.\ evaluated six memory-augmentation methods across four models and found that every one of them degraded answer quality relative to the same model run memory-free, by between 26.2\% and 61.1\%, with the more sophisticated memory systems consistently worse than simple retrieval \cite{hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}. The mechanism Hu et al.\ identify is ``memory hijacking'': an attention analysis shows retrieved memories receiving more than twice the attention weight of the user's query, even when those memories are irrelevant to it. The study formalises three failure types, injecting irrelevant memory, over-accommodating a user's stored beliefs even when wrong, and repeating near-identical answers to distinct questions, and its lightweight mitigation, a self-check filter over the injected memory, recovers about 29\% of the loss. How this dissertation answers the same danger, through bounded 5W+H injection and a scrutable, correctable user model, is taken up in Section~\ref{sec:personalisation-and-user-modelling}.
+
+\section{Related Work Summary and Novelty Gap}
+\label{sec:related-work-summary-and-novelty-gap}
+
+On pulling all the threads together, each strand of prior work in the state-of-the-art fills some of the picture and leaves the rest blank (Table~\ref{tab:novelty}). Constitutional training has been tested at eight billion parameters and above, where it already costs helpfulness and risks collapse \cite{bai2022constitutionalaiharmlessnessai, zhang2025constitutioncollapseexploringconstitutional}, planner-executor designs demonstrate real gains but always keep a large cloud executor and could not stabilise reinforcement learning at 0.6B \cite{wei2025reactplannercentricframeworkcomplex}, small-agent collaboration covers two-model setups but not constitutional compliance \cite{zywot2026smallagentscollaboratebeat}, and the personalisation literature warns that memory added carelessly makes models measurably worse \cite{hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}, while the small model capability studies cover deployment but say nothing about safety. No single piece of work brings all four together.
+
+\begin{table}[t]
+  \centering
+  \caption{Novelty matrix: no prior strand fills all four axes at small model and on-device (${}^{*}$ pairs a small planner with a large executor).}
+  \label{tab:novelty}
+  \begin{tabular}{lcccc}
+    \hline
+     & Constitutional & Tool-grounded & small model & Two 0.6B \\
+    Work & training & serving layer & scale & models \\
+    \hline
+    Bai et al., CAI \cite{bai2022constitutionalaiharmlessnessai} & yes & -- & -- & -- \\
+    Constitution or Collapse \cite{zhang2025constitutioncollapseexploringconstitutional} & yes & -- & -- & -- \\
+    Beyond ReAct \cite{wei2025reactplannercentricframeworkcomplex} & -- & yes & -- & partial${}^{*}$ \\
+    Small agents \cite{zywot2026smallagentscollaboratebeat} & -- & -- & yes & yes \\
+    \textbf{This dissertation} & \textbf{yes} & \textbf{yes} & \textbf{yes} & \textbf{yes} \\
+    \hline
+  \end{tabular}
+\end{table}
+
+% [DRAFT 2026-07-25 | reader retention | DEVICE A -- CHAPTER-CLOSING BRIDGE]
+% What to carry forward, the question now open, the chapter that answers it. Append as the last
+% paragraph of the chapter, after Table~\ref{tab:novelty}. To apply, delete the "% " prefix.
+%
+% Each of the four literatures fills part of the picture and none of them fills all of it: constitutional training has been demonstrated only at eight billion parameters and above, where it already costs helpfulness; planner--executor designs win real gains but keep their executor in the cloud; small-agent collaboration reaches the right scale but says nothing about compliance; and the personalisation work warns that memory added carelessly makes a model measurably worse. The gap they leave is a single assistant that is at once constitutionally trained, tool-grounded, small enough for a device, and free of any cloud component. Claiming to have built one is worth nothing, however, without an instrument capable of testing the claim, and so the next chapter specifies that instrument in full before any result is reported.
