@@ -2,7 +2,7 @@
 
 MSc dissertation and research pipeline — Ajinkya Taranekar, supervised by Owen Conlan, School of Computer Science and Statistics, Trinity College Dublin.
 
-Full reproduction runbook: **[`pipeline/pipeline.md`](pipeline/pipeline.md)**.
+**[Read the dissertation (PDF)](Constitutional_AI_in_SLM.pdf)** · Full reproduction runbook: **[`pipeline/pipeline.md`](pipeline/pipeline.md)**
 
 ---
 
@@ -36,7 +36,7 @@ Training is 16-bit LoRA throughout. GRPO and other RL post-training are delibera
 
 Replacing a format-only corpus with a constitutional one, over identical weights and recipe, raises the head-to-head score by 0.230 — the data decides the outcome. That model does not beat an untrained one given a careful prompt and real tools on average (0.589 vs 0.583), but each is strong where the other is weak. The gain is paid for: empty-reasoning rate goes from 1.4% to 91.3% and mean trace length from 1,309 to 150 characters. Splitting reasoning from execution wins part of that back (36.2% empty traces) but does not match single-model compliance and is weakest over long conversations.
 
-Full tables and figures: `pipeline/reports/` and `docs/Constitutional_AI_in_SLM/`.
+Full tables, figures and discussion: [the dissertation](Constitutional_AI_in_SLM.pdf); raw run outputs in `pipeline/reports/`.
 
 ## Repository layout
 
@@ -49,8 +49,9 @@ pipeline/                Training, inference, benchmarking, analysis
 ├── thinker_executor_orchestrator.py               Experiment 3 two-model loop
 ├── analyze_experiments.py, *_figures.py           Tables + dissertation assets
 ├── data/  models/  reports/                       Datasets, checkpoints, results
+Constitutional_AI_in_SLM.pdf    The dissertation, compiled
 docs/
-├── Constitutional_AI_in_SLM/   Current dissertation (LaTeX)
+├── Constitutional_AI_in_SLM/   Dissertation source (LaTeX)
 ├── Assets/                     Source PDFs
 ├── Literature Notes/           Per-paper notes
 wiki/                    Obsidian research vault — index.md is the catalog
