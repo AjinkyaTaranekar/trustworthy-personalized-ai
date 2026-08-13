@@ -1,0 +1,131 @@
+\chapter{Conclusions \& Future Work}
+\label{chap:Conclusions}
+\label{chap:conclusion}
+
+This dissertation examined what teaching a written constitution to a small model running on a user's device gains, what it loses, and whether that cost can be recovered architecturally (Figure~\ref{fig:architecture}). This chapter summarises the evidence, states what it does not support, and outlines the work needed to advance the framework.
+
+\section{Challenges Encountered}
+\label{sec:conclusion-challenges}
+
+This work was shaped by several difficulties, and the design decisions they forced are integral to the result.
+
+\begin{enumerate}
+
+   \item The compute budget was severely limited. Training and generation ran on a single rented consumer-class GPU, forcing sixteen-bit LoRA in place of full fine-tuning, sequential benchmarking of the five conditions, and a pipeline that had to survive disconnection. To mitigate this, every stage was made restartable, with each completed benchmark item streamed to an append-only file, and judging decoupled from generation to release the GPU before scoring began. This decoupling, initially a cost measure, became a methodological asset, allowing saved reports to be re-graded by different judges or resampled for confidence intervals without re-running the model.
+
+   \item The first measurement instrument proved inadequate alone. Deterministic checks are exactly repeatable but under-credit correct answers phrased unexpectedly, and a judge scoring each answer in isolation measures it against a standard a model this size reaches only occasionally, pushing all five conditions towards the bottom of the range and separating them poorly. To address this, the head-to-head comparison became the primary measure (Section~\ref{subsec:mr-judge-validity}), with the deterministic checks retained in the saved reports as a diagnostic.
+
+   \item The scope was fixed to supervised fine-tuning (Section~\ref{sec:scope-and-assumptions}), bounding what the dissertation can say: supervised fine-tuning only imitates behaviour its examples demonstrate, leaving open whether rewarding outcomes would avoid the safety tax or merely move it (Section~\ref{subsec:conclusion-future-grpo}). Holding the scope there keeps the comparison readable, since with the model, the training method, and the benchmark fixed, a difference between conditions can be read against what actually varied.
+
+   \item Generating training data against live tools proved brittle. Because the teacher's tool calls were executed for real rather than simulated, each trajectory depended on a third-party search service and a sandboxed execution environment behaving predictably, and neither always did. Rather than removing the dependency, those failure modes were folded into the corpus as deliberate adversarial environments, training the model on tool timeouts and missing tools as well as on successful calls. Simulated tool results would have been more reliable but would have taught the model to expect a world that does not exist.
+
+\end{enumerate}
+
+\section{Summary of Contributions}
+\label{sec:conclusion-contributions}
+
+This dissertation makes two contributions and reports one finding that follows from them.
+
+The \emph{first contribution} is methodological: a reusable, model-agnostic framework for measuring constitutional compliance in a sub-billion-parameter model. It comprises deterministic check suites that return the same verdict on the same input on every run, a head-to-head judging protocol, and a staged design that holds the model, the training method, and the benchmark constant across every condition. Every score it produces carries a measured interval obtained by resampling the questions from saved verdicts, so a claim it supports can be told apart from one it does not. A verdict on Qwen3-0.6B will be superseded as soon as a more capable small model appears; the procedure for reaching that verdict can be reapplied to the next one, on any Hugging Face-compatible model.
+
+The \emph{second contribution} is architectural. The existing literature pairs a small planner with a large, cloud-hosted executor. This work designs and evaluates a Thinker--Executor architecture where neither half is a large model. Both run on the device, one after the other, so only a single small model computes at any instant, eliminating the dependency on a cloud executor and preserving the on-device privacy guarantee.
+
+The findings produce a measurement of the \emph{safety tax} at 0.6 billion parameters, a specific case of the broader \emph{alignment tax}. Constitutional fine-tuning buys more compliant behaviour at a measurable cost to the model's written reasoning: it redistributes capability rather than adding it (Chapter~\ref{chap:experiments-results}). Every prior constitutional study surveyed in Chapter~\ref{chap:state-of-the-art} sits at eight billion parameters and above, so this is the first measurement of that trade-off at a size a low-end handset can run.
+
+\section{Answering the Research Question}
+\label{sec:conclusion-answer}
+
+The research question asked three things: what teaching a written constitution into the weights of a 0.6-billion-parameter model buys, what it costs, and whether the cost can be recovered by changing the architecture rather than the model size. Table~\ref{tab:hypothesis-verdicts} gives the verdict on each hypothesis and the evidence behind it.
+
+\begin{table}[htbp]
+  \centering\small
+  \caption[The five hypotheses and the verdict the evidence supports]{The five hypotheses and the verdict the evidence supports.}
+  \label{tab:hypothesis-verdicts}
+  %% Widths sum to 151.5mm against the 155mm text block of tcdthesis.sty: 4.8mm
+  %% for the label, 38mm and 68mm for the two wrapped columns, 28mm for the
+  %% widest verdict, and 12.7mm of \tabcolsep across the three interior gaps.
+  %% The hypothesis column was previously `l', which cannot wrap, so H3 set its
+  %% forty-character phrase on one line and pushed the verdict past the margin.
+  \begin{tabular}{@{}lL{3.5cm}L{7.8cm}l@{}}
+    \toprule
+    & Hypothesis & What the evidence shows & Verdict \\
+    \midrule
+    H1 & compliance improves at 0.6B
+       & constitutional data beats template data by $0.230$ head to head, interval excluding zero; combined suite score $0.175 \to 0.475$. Against the untrained baseline the head-to-head difference is $+0.037$, interval containing zero
+       & \textbf{partly supported} \\
+    \addlinespace
+    H2 & the gain costs reasoning capacity
+       & empty-reasoning rate $1.4\% \to 91.3\%$; mean trace length $1{,}309 \to 150$ characters, at identical decoding settings across every condition
+       & \textbf{supported} \\
+    \addlinespace
+    H3 & prompt engineering underperforms training
+       & the two conditions differ by $+0.006$, interval $[-0.078, +0.089]$; the resamples split almost evenly on which finishes ahead
+       & \textbf{not supported} \\
+    \addlinespace
+    H4 & the failure boundary is systematic
+       & failures cluster by principle and by weighted tier rather than scattering across questions (Figure~\ref{fig:rank-principle-heatmap})
+       & \textbf{supported} \\
+    \addlinespace
+    H5 & decomposition moves the ceiling
+       & written reasoning recovered (empty rate $91.3\% \to 36.2\%$) and clarification appears only here (0.362 against zero elsewhere), but headline compliance is $0.170$ below the single model, interval excluding zero
+       & \textbf{partly supported} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+By replacing a format-only corpus with a constitutional one, results got boosted, the head-to-head score by 0.230, the largest effect measured here, and the evidence separates it cleanly from zero. Against the untrained model, the difference is smaller, and the evidence does not separate it, so this study establishes that constitutional data beats alternative training data, and that is all.
+
+The same training that produces the highest compliance score also empties the model's written reasoning on nine out of ten answers. Since every condition was decoded under identical settings, this is not because of sampling, as discussed during evaluation.
+
+The cost can be recovered architecturally, but only in part. Splitting reasoning from execution returns much of the written reasoning and produces the only condition asking a clarifying question before answering, but it costs headline compliance by a margin the interval separates from zero, and it is the least stable over long conversations, though that last point rests on a single 25-turn conversation and is reported as a direction rather than a calibrated effect.
+
+The main finding found from the experimentation were prediction of where the fine-tuned model underperforms, as it does so systematically rather than at random, and which items it fails can be predicted in advance from the task and the principle being tested. The reasoning-intensive principles stay out of reach of every intervention tried at this scale, including the two-model split. Locating that boundary was the aim of this work, not returning a verdict for or against constitutional training at small scale.
+
+\section{Future Work}
+\label{sec:conclusion-future}
+
+Each next step follows from a limitation or a scope exclusion above, starting with the one that extends the present results most directly.
+
+\subsection{Running the Framework on Other Small Models}
+\label{subsec:conclusion-future-extensions}
+
+The first step is to run the same benchmark on other small models. Using the existing pipeline, Phi-3.5-mini, Gemma-2B, and SmolLM2-1.7B are reasonable choices because they vary both parameter count and architectural family, allowing the influence of each to be separated.
+
+The reason to do this first is that the point at which reasoning gave way under constitutional training was located on one model only. Running the same benchmark on another architectural family would show whether the boundary sits at the same size or moves with it. A third outcome, the pattern not appearing in another family at all, would be more useful still, marking the finding as specific to this model rather than to small models as a class. This addresses the single-model limitation of Section~\ref{subsec:model-scale-limitations} more directly than further work on Qwen3-0.6B.
+
+\subsection{Improving Training Data Quality}
+\label{subsec:conclusion-future-data}
+
+The second step is to improve how the training data captures reasoning. The natural assumption is that more and better data are needed, but measurements point to a narrower issue. A model can only imitate what its examples contain, so where reasoning was missing from the data, the model learned to leave it out.
+
+Reasoning-preserving self-distillation, as shown by Fu et al.\ \cite{fu2026reducingsafetytaxllm}, would regenerate the \texttt{<think>} targets from the base model's own reasoning, run locally without a paid teacher, and attach the constitution-compliant answer to that reasoning. 
+
+\subsection{A Constitutional Validate-and-Retry Layer}
+\label{subsec:conclusion-future-validate-retry}
+
+Anthropic's critique-and-revise loop assesses a candidate answer before weights are updated \cite{bai2022constitutionalaiharmlessnessai}. Since a small model cannot reliably critique itself, external assessment is better supplied by a deterministic validate-and-retry layer: validate a candidate against checks, inject a corrective prompt naming the broken principle, and regenerate under a bounded retry cap. Every component must be switchable, so the same weights can be served with the layer on and off with everything else fixed. Comparing those runs would show whether a serving-time layer recovers capability that retraining displaced.
+
+\subsection{User Studies and Judge Validation}
+\label{subsec:conclusion-future-user-studies}
+
+User studies were left out by design, since every result here describes how the model behaves as measured by checks and the judge, not how a person perceives it. Two studies would follow. The first would check the instrument: transcripts graded independently by people from a range of backgrounds and compared against the judge's verdicts per principle using chance-corrected agreement statistics. The second would measure the thing the instrument stands in for, with participants using the assistant over several sessions and reporting perceived trust and empathy on validated scales the persona dimensions came from (Section~\ref{subsec:psychological-foundations}). No ethics application was required for the present study (Appendix~\ref{chap:gdpr-articles}); either study would need review first.
+
+\subsection{GRPO and Process-Based Rewards}
+\label{subsec:conclusion-future-grpo}
+
+Reinforcement learning was deliberately omitted. The open extension is rewarding correct behaviour directly, not just imitating it. Supervised fine-tuning relies on imitating behaviour demonstrated by examples; reinforcement-learning methods like GRPO and DAPO can reward good outcomes unseen in examples, exploring beyond the demonstrated distribution \cite{shao2024deepseekmathpushinglimitsmathematical, yu2025dapoopensourcellmreinforcement}.
+
+The question is whether reinforcement learning avoids the trade-off or merely moves it: does rewarding outcomes recover the reasoning imitation crowds out, or does the same limited capacity reassert itself under a different objective? This was not tested, and these methods have proved unstable below one billion parameters \cite{wang2025ragenunderstandingselfevolutionllm, wei2025reactplannercentricframeworkcomplex}. 
+
+A reward signal is well matched to this constitution: Liu et al.\ scale the advantage by how accurately a model predicts its own calibration, on top of the ordinary task reward, and report gains of up to 63\% over standard reinforcement learning on faithful calibration \cite{liu2026reinforcementlearningmetacognitivefeedback}. Because the honesty family asks for exactly that, such a signal would reward the behaviour these checks already measure. Their smallest model is Qwen3-1.7B, nearly three times the size used here, so whether it survives the drop to 0.6B is a question this framework was built to settle.
+
+\subsection{A Fast Interaction Layer over the On-Device Reasoner}
+\label{subsec:conclusion-future-interaction}
+
+The Thinker--Executor split divides labour by role and runs the two sequentially, forcing the user to wait for the whole chain before seeing anything. A different split, by tempo, has been demonstrated: Thinking Machines Lab's TML-Interaction-Small pairs a fast interaction model with an asynchronous background model handling slow reasoning and tool calls, the two sharing one context \cite{thinkingmachines2026interaction}. The on-device Thinker could run as the slower background reasoner while a lightweight interaction layer keeps the conversation moving, hiding hand-off latency. The open question is whether such a split can be sustained with both halves on the device, without the background reasoner becoming a remote one.
+
+\section{Closing Remarks}
+\label{sec:conclusion-closing}
+
+This dissertation started with idea of how assistants can be developed with pro-activeness rather than current reactive agents, however, building a proactive assistant is only possible if it's trustworthy and protects user privacy. The author and the supervisor of this dissertation asked whether a small language model running entirely on a user's device could be trustworthy and personalised without sending private data to the cloud. To which the answer study provide is qualified, and the contribution is a principled means of stating precisely which part is within reach for any given model. Trustworthiness cannot be assumed in such models: one trained only to predict the next token states falsehoods in the same confident register as facts, and may memorise and later leak what it was shown. This work names those flaws as principles and measures how faithfully a small on-device model holds to them. It finds that safety and structure can be taught, that grounding buys what training cannot, and that written reasoning is displaced as the price. The study returns the boundary between what is reachable and what is not. As small models improve, the boundary will move, and this study records where it sat for one model at one point in its development. The method for locating it applies to the next model as well. 
+

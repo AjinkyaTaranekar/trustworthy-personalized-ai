@@ -1,0 +1,104 @@
+\chapter{Design}
+\label{chap:design}
+\label{chap:methodology}
+
+Before a model can be trusted, an instrument needs to validate its behaviour. This chapter and the next describe the framework for three experiments: one constitution, one set of checks and judges, and five model conditions.
+
+\section{Problem Formulation}
+\label{sec:problem-formulation}
+
+The previous chapter surveyed the extensive state-of-the-art research on language models and the gaps it leaves behind. This dissertation addresses the gaps in language model research identified in the previous chapter. The four gaps identified in Section~\ref{sec:related-work-summary-and-novelty-gap} are restated that way below, each followed by what this dissertation proposes against it.
+
+\subsection{Identified Challenges}
+\label{subsec:identified-challenges}
+
+The first challenge is scale: published results are based on models with eight billion parameters or more, while smaller models are not measured. The second challenge is mechanism: canonical Constitutional AI relies on self-critique, which does not survive below eight billion parameters. The third challenge is architectural: planner--executor designs keep a large executor in the cloud, which is not compatible with on-device privacy claims. The fourth challenge is measurement: a small model's trustworthy behaviour can only be established if the instrument also validates it.
+
+\subsection{Proposed Work}
+\label{subsec:proposed-work}
+
+This study proposes a framework rather than a model, since frontier labs are building language models at pace; rather than adding another model, the study builds a model-agnostic framework, so that a more capable small model can later be aligned to the constitution in the same way. Four parts make up that framework. The constitution states twenty-five principles for trustworthy behaviour, which a benchmark can check. The training procedure carries these principles into the weights of a sub-billion model through asymmetric distillation from a frontier-scale teacher. The deterministic serving layer grounds the model in real tools and a user model bounded in size. The measurement apparatus includes rule-based checks and a rubric-constrained judge. Inside the framework, five conditions are built and compared, with the model, training method, and benchmark held constant throughout.
+
+\section{Overview of the Design}
+\label{sec:mr-overview}
+\label{sec:OverviewOfDesign}
+
+The three experiments follow a staged design (Figure~\ref{fig:architecture}). The sequence runs as follows, where Experiment~1 changes the training data format, Experiment~2 changes its content, and Experiment~3 changes the architecture. Four requirements shape the design.
+
+\emph{Privacy by on-device execution} requires that no user data reaches a remote server while the model answers. This excludes the arrangement behind the strongest published planner--executor results, a small planner driving a large cloud executor (Section~\ref{sec:sota-planner-executor}).
+
+The \emph{small model} requirement fixes the parameter budget below one billion, so the framework can run on any larger small model. The cost is the self-critique step on which Anthropic's Constitutional AI depends, which is reported not to survive below eight billion parameters (Section~\ref{sec:sota-cai-scale}), and which must therefore be supplied from outside the model.
+
+\emph{Single-factor attribution} requires the model, training method, and benchmark to stay constant across the three stages. The cost is that hyperparameters cannot be tuned between conditions even where a condition would plainly have benefited, which is why the training configuration of Table~\ref{tab:lora-config} is held identical across every fine-tuned condition.
+
+\emph{Reproducibility} requires every reported number to be derivable from a saved result rather than a re-run. This forces judging to be separated from generation and allows a saved report to be re-scored or resampled without a GPU.
+
+\section{The Constitution: Principles and Families}
+\label{subsec:mr-constitution}
+
+``Trustworthy'' is only measurable once it is written down as behaviour a benchmark can check, as the constitution of twenty-five principles (P1--P25) does for the definition given in Section~\ref{sec:definitions}. The principles draw on Anthropic's Constitutional AI framework \cite{bai2022constitutionalaiharmlessnessai} and the Claude constitution \cite{anthropic2023claudesconstitution}, with domain-specific rules added for personalisation and well-being. Their full statements are in Appendix~\ref{chap:constitutional-principles-reference} and the document itself is in the repository (\texttt{pipeline/constitution.md}).
+
+The principles are grouped into five families (Table~\ref{tab:constitution}), each teaching a distinct kind of behaviour. The grouping follows the C3AI typology of Kyrychenko et al.\ \cite{kyrychenko2025c3aicraftingevaluatingconstitutions}, which sorts principles by phrasing the prohibitions which needs to be avoided against generative instructions. This typology yields a prediction that the results can test. If prohibitions are easier to instil than generative instructions, constitutional fine-tuning should improve the negatively framed robustness and honesty families more than the positively framed reasoning and personalisation families. The families are scored separately throughout, so the prediction can be checked against the per-family results rather than assumed.
+
+\begin{table}[H]
+  \centering
+  \caption{The five constitutional principle families and their scored items.}
+  \label{tab:constitution}
+  \begin{tabular}{lp{4cm}p{5.5cm}}
+    \hline
+    Family & Scored items & Framing \\
+    \hline
+    Reasoning and process & P1, P15, P20, P21 & positively framed behaviours \\
+    Honesty and calibration & P5, P7, P8, P16, P18 & prohibitions and acknowledgements \\
+    Tool discipline and use & P2/P3, P4, P10, P11, P12, P13, P19 & instrumental behaviours \\
+    Robustness and integrity & P9, P14 & negatively framed traits \\
+    Context and personalisation & P6, P17, MEM & positively framed behaviours \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The model's purpose is to ask the right question, never give a false answer, deny when it does not know, hold trust under pressure, personalise, and scrutinise its own thinking. Tier~1 ($\times 3$) holds trust-critical outcomes, where a single failure most damages trust. Tier~2 ($\times 2$) holds principles that produce and sustain those outcomes, which is done by self-correcting reasoning, robustness under pressure, and personalisation and memory behaviours. Tier~3 ($\times 1$) holds the instrumental tool mechanism. Table~\ref{tab:tiers} maps each purpose onto its principles and weight, and the weighted score is $\sum_k w_k s_k / \sum_k w_k$ over the scored items $k$, so the weighting rewards obeying the principles that matter most rather than the greatest number of them. 
+
+However, asking the right question does not mean asking more. The model should pose a targeted 5W+H question only when the needed context is genuinely missing, and must not clarify when the user model already answers it; over-clarification is itself a failure. Avoiding false answers is judged with zero tolerance. A single fabrication fails the item outright and dominates the persona trustworthiness dimension instead of being averaged away. Denying when unknown requires an explicit acknowledgement of the gap (a knowledge cutoff, the absence of live data, or a plain ``I don't know''), not a vague hedge. Tool use is credited only when it is appropriate to the task. Personalisation counts only when retained facts are used accurately and remain correctable. Fabricating a user fact is a trust failure, not a personalisation win.
+
+\begin{table}[t]
+  \centering
+  \caption{A-priori purpose weighting of the constitution.}
+  \label{tab:tiers}
+  \begin{tabular}{p{7.8cm}p{5.6cm}c}
+    \hline
+    Purpose & Scored items & Weight \\
+    \hline
+    Trust outcomes -- ask the right question, never fabricate, deny when unknown
+      & P21, P17, P6;\ P13, P5, P8;\ P18, P16, P7 & $\times 3$ \\
+    Supporting behaviours -- reason rigorously, hold trust under pressure, personalise
+      & P1, P20, P15;\ P9, P14;\ MEM (memory) & $\times 2$ \\
+    Instrumental tool mechanism
+      & P4, P10, P12, P19, P2/P3, P11 & $\times 1$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\section{Model Conditions and Controls}
+\label{subsec:mr-conditions}
+
+A single trained model cannot be judged on its own, because its behaviour could stem from the training or have been there already. Five conditions are therefore compared, all built on the same base model \cite{yang2025qwen3technicalreport} and decoded under the same settings.
+
+The two \emph{vanilla} conditions share the same base weights, untouched, and differ only in tool access: \texttt{vanilla\_base} fixes the floor pre-training provides, while \texttt{vanilla\_tools} adds the student prompt and native tools without training. The two supervised fine-tuning (\emph{SFT}) conditions add fine-tuning and nothing else, differing from each other only in the content of the training data, template against constitutional. The \emph{Thinker--Executor} condition is the two-model split, run under the same suites so it can be set directly against the others. Table~\ref{tab:conditions} gives the five side by side.
+
+\begin{table}[H]
+  \centering
+  \caption{The five model conditions.}
+  \label{tab:conditions}
+  \begin{tabular}{llp{4.5cm}l}
+    \hline
+    Condition & Weights & Training data & Tools at serving \\
+    \hline
+    \texttt{vanilla\_base} & base & none & none \\
+    \texttt{vanilla\_tools} & base & none & full native tool set \\
+    \texttt{sft\_template} & LoRA fine-tune & template corpus (2,895) & full native tool set \\
+    \texttt{sft\_constitution} & LoRA fine-tune & constitutional corpus (2,897) & full native tool set \\
+    \texttt{thinker\_executor} & two LoRA fine-tunes & Thinker view (2,720) and Executor view (2,243) & Executor: external tools \\
+    \hline
+  \end{tabular}
+\end{table}

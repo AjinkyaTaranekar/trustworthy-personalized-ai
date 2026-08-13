@@ -1,0 +1,17 @@
+\begin{table}[htbp]
+  \centering
+  \caption[H2H score and outright wins by importance tier]{H2H score and outright wins by principle importance tier, constitution suite (Section~\ref{subsec:h3-prompt-engineering}).}
+  \label{tab:rank-tiers}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Tier 1 ($\times 3$)} & \multicolumn{2}{c}{Tier 2 ($\times 2$)} & \multicolumn{2}{c}{Tier 3 ($\times 1$)} \\
+    Condition & H2H & wins & H2H & wins & H2H & wins \\
+    \midrule
+    vanilla\_base & 0.523 & 3.3 & 0.500 & 3.0 & 0.595 & 6.0 \\
+    vanilla\_tools & 0.625 & 6.3 & 0.589 & 3.0 & 0.524 & 6.0 \\
+    sft\_template & 0.347 & 1.0 & 0.196 & 2.0 & 0.411 & 2.0 \\
+    sft\_constitution & 0.551 & 6.3 & 0.661 & 8.0 & 0.643 & 6.0 \\
+    thinker\_executor & 0.454 & 10.0 & 0.554 & 5.0 & 0.327 & 1.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

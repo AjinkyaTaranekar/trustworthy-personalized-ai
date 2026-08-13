@@ -3,6 +3,8 @@
 Command-by-command runbook to reproduce the five-condition ablation ladder on one GPU.
 Run every command from `pipeline/`. Generation needs a GPU; judging and analysis are API/CPU only.
 
+For the research question, hypotheses and what each condition is testing, see the [project README](../README.md).
+
 ```
 Experiment 1  ->  sft_template        (template SFT, format only)
 Experiment 2  ->  sft_constitution    (constitutional distillation from a frontier teacher)

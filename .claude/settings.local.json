@@ -7,5 +7,6 @@
   },
   "disabledMcpjsonServers": [
     "code-review-graph"
-  ]
+  ],
+  "outputStyle": "Explanatory"
 }

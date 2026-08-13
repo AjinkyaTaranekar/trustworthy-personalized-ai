@@ -1,0 +1,173 @@
+\chapter{Introduction}
+\label{chap:introduction}
+
+The artificial-intelligence (AI) assistants are becoming part of daily life, helping people with news, health advice, financial queries, and even personal decisions. They are currently accessed  via platforms from frontier model companies, which deliver personalisation and safety through different techniques such as guardrails and alignment training, but they require cloud-scale computation in large data centres to make it generally accessible. As personalisation becomes the focus, users increasingly want the privacy of their data. This dissertation tests whether a model that can be run entirely on a device can meet the safety and personalisation standards of its cloud-based counterparts. It finds a trade-off between compliance and reasoning at this scale, where on-device inference is feasible but behaviour can be brittle. The goal is not to create a production-ready assistant but a reusable method for measuring and improving compliance on small models.
+
+\section{Motivation}
+\label{sec:motivation}
+
+How people seek knowledge online shows a significant shift in behaviour. A 2026 Bain survey now finds that only 42\% of millennials and Gen~Z reach for a search engine first, against 76\% of baby boomers \cite{bain2026snapchart}. Similarly, Google's conversational AI Mode reported passing a billion monthly users within a year \cite{reid2026aisearch}. What replaces the keyword query is a different behaviour, where people now ask questions to an assistant for personalised, step-by-step guidance \cite{bain2026snapchart}, for various topics including health, financial, and personal questions that were once reserved for a professional. Where a search query captures the \emph{what}, \emph{when}, and \emph{where} of an event, the conversation captures the additional \emph{why} and \emph{how} of the thinking process behind it. This record is the special-category data the General Data Protection Regulation (GDPR) protects under Article~9 \cite{gdpr2016} and that the EU AI Act places in its high-risk tier \cite{europeanparliament2024regulationeu20241689}.
+
+The difficulty in delivering such an assistant while keeping the data under the user's control is architectural, and it is bounded by how capable a model the device can run. Cloud-hosted models require the data to leave the device, and the usual safeguards govern what a provider stores instead of what a model absorbs and can later repeat under targeted querying \cite{carlini2021extractingtrainingdatalarge}. Federated learning removes the transmission but not the residue, because the trained weights still carry each user's influence, and erasing that influence, which GDPR Article~17 requires, remains an open problem \cite{nguyen2026computationcommunicationefficientfederated, staufer2025llmsforgetquantifyingpersonal}. Running the model on the device removes both issues, which the European Data Protection Supervisor identifies as the central data-protection advantage of on-device processing (Figure~\ref{fig:alice-on-device}) \cite{edps2025ondeviceai}. The largest mobile platforms have reached the same conclusion, with recent announcements in 2026 by Apple, which is shipping a three-billion-parameter on-device Foundation Model \cite{apple2026afm3}, and Google, which launched phone-class Gemma~4 variants that run offline \cite{gemma4}, though both need recent hardware. To reach the older and cheaper handsets they leave behind, this dissertation works with a 0.6-billion-parameter model and asks whether a framework can still make it trustworthy.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\scriptsize,
+      box/.style={draw, rounded corners, fill=black!5, align=center, text width=3.0cm, minimum height=1.5cm, inner sep=6pt},
+      cloud/.style={draw, rounded corners, fill=black!12, align=center, text width=2.7cm, minimum height=1.5cm, inner sep=6pt},
+      bad/.style={draw, rounded corners, fill=red!8, align=center, text width=2.9cm, minimum height=1.5cm, inner sep=6pt},
+      note/.style={font=\scriptsize\itshape, align=center}]
+    % --- Row 1: the status quo (Alice's story) ---
+    \node[anchor=west, font=\bfseries] at (-0.4,4.2) {Today: personal data leaves the device (EDPS ``A day in Alice's life'')};
+    \node[box]   (dev1)   at (1.9,2.6)  {Alice's devices\\[2pt] \scriptsize sleep \& vitals, voice, location, diet, calendar};
+    \node[cloud] (cloud1) at (7.0,2.6)  {Vendors / cloud / data brokers};
+    \node[bad]   (breach) at (11.8,2.6) {Breach: profile shared \& leaked online};
+    \draw[->, thick, red!70!black] (dev1)   -- (cloud1);
+    \draw[->, thick, red!70!black] (cloud1) -- (breach);
+    \node[note, text width=2.4cm] at (4.55,3.45) {sent off-device};
+    % --- Row 2: this dissertation (on-device) ---
+    \node[anchor=west, font=\bfseries] at (-0.4,0.2) {This dissertation: the same data stays on the device};
+    \draw[very thick, rounded corners] (0.2,-3.8) rectangle (8.8,-1.7);
+    \node[anchor=north west, font=\scriptsize\itshape] at (0.35,-1.78) {user's device};
+    \node[box] (dev2) at (2.1,-2.9) {Alice's data\\[2pt] \scriptsize one copy, on device};
+    \node[box] (asst) at (6.7,-2.9) {On-device assistant};
+    \draw[<->, thick] (dev2) -- (asst);
+    \node[cloud, text width=2.5cm] (cloud2) at (12.25,-2.9) {Cloud / vendors};
+    \draw[->, dashed, thick] (8.8,-2.9) -- (cloud2.west);
+    \node[red!75!black] at (9.6,-2.9) {\large\bfseries $\times$};
+    \node[note, text width=2.2cm] at (9.75,-2.05) {nothing transmitted};
+  \end{tikzpicture}
+  \caption[Personal data today, and under the on-device arrangement]{The EDPS ``day in Alice's life'' scenario \cite{edps2025ondeviceai}, contrasted with the on-device arrangement this dissertation builds.}
+  \label{fig:alice-on-device}
+\end{figure}
+
+When a small model such as Qwen~3--0.6B is fine-tuned to follow constitutional principles, safety behaviour, tool calling and step-by-step thinking at once, its limited parameters cannot hold all of them together. Whether the cause is the training data or the scale itself is not yet settled, and the evidence on both sides is reviewed in Section~\ref{subsec:scale-capability}. Either way the ceiling on a single small model is measurable, and it raises the question the rest of this work focuses on, whether the lost capability can be recovered without making the model larger. The framework is developed and tested on a single small model, but a different model can be substituted later.
+
+\section{Definitions}
+\label{sec:definitions}
+
+Before covering the research question and hypotheses, several terms used throughout this dissertation are defined as follows.
+
+\begin{description}
+  \item[Language model.] A language model predicts the next word in a given sequence of text. Language models vary in size, large language models (LLMs) like Gemini, Claude, and GPT run on massive data centres, while small models can run on laptops or mobile devices. This dissertation focuses on one such small language model, Qwen~3--0.6~B, the smallest in the Qwen~3 family of models from Alibaba \cite{yang2025qwen3technicalreport}.
+  \item[Constitution.] A constitution is a written set of principles or rules intended to give an entity a defined set of characteristics. The constitution used here contains twenty-five principles, grounded in Anthropic's Constitutional AI framework \cite{bai2022constitutionalaiharmlessnessai}. The full set is shared in Chapter~\ref{chap:methodology}, Section~\ref{subsec:mr-constitution}. The complete constitution is reproduced in Appendix~\ref{chap:constitutional-principles-reference}.
+  \item[Constitutional distillation.] In distillation, a small student model is trained, during supervised fine-tuning, on data produced by a larger teacher model. Constitutional distillation embeds principles in examples so they can be encoded in weights rather than referenced from a document \cite{bai2022constitutionalaiharmlessnessai}. 
+  \item[Trustworthy.] A response is treated as trustworthy when it complies with the constitution's principles and the user can interrogate why a given answer was produced.
+  \item[5W+H.] 5W+H is a mental model for interrogating a situation through five W questions (What, Where, When, Who, Why) and a How. 
+  \item[Personalised.] A response is personalised when information about the user is retained across multiple conversational turns. To gather context, the 5W+H framework is used to reason before answering.
+  \item[Privacy-preserving.] Privacy-preserving means no user data leaves the device, and no cloud application programming interface (API) is called at inference time, consistent with the guidance in \cite{euhleg2019}.
+  \item[Alignment tax and safety tax.] An alignment or safety tax occurs when fine-tuning strengthens constitutional compliance at a measurable cost to another capability, such as visible step-by-step reasoning or the capacity to hold attention over a long context \cite{askell2021generallanguageassistantlaboratory, ouyang2022traininglanguagemodelsfollow, huang2025safetytaxsafetyalignment, fu2026reducingsafetytaxllm}.
+  \item[User model.] The user model is a structured, persistent record of what the system believes about the user, stored on-device as a graph of beliefs in five categories: goals, tasks, skills, styles, and contexts.
+\end{description}
+
+The technical terms and state-of-the-art techniques are further discussed in Section~\ref{sec:background} and Section~\ref{sec:closely-related-work}.
+
+\section{Research Question}
+\label{sec:research-question}
+
+This dissertation asks one question with three measurable parts:
+
+For a Small Language Model can Constitutional AI Framework be used to create trustworthiness? If so, what does teaching a written constitution into a model's weights buy, what does it cost, and can the cost be recovered by changing the architecture rather than the model size?
+
+The first part is answered by comparing constitutional training against an untrained baseline and against the same untrained model given a careful prompt and real tools. The second is answered by measuring what that training displaces. The third is answered by splitting the work across two on-device models and measuring whether the displaced capability returns. Each part is answered separately in Section~\ref{sec:conclusion-answer}.
+
+\section{Hypotheses}
+\label{sec:hypotheses}
+
+This dissertation tests five hypotheses based on the research question.
+
+\textbf{First hypothesis} (compliance improvement survives in a small model). Constitutional distillation improves compliance, and this improvement survives at small model scale, where capacity is the binding constraint. This adapts the strategy of Zhang \cite{zhang2025constitutioncollapseexploringconstitutional}.
+
+\textbf{Second hypothesis} (improvement has a cost). The same distillation degrades reasoning. Under a fixed budget, compliance and reasoning show a trade-off, which is referred to as the ``alignment tax''.
+
+\textbf{Third hypothesis} (prompt engineering underperforms constitutional fine-tuning). A professionally engineered prompt with guardrails and validation, along with internet access and tools, is less compliant than a specially trained model with the constitution encoded in the weights.
+
+\textbf{Fourth hypothesis} (failure boundary is systematic). Where the fine-tuned model underperforms, it does so systematically. Which items it fails is predictable in advance from the type of task and the principle being tested, and the failures cluster by architectural difficulty instead of falling at random. Rainone et al.\ \cite{rainone2025replacingthinkingtoolusage} and Wei et al.\ in Beyond ReAct \cite{wei2025reactplannercentricframeworkcomplex} both observe such instability.
+
+\textbf{Fifth hypothesis} (separating thinking from execution restores capacity). Splitting the work across two models, a Thinker that reasons and an Executor that carries out tasks, together recovers capability that a single small model cannot reach.
+
+\section{Research Experiments}
+\label{sec:research-experiments}
+
+Figure~\ref{fig:architecture} shows the system architecture. Here, a small on-device model is taught a written constitution and then answers a fixed set of test questions, and a larger, independent model grades the answers against a rubric. The same model is then built in three different ways. To answer the research question and test the hypotheses, the framework is developed through three staged experiments, each motivated by current research in state-of-the-art language-model development.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[>=Latex, font=\footnotesize,
+      box/.style ={draw, rounded corners, fill=black!4, align=center, inner sep=5pt},
+      model/.style={draw, rounded corners, fill=tcd_blue, text=white, align=center, inner sep=6pt, minimum width=4.2cm},
+      tool/.style ={draw, rounded corners, fill=tcd_blue!15, align=center, inner sep=5pt, minimum width=4.2cm},
+      exp/.style ={draw, rounded corners, fill=black!4, align=center, text width=3.3cm, minimum height=1.5cm, inner sep=5pt},
+      lbl/.style ={font=\scriptsize\itshape, align=center}]
+    % --- TOP: the written constitution, encoded during training ---
+    \node[box, text width=5.4cm] (con) at (5.8,7.0)
+      {\textbf{Constitution}\\[2pt]\scriptsize 25 principles (P1--P25) for honest, careful, personalised answers};
+    % --- CENTRE: the on-device model and its tools ---
+    \node[model] (mdl) at (5.8,4.2) {\textbf{Small language model}\\ Qwen3-0.6B};
+    \node[tool]  (tls) at (5.8,2.7) {Tools: web search, calculator};
+    \draw[<->, thick] (mdl) -- (tls);
+    \node[draw, dashed, rounded corners, thick, fit=(mdl)(tls), inner sep=10pt] (dev) {};
+    \node[anchor=south west, font=\scriptsize\bfseries] at (dev.north west) {ON DEVICE};
+    \draw[->, thick] (con) -- node[lbl, right, xshift=3pt]{encoded during training\\ (constitutional distillation)} (mdl);
+    % --- LEFT: the fixed test questions go into the model ---
+    \node[box, text width=2.4cm] (tq) at (0.2,4.2)
+      {\textbf{Test questions}\\[2pt]\scriptsize the same fixed set for every condition};
+    \draw[->, thick] (tq) -- (mdl);
+    % --- RIGHT: an independent judge grades the answers against a rubric ---
+    \node[box, text width=2.6cm] (judge)  at (11.0,4.2) {\textbf{Judge LLM}\\[2pt]\scriptsize a large, independent model};
+    \node[box, text width=2.6cm] (rubric) at (11.0,2.3) {\textbf{Rubric}\\[2pt]\scriptsize what a good answer looks like};
+    \node[box, text width=2.2cm] (grade)  at (11.0,6.0) {\textbf{Grade}};
+    \draw[->, thick] (mdl) -- node[lbl, above]{answers} (judge);
+    \draw[->, thick] (rubric) -- (judge);
+    \draw[->, thick] (judge) -- (grade);
+    % --- BOTTOM: the same small model was built three ways, one per experiment ---
+    \node[draw, rounded corners, fill=tcd_blue!10, font=\bfseries, align=center,
+          minimum width=8cm, minimum height=0.6cm] (hd) at (5.8,1.15) {The small model was built three ways};
+    \node[exp] (exp1) at (1.9,-1.0) {\textbf{Experiment 1}\\[2pt]\scriptsize Taught the format of a good answer (template SFT)};
+    \node[exp] (exp2) at (5.8,-1.0) {\textbf{Experiment 2}\\[2pt]\scriptsize Taught the behaviour of a large teacher (constitutional distillation)};
+    \node[exp] (exp3) at (9.7,-1.0) {\textbf{Experiment 3}\\[2pt]\scriptsize Split in two: one thinks, one acts (Thinker--Executor)};
+    \draw[thick] (dev.south) -- (hd.north);
+    \draw[thick] (hd.south) -- (5.8,0.4);
+    \draw[thick] (1.9,0.4) -- (9.7,0.4);
+    \draw[->, thick] (1.9,0.4) -- (exp1.north);
+    \draw[->, thick] (5.8,0.4) -- (exp2.north);
+    \draw[->, thick] (9.7,0.4) -- (exp3.north);
+  \end{tikzpicture}
+  \caption[The measurement framework and the three experiments]{The measurement framework and the three experiments (Chapters~\ref{chap:design} and~\ref{chap:implementation}).}
+  \label{fig:architecture}
+\end{figure}
+
+\textbf{Experiment 1} applies template-based supervised fine-tuning using a 16-bit LoRA \cite{hu2021loralowrankadaptationlarge}, a method that adapts a model by training a small set of added weights instead of all of them on Qwen~3--0.6~B, replicating the supervised stage of Constitutional AI, SL-CAI, of Bai et al.\ \cite{bai2022constitutionalaiharmlessnessai} and the constitutional SFT strategy of Zhang \cite{zhang2025constitutioncollapseexploringconstitutional} at roughly one-thirteenth the scale. It tests whether constitutional training produces a measurable compliance change at this size.
+
+\textbf{Experiment 2} replaces the template-based dataset used in Experiment~1 with one distilled from a frontier-scale teacher under the Constitutional AI framework, over the same base weights and training recipe. It separates a data-quality explanation from a scale explanation, and carries the third hypothesis's comparison between prompt engineering and constitutional fine-tuning.
+
+\textbf{Experiment 3} now replaces the single generalist model with a Thinker--Executor dual-SFT architecture, where one 0.6~B model trained for constitutional reasoning and one for tool execution, each devoting its full parameter budget to one capability. It extends the planner--executor pattern of Beyond ReAct \cite{wei2025reactplannercentricframeworkcomplex} and Reason-Plan-ReAct \cite{molinari2025reasonplanreactreasonerplannersupervisingreact}, with the large cloud executor replaced by a second on-device 0.6~B model.
+
+Chapters~\ref{chap:design} and~\ref{chap:implementation} specify the architecture for all three experiments, and Chapter~\ref{chap:experiments-results} reports the results of each in turn.
+
+\section{Scope and Assumptions}
+\label{sec:scope-and-assumptions}
+
+This dissertation evaluates three architecture frameworks by keeping model (Qwen~3--0.6~B), training method (16-bit LoRA supervised fine-tuning), and benchmark framework (the constitutional principles) as constants. Qwen~3--0.6~B was chosen for three reasons: it supports a native \texttt{<think>} block, it can perform tool calls, and it is compatible with Unsloth for single-consumer-GPU training \cite{yang2025qwen3technicalreport}. The dataset is synthetic, generated by this work's own pipeline with its answers produced by a larger model, as collecting such data is a separate research problem in itself and the goal here is to create a framework (Section~\ref{subsec:mr-dataset}). This is also noted as a limitation in Section~\ref{subsec:training-data-limitations}.
+
+LoRA at sixteen-bit precision is chosen over full fine-tuning because it adapts the model without overwriting pre-trained representations, which Hu et al.\ established as the standard practice in parameter-efficient alignment at this scale \cite{hu2021loralowrankadaptationlarge}. 
+
+The study excludes three areas for resource and time reasons. Reinforcement learning and Group Relative Policy Optimisation (GRPO) post-training are excluded because reinforcement learning is empirically unstable below one billion parameters. The study from RAGEN reports multi-turn collapse on a 0.5~B model \cite{wang2025ragenunderstandingselfevolutionllm} and Beyond ReAct excludes Qwen~3--0.6~B from its reinforcement-learning phase for the same reason \cite{wei2025reactplannercentricframeworkcomplex}; it also requires compute and time neither of which was available. Human evaluation is excluded because a study at the necessary scale would require a large participant pool, ethical approval and a separate data-handling pipeline. Models above 1~B are excluded on compute grounds.
+
+\section{Contributions}
+\label{sec:contributions}
+
+This dissertation makes two contributions. The first is a model-agnostic method for measuring constitutional behaviour at small-model scale, validated here on Qwen~3--0.6~B with cross-model validation left to future work. The second is architectural design for a Thinker--Executor framework in which both components are on-device small models, replacing the large cloud executor of small-agent collaboration designs such as Zywot et al.'s \cite{zywot2026smallagentscollaboratebeat} with a second 0.6~B model, so the whole system runs on the user's device. Both are discussed in detail in Section~\ref{sec:conclusion-contributions}. 
+
+\section{Dissertation Structure}
+\label{sec:dissertation-structure}
+
+The dissertation is organised as follows.
+
+\begin{enumerate}
+    \item Chapter~\ref{chap:state-of-the-art} builds the technical foundations (Section~\ref{sec:background}) and then discusses the four primary research literatures that contribute towards this dissertation (Section~\ref{sec:closely-related-work}).
+    \item Chapter~\ref{chap:design} discusses the design for the three experiments conducted as a staged sequence.
+    \item Chapter~\ref{chap:implementation} describes how that design was built, the two training corpora, the prompts holding training and serving in step, the checks and judge that measure behaviour, and the infrastructure the runs executed on.
+    \item Chapter~\ref{chap:experiments-results} reports each experiment's results, then interprets them against the five hypotheses, sets out the limitations that bound them, and answers the research question.
+    \item Chapter~\ref{chap:conclusion} draws the contributions together and sets out future work.
+\end{enumerate}
