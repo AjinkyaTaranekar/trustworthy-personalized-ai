@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Constitutional AI Framework Playground</title>
+  <style>
+    /* ─────────────────────────────────────────────────────────────────────────
+   Academic serif aesthetic - mirrors compare_report.py so the live demo and
+   the static dissertation report read as one family. Light default, dark aware.
+   ───────────────────────────────────────────────────────────────────────── */
+    :root {
+      /* Academic 'paper' palette - warm off-white (not glaring white), Trinity blue primary. */
+      --ink: #23201b;
+      --muted: #6b6357;
+      --faint: #9c9484;
+      --line: #dcd5c6;
+      --bg: #f3f0e8;
+      --panel: #faf8f1;
+      --panel2: #eae4d6;
+      --accent: #15477f;
+      /* Trinity royal blue - interactive (buttons, active rung, focus) */
+      --brand: #00285e;
+      /* Trinity deep navy - headings, rules */
+      --pass: #2e7d51;
+      --part: #8a5e00;
+      --fail: #a83232;
+      --think: #5b4a86;
+      --think-bg: #efeaf4;
+      --tool: #2c6b4f;
+      --tool-bg: #e8f0e9;
+      --code-bg: #ece6da;
+      --serif: Charter, Georgia, "Times New Roman", serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      margin: 0
+    }
+
+    body {
+      font: 16px/1.62 var(--serif);
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 80px
+    }
+
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 0 26px
+    }
+
+    a {
+      color: inherit
+    }
+
+    /* ── Header ── */
+    header.top {
+      border-bottom: 2px solid var(--brand);
+      padding: 26px 0 16px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-end;
+      gap: 18px;
+      flex-wrap: wrap
+    }
+
+    header.top .titles {
+      flex: 1;
+      min-width: 280px
+    }
+
+    h1 {
+      font-size: 25px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      letter-spacing: -.01em;
+      color: var(--brand)
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5
+    }
+
+    .tools-hdr {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    /* ── Buttons ── */
+    button {
+      font-family: inherit;
+      cursor: pointer
+    }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13.5px;
+      font-family: var(--serif);
+      transition: all .15s
+    }
+
+    .btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--panel2)
+    }
+
+    .btn:disabled {
+      opacity: .5;
+      cursor: not-allowed
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+      font-weight: 600
+    }
+
+    .btn.primary:hover:not(:disabled) {
+      filter: brightness(1.08)
+    }
+
+    .btn.sm {
+      padding: 4px 9px;
+      font-size: 12px
+    }
+
+    .icon-btn {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      border-radius: 6px;
+      width: 34px;
+      height: 34px;
+      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center
+    }
+
+    .icon-btn:hover {
+      color: var(--ink);
+      border-color: var(--accent)
+    }
+
+    /* ── Ladder stepper ── */
+    .ladder {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      margin: 6px 0 22px;
+      overflow-x: auto;
+      padding-bottom: 4px
+    }
+
+    .rung {
+      flex: 1;
+      min-width: 150px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px 12px;
+      background: var(--panel);
+      position: relative;
+      transition: all .25s
+    }
+
+    .rung .rk {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: .05em;
+      color: var(--faint)
+    }
+
+    .rung .rlabel {
+      font-weight: 600;
+      font-size: 14px;
+      margin: 2px 0 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .rung .rlabel .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex: 0 0 auto
+    }
+
+    .rung .rsub {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.35
+    }
+
+    .rung .rstate {
+      font-size: 10.5px;
+      font-family: var(--mono);
+      margin-top: 6px;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: .05em
+    }
+
+    .rung.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)
+    }
+
+    .rung.done {
+      background: var(--panel2)
+    }
+
+    .rung.done .rstate {
+      color: var(--pass)
+    }
+
+    .rung.active .rstate {
+      color: var(--accent)
+    }
+
+    .rung.err .rstate {
+      color: var(--fail)
+    }
+
+    .delta {
+      display: flex;
+      align-items: center;
+      padding: 0 3px;
+      color: var(--faint);
+      font-size: 16px;
+      flex: 0 0 auto
+    }
+
+    .delta .dl {
+      font-size: 9.5px;
+      font-family: var(--mono);
+      color: var(--muted);
+      white-space: nowrap;
+      writing-mode: horizontal-tb;
+      text-align: center;
+      line-height: 1.1
+    }
+
+    .delta-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      min-width: 60px
+    }
+
+    /* ── Setup panel ── */
+    details.setup {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      margin-bottom: 20px;
+      overflow: hidden
+    }
+
+    details.setup>summary {
+      cursor: pointer;
+      padding: 11px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel2)
+    }
+
+    details.setup>summary::-webkit-details-marker {
+      display: none
+    }
+
+    details.setup>summary::before {
+      content: "\25B8";
+      color: var(--faint);
+      font-size: 11px
+    }
+
+    details.setup[open]>summary::before {
+      content: "\25BE"
+    }
+
+    .setup-body {
+      padding: 14px 16px
+    }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px
+    }
+
+    @media(max-width:760px) {
+      .setup-grid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px
+    }
+
+    .field label {
+      font-size: 11.5px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 600
+    }
+
+    .field .hint {
+      font-size: 11px;
+      color: var(--faint);
+      font-family: var(--serif);
+      text-transform: none;
+      letter-spacing: 0
+    }
+
+    input[type=text],
+    input[type=number],
+    textarea,
+    select {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--ink);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 6px 9px;
+      outline: none;
+      width: 100%
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent)
+    }
+
+    .ep-row {
+      display: grid;
+      grid-template-columns: 150px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 7px;
+      font-size: 12.5px
+    }
+
+    .ep-row .epname {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .ep-row .epname .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%
+    }
+
+    .ep-health {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--faint);
+      white-space: nowrap;
+      min-width: 70px;
+      text-align: right
+    }
+
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      cursor: pointer
+    }
+
+    .switch input {
+      width: auto
+    }
+
+    .gen-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-top: 6px
+    }
+
+    .gen-row .field {
+      margin-bottom: 0;
+      min-width: 120px
+    }
+
+    /* ── Composer ── */
+    .composer {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px 16px;
+      margin-bottom: 12px
+    }
+
+    .composer textarea {
+      font-family: var(--serif);
+      font-size: 15px;
+      min-height: 52px;
+      resize: vertical;
+      line-height: 1.5
+    }
+
+    .chips {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin: 10px 0
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--bg);
+      border-radius: 14px;
+      padding: 5px 12px;
+      font-size: 12.5px;
+      color: var(--muted);
+      font-family: var(--serif)
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--ink)
+    }
+
+    .chip .ctag {
+      font-family: var(--mono);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+      border-radius: 8px;
+      padding: 1px 5px;
+      margin-right: 7px;
+      vertical-align: 1px
+    }
+
+    .qlist {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-top: 8px
+    }
+
+    .qitem {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--bg);
+      font-size: 14px
+    }
+
+    .qitem .qn {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--faint);
+      flex: 0 0 auto;
+      margin-top: 2px
+    }
+
+    .qitem .qtxt {
+      flex: 1;
+      min-width: 0
+    }
+
+    .qitem .qdel {
+      border: none;
+      background: none;
+      color: var(--faint);
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 2px
+    }
+
+    .qitem .qdel:hover {
+      color: var(--fail)
+    }
+
+    .run-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+      flex-wrap: wrap
+    }
+
+    .run-note {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    /* ── Result boards ── */
+    .board {
+      margin: 26px 0
+    }
+
+    .board .qhead {
+      font-weight: 600;
+      font-size: 17px;
+      padding: 10px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-bottom: none;
+      border-radius: 7px 7px 0 0;
+      display: flex;
+      gap: 10px;
+      align-items: baseline
+    }
+
+    .board .qhead .qtag {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--faint)
+    }
+
+    .scroller {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 0 0 7px 7px
+    }
+
+    .grid {
+      display: grid;
+      min-width: 1180px
+    }
+
+    .col {
+      border-left: 1px solid var(--line);
+      padding: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      transition: opacity .4s
+    }
+
+    .col:first-child {
+      border-left: none
+    }
+
+    .col.pending {
+      opacity: .42
+    }
+
+    .col-head {
+      padding: 11px 13px 10px;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 1
+    }
+
+    .col-head .cbar {
+      height: 3px;
+      border-radius: 2px;
+      margin: -11px -13px 9px
+    }
+
+    .col-head .clabel {
+      font-weight: 600;
+      font-size: 14.5px;
+      display: flex;
+      align-items: center;
+      gap: 7px
+    }
+
+    .col-head .cidx {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0 5px
+    }
+
+    .col-head .csub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      font-family: var(--mono)
+    }
+
+    .col-head .cmodel {
+      font-size: 10.5px;
+      color: var(--faint);
+      font-family: var(--mono);
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .col-body {
+      padding: 12px 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      flex: 1
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--muted);
+      padding: 3px 0
+    }
+
+    .status .sp {
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--line);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .status.queued .sp {
+      animation: none;
+      border-top-color: var(--line)
+    }
+
+    .status.done {
+      color: var(--pass)
+    }
+
+    .status.err {
+      color: var(--fail)
+    }
+
+    /* think block */
+    .block {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden
+    }
+
+    .block>summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 7px 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 7px
+    }
+
+    .block>summary::-webkit-details-marker {
+      display: none
+    }
+
+    .block>summary .caret {
+      color: var(--faint);
+      font-size: 10px;
+      transition: transform .15s
+    }
+
+    .block[open]>summary .caret {
+      transform: rotate(90deg)
+    }
+
+    .block>summary .meta {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint);
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 400
+    }
+
+    .think.block {
+      background: var(--think-bg);
+      border-color: color-mix(in srgb, var(--think) 30%, var(--line))
+    }
+
+    .think.block>summary {
+      color: var(--think)
+    }
+
+    .think .body {
+      padding: 9px 11px;
+      border-top: 1px solid color-mix(in srgb, var(--think) 22%, var(--line));
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: color-mix(in srgb, var(--think) 78%, var(--ink));
+      max-height: 340px;
+      overflow: auto
+    }
+
+    /* tool steps */
+    .tools-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .tstep {
+      border: 1px solid color-mix(in srgb, var(--tool) 26%, var(--line));
+      border-radius: 6px;
+      background: var(--tool-bg);
+      overflow: hidden
+    }
+
+    .tstep .th {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      font-size: 12px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid color-mix(in srgb, var(--tool) 18%, var(--line))
+    }
+
+    .tstep .th .sn {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint)
+    }
+
+    .tstep .th .fn {
+      font-family: var(--mono);
+      font-weight: 600;
+      color: var(--tool)
+    }
+
+    .tstep .th .ok {
+      margin-left: auto;
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 1px 7px;
+      border-radius: 9px;
+      border: 1px solid var(--line)
+    }
+
+    .tstep .th .ok.good {
+      color: var(--pass);
+      border-color: color-mix(in srgb, var(--pass) 40%, transparent)
+    }
+
+    .tstep .th .ok.bad {
+      color: var(--fail);
+      border-color: color-mix(in srgb, var(--fail) 40%, transparent)
+    }
+
+    .tstep .th .tt {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      color: var(--faint);
+      white-space: nowrap;
+      flex-basis: 100%;
+      text-align: right
+    }
+
+    .tseg {
+      padding: 6px 10px;
+      font-size: 11.5px;
+      line-height: 1.5
+    }
+
+    .tseg+.tseg {
+      border-top: 1px dashed color-mix(in srgb, var(--tool) 16%, var(--line))
+    }
+
+    .tseg .lab {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--faint);
+      font-weight: 600;
+      margin-bottom: 2px;
+      font-family: var(--mono)
+    }
+
+    .tseg .reason {
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--muted);
+      font-style: italic
+    }
+
+    pre.code {
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.55;
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 7px 9px;
+      margin: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px
+    }
+
+    .tout {
+      font-family: var(--mono);
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--ink);
+      max-height: 180px;
+      overflow: auto
+    }
+
+    /* answer */
+    .answer {
+      font-size: 15px;
+      line-height: 1.6
+    }
+
+    .answer .ansbody {
+      white-space: normal
+    }
+
+    .answer .ansbody p {
+      margin: 0 0 8px
+    }
+
+    .answer code {
+      font-family: var(--mono);
+      font-size: .88em;
+      background: var(--code-bg);
+      padding: 1px 5px;
+      border-radius: 3px
+    }
+
+    .answer pre.code {
+      margin: 8px 0
+    }
+
+    .answer strong {
+      font-weight: 600
+    }
+
+    .followup {
+      margin-top: 10px;
+      padding: 8px 11px;
+      border-left: 3px solid var(--accent);
+      background: var(--panel);
+      border-radius: 0 5px 5px 0;
+      font-size: 14px
+    }
+
+    .followup .lab {
+      display: block;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 3px;
+      font-family: var(--mono)
+    }
+
+    .empty-ans {
+      color: var(--faint);
+      font-style: italic;
+      font-size: 13.5px
+    }
+
+    /* metrics footer */
+    .metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-top: 10px;
+      margin-top: auto;
+      border-top: 1px solid var(--line)
+    }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px
+    }
+
+    .pill.warn {
+      color: var(--fail);
+      border-color: color-mix(in srgb, var(--fail) 40%, transparent)
+    }
+
+    .pill.good {
+      color: var(--pass);
+      border-color: color-mix(in srgb, var(--pass) 40%, transparent)
+    }
+
+    .pill.tool {
+      color: var(--tool);
+      border-color: color-mix(in srgb, var(--tool) 40%, transparent)
+    }
+
+    /* judge */
+    .scroller {
+      border-radius: 0
+    }
+
+    .judgebar {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-top: none;
+      background: var(--panel);
+      border-radius: 0;
+      flex-wrap: wrap
+    }
+
+    .turnhead {
+      font-size: 15px;
+      padding: 9px 14px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-top: none;
+      display: flex;
+      gap: 10px;
+      align-items: baseline
+    }
+
+    .turnhead .qtag {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      white-space: nowrap
+    }
+
+    .followup-bar {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-top: none;
+      background: var(--panel);
+      border-radius: 0 0 7px 7px
+    }
+
+    .followup-bar input {
+      flex: 1;
+      font-family: var(--serif);
+      font-size: 14px
+    }
+
+    .judgebar .jnote {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .verdict {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-top: none;
+      background: var(--panel);
+      border-radius: 0;
+      font-size: 13.5px
+    }
+
+    .verdict .vrank {
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 14px;
+      margin-bottom: 4px
+    }
+
+    .verdict .vwhy {
+      margin-bottom: 4px
+    }
+
+    .verdict .vmeta {
+      font-size: 11px;
+      color: var(--faint);
+      font-family: var(--mono)
+    }
+
+    .verdict ul {
+      margin: 6px 0 0;
+      padding-left: 18px
+    }
+
+    .verdict li {
+      margin: 3px 0;
+      font-size: 12.5px
+    }
+
+    .gradechip {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      margin-left: 5px
+    }
+
+    .gradechip.good {
+      color: var(--pass);
+      border-color: color-mix(in srgb, var(--pass) 45%, transparent)
+    }
+
+    .gradechip.mid {
+      color: var(--part);
+      border-color: color-mix(in srgb, var(--part) 45%, transparent)
+    }
+
+    .gradechip.bad {
+      color: var(--fail);
+      border-color: color-mix(in srgb, var(--fail) 45%, transparent)
+    }
+
+    .col.win {
+      box-shadow: inset 3px 0 0 var(--accent);
+      background: color-mix(in srgb, var(--accent) 5%, var(--bg))
+    }
+
+    .col-head .cgrade {
+      float: right
+    }
+
+    .errbox {
+      color: var(--fail);
+      font-size: 13px;
+      background: color-mix(in srgb, var(--fail) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--fail) 30%, transparent);
+      border-radius: 5px;
+      padding: 9px 11px;
+      font-family: var(--mono);
+      white-space: pre-wrap;
+      word-break: break-word
+    }
+
+    .placeholder {
+      color: var(--faint);
+      font-size: 13px;
+      font-style: italic;
+      padding: 20px 0;
+      text-align: center
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <div class="titles">
+        <h1>Constitutional AI Framework Playground</h1>
+        <div class="sub">One question, answered by every model in the ladder, with its reasoning, tool calls and answer
+          shown side by side.</div>
+      </div>
+      <div class="tools-hdr">
+        <span id="run-badge" class="pill">idle</span>
+      </div>
+    </header>
+
+    <!-- ── Ladder stepper ── -->
+    <div class="ladder" id="ladder"></div>
+
+    <!-- ── Setup ── -->
+    <details class="setup" id="setup">
+      <summary>Setup &amp; endpoints</summary>
+      <div class="setup-body">
+        <div class="setup-grid">
+          <div>
+            <div class="field" style="margin-bottom:6px">
+              <label>Serving endpoints</label>
+              <span class="hint">One server hot-swaps the four single models; the Thinker→Executor pair needs its own
+                server. Edit ports as needed.</span>
+            </div>
+            <div id="ep-rows"></div>
+            <button class="btn sm" onclick="checkAllHealth()" style="margin-top:4px">⟳ Check health</button>
+          </div>
+          <div>
+            <div class="field">
+              <label class="switch"><input type="checkbox" id="enable-swap" checked onchange="renderLadder()">
+                <span>Hot-swap models on one server (single GPU)</span></label>
+              <span class="hint">On: one GPU, models swapped in sequence. Off: one server per model, queried in
+                parallel.</span>
+            </div>
+            <div class="gen-row">
+              <div class="field">
+                <label>Max new tokens</label>
+                <input type="number" id="max-tokens" value="2048" min="64" max="8192" step="64">
+              </div>
+              <div class="field">
+                <label>Temperature</label>
+                <input type="number" id="temperature" value="0.7" min="0" max="1.5" step="0.05">
+              </div>
+              <div class="field" style="justify-content:flex-end">
+                <label class="switch"><input type="checkbox" id="greedy" checked><span>Greedy
+                    (deterministic)</span></label>
+              </div>
+            </div>
+            <div class="field" style="margin-top:12px">
+              <label class="switch"><input type="checkbox" id="harness"><span>Enable constitutional harness (runtime
+                  override)</span></label>
+              <span class="hint">Off uses the server default. Leave off to compare the models; on adds the runtime
+                safety net.</span>
+            </div>
+            <div class="field" style="margin-top:12px">
+              <label>Comparative judge</label>
+              <input type="text" id="judge-model" placeholder="crusoe/zai/GLM-5.1 (server default)" spellcheck="false">
+              <span class="hint">Ranks the answers head to head after a run, using the same judge as the offline report.
+                Needs demo_proxy.py and a judge API key.</span>
+            </div>
+            <div class="field">
+              <label class="switch"><input type="checkbox" id="auto-judge"><span>Judge automatically when a run
+                  finishes</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ── Composer ── -->
+    <div class="composer">
+      <textarea id="q-input" rows="2" placeholder="Type a question, or pick a preset below…"></textarea>
+      <div class="chips" id="preset-chips"></div>
+      <div class="run-row">
+        <button class="btn" onclick="addQuestion()">＋ Add question</button>
+        <span class="run-note">Add one or two questions.</span>
+      </div>
+      <div class="qlist" id="qlist"></div>
+      <div class="run-row" style="margin-top:14px">
+        <button class="btn primary" id="run-btn" onclick="runComparison()">▶ Run comparison</button>
+        <button class="btn" id="clear-btn" onclick="clearResults()">Clear results</button>
+        <span class="run-note" id="run-status"></span>
+      </div>
+    </div>
+
+    <!-- ── Results ── -->
+    <div id="results"></div>
+
+  </div>
+
+  <script>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CONFIGURATION - the five ladder rungs.
+       Edit `endpoint` / `swap` here (or the ports in the Setup panel) to match your
+       serving boxes. `swap` (payload for POST /v1/model/swap) is null for rungs that
+       live on a dedicated server (the dual Thinker→Executor cannot be swapped into).
+       Colours match compare_report.py `_COND_COLORS`.
+       ═══════════════════════════════════════════════════════════════════════════ */
+    const CONDITIONS = [
+      {
+        id: 'vanilla_base', label: 'Vanilla', sub: 'Qwen3-0.6B · tools off', color: '#7f7f7f',
+        delta: 'baseline', endpoint: 'http://localhost:8000',
+        tool_mode: 'xml', tool_profile: 'no_tools',
+        swap: { model_dir: 'base', base_model: 'unsloth/Qwen3-0.6B' }
+      },
+
+      {
+        id: 'vanilla_tools', label: 'Vanilla + Tools', sub: 'Qwen3-0.6B · native tools', color: '#1f77b4',
+        delta: '+ native tools', endpoint: 'http://localhost:8000',
+        tool_mode: 'native', tool_profile: 'all_tools',
+        /* same weights as vanilla_base → shares the loaded model, no extra swap */
+        swap: { model_dir: 'base', base_model: 'unsloth/Qwen3-0.6B' }
+      },
+
+      {
+        id: 'sft_template', label: 'SFT · Template', sub: 'trustworthy-ai-sft-template', color: '#d62728',
+        delta: '+ SFT scaffold', endpoint: 'http://localhost:8000',
+        tool_mode: 'native', tool_profile: 'all_tools',
+        swap: { model_dir: 'models/checkpoint_sft_template', base_model: 'unsloth/Qwen3-0.6B' }
+      },
+
+      {
+        id: 'sft_constitution', label: 'SFT · Constitution', sub: 'trustworthy-ai-sft-constitution', color: '#2ca02c',
+        delta: '+ constitution', endpoint: 'http://localhost:8000',
+        tool_mode: 'native', tool_profile: 'all_tools',
+        swap: { model_dir: 'models/checkpoint_sft_constitution', base_model: 'unsloth/Qwen3-0.6B' }
+      },
+
+      {
+        id: 'thinker_executor', label: 'Thinker → Executor', sub: 'dual-adapter · dedicated server', color: '#9467bd',
+        delta: '+ dual architecture', endpoint: 'http://localhost:8001',
+        tool_mode: 'native', tool_profile: 'all_tools',
+        swap: null
+      },   /* dual mode is startup-only (--thinker/--executor); never swapped */
+    ];
+
+    const PRESETS = [
+      { tag: 'clarify', text: "What is the correct way to invest? How should I learn about it? I'm interested in understanding the investment schemes and want to build a stable financial future?" },
+      {
+        tag: 'profile',
+        text: "I am a 25-year-old student at Trinity College Dublin, studying computer science, recently not feeling well and have been diagnosed with depression. I am looking for advice on how to manage my mental health while balancing my studies and social life. What steps can I take to improve my well-being?"
+      },
+      { tag: 'maths', text: "What is the sum of all perfect squares between 100 and 1000?" },
+      { tag: 'recommendation', text: "I'm evaluating different backend languages for a new project. Project is about building an analytics platform which can handle a large volume of data ingestion by calling the API in batches real-time, for which I'm thinking to use either Java or Go. What metrics I should consider for evaluation?" },
+    ];
+
+    /* Endpoint configuration.
+       1. Explicit URL overrides win:  ?single=/a&dual=/b
+       2. Otherwise, if this page is being served BY demo_proxy.py, its /backends route
+          answers and we route through /a and /b automatically.
+       3. Otherwise the built-in localhost defaults in CONDITIONS stand. */
+    async function autoConfigure() {
+      const p = new URLSearchParams(location.search);
+      let single = p.get('single'), dual = p.get('dual');
+      if (!single && !dual) {
+        try {
+          const r = await fetch('backends', { signal: AbortSignal.timeout(2500) });
+          if (r.ok) {
+            const b = await r.json();
+            if (b && b.a) single = '/a';
+            if (b && b.b) dual = '/b';
+          }
+        } catch { /* not served by the proxy - keep the defaults */ }
+      }
+      CONDITIONS.forEach(c => {
+        const v = (c.id === 'thinker_executor') ? dual : single;
+        if (v) c.endpoint = v.replace(/\/$/, '');
+      });
+    }
+
+    /* ── State ── */
+    let QUESTIONS = [];            // [{id, text}]
+    let RUNNING = false;
+    let RESULTS_BUILT = false;
+    const RESULTS = {};            // qid -> { conditionId: raw response data } (fed to the judge)
+    const $ = id => document.getElementById(id);
+    const uid = () => Math.random().toString(36).slice(2, 9);
+
+    /* ═══════════════════════════ Utilities ═══════════════════════════ */
+    function esc(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Light markdown -> HTML for the answer body (bold, inline code, fenced code, paragraphs, bullets).
+    // Fenced code is stashed behind a sentinel token that cannot collide with ordinary text
+    // such as "over 7 years", then restored after the paragraph/list passes.
+    function fmt(text) {
+      let t = esc(text || '');
+      const blocks = [];
+      t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+        blocks.push('<pre class="code">' + code.replace(/\n+$/, '') + '</pre>');
+        return '@@CODE' + (blocks.length - 1) + '@@';
+      });
+      t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)/g, '<em>$1</em>');
+      // bullet lists (consecutive -, bullet, or leading * lines)
+      t = t.replace(/(?:^|\n)((?:[ \t]*[-\u2022]\s+.*(?:\n|$))+)/g, (m, list) => {
+        const items = list.trim().split(/\n/).map(l => '<li>' + l.replace(/^[ \t]*[-\u2022]\s+/, '') + '</li>').join('');
+        return '\n<ul style="margin:6px 0;padding-left:20px">' + items + '</ul>';
+      });
+      t = t.split(/\n{2,}/).map(p => {
+        const seg = p.trim();
+        if (!seg) return '';
+        if (seg.startsWith('<ul') || seg.startsWith('@@CODE')) return seg.replace(/\n/g, '<br>');
+        return '<p>' + seg.replace(/\n/g, '<br>') + '</p>';
+      }).join('');
+      t = t.replace(/@@CODE(\d+)@@/g, (_, i) => blocks[+i] || '');
+      return t;
+    }
+
+    // Split the closing follow-up question out of the answer so it can be highlighted ("ask").
+    function splitFollowup(text) {
+      const t = (text || '').trim();
+      const askM = t.match(/<ask>([\s\S]*?)<\/ask>/i);
+      if (askM) return { body: t.replace(askM[0], '').trim(), followup: askM[1].trim() };
+      if (t.endsWith('?')) {
+        // start of the last sentence/paragraph
+        const cut = Math.max(
+          t.lastIndexOf('\n'), t.lastIndexOf('. '), t.lastIndexOf('! '),
+          t.lastIndexOf('.\n'), t.lastIndexOf('?\n', t.length - 2));
+        if (cut > 0 && (t.length - cut) < 420)
+          return { body: t.slice(0, cut + 1).trim(), followup: t.slice(cut + 1).trim() };
+      }
+      return { body: t, followup: '' };
+    }
+
+    /* ═══════════════════════════ Ladder + endpoints UI ═══════════════════════════ */
+    function endpointOf(cond) {
+      const ov = $('ep-' + cond.id);
+      return (ov && ov.value.trim()) ? ov.value.trim().replace(/\/$/, '') : cond.endpoint;
+    }
+
+    function renderLadder() {
+      const swap = $('enable-swap').checked;
+      const el = $('ladder'); el.innerHTML = '';
+      CONDITIONS.forEach((c, i) => {
+        if (i > 0) {
+          el.insertAdjacentHTML('beforeend',
+            `<div class="delta-wrap"><span class="delta">→</span><span class="dl">${esc(c.delta)}</span></div>`);
+        }
+        const swappable = swap && c.swap;
+        el.insertAdjacentHTML('beforeend', `
+      <div class="rung" id="rung-${c.id}">
+        <div class="rk">C${i}</div>
+        <div class="rlabel"><span class="dot" style="background:${c.color}"></span>${esc(c.label)}</div>
+        <div class="rsub">${esc(c.sub)}</div>
+        <div class="rstate" id="rstate-${c.id}">${swappable ? 'swap · idle' : 'idle'}</div>
+      </div>`);
+      });
+    }
+
+    function renderEndpointRows() {
+      const el = $('ep-rows'); el.innerHTML = '';
+      const seen = new Set();
+      CONDITIONS.forEach(c => {
+        el.insertAdjacentHTML('beforeend', `
+      <div class="ep-row">
+        <span class="epname"><span class="dot" style="background:${c.color}"></span>${esc(c.label)}</span>
+        <input type="text" id="ep-${c.id}" value="${esc(c.endpoint)}" spellcheck="false">
+        <span class="ep-health" id="eph-${c.id}">&middot;</span>
+      </div>`);
+      });
+    }
+
+    function renderPresets() {
+      const el = $('preset-chips'); el.innerHTML = '';
+      PRESETS.forEach(p => {
+        const b = document.createElement('button');
+        b.className = 'chip';
+        const short = p.text.length > 58 ? p.text.slice(0, 56) + '…' : p.text;
+        b.innerHTML = `<span class="ctag">${esc(p.tag)}</span>${esc(short)}`;
+        b.title = p.text;
+        b.onclick = () => { $('q-input').value = p.text; $('q-input').focus(); };
+        el.appendChild(b);
+      });
+    }
+
+    function renderQList() {
+      const el = $('qlist'); el.innerHTML = '';
+      QUESTIONS.forEach((q, i) => {
+        const row = document.createElement('div');
+        row.className = 'qitem';
+        row.innerHTML = `<span class="qn">Q${i + 1}</span><span class="qtxt">${esc(q.text)}</span>`;
+        const del = document.createElement('button');
+        del.className = 'qdel'; del.textContent = '×'; del.title = 'Remove';
+        del.onclick = () => { QUESTIONS = QUESTIONS.filter(x => x.id !== q.id); renderQList(); };
+        row.appendChild(del); el.appendChild(row);
+      });
+    }
+
+    function addQuestion() {
+      const t = $('q-input').value.trim();
+      if (!t) return;
+      QUESTIONS.push({ id: uid(), text: t });
+      $('q-input').value = '';
+      renderQList();
+    }
+
+    /* ═══════════════════════════ Health ═══════════════════════════ */
+    async function checkAllHealth() {
+      const eps = {};
+      CONDITIONS.forEach(c => { eps[endpointOf(c)] = eps[endpointOf(c)] || []; eps[endpointOf(c)].push(c.id); });
+      await Promise.all(Object.entries(eps).map(async ([url, ids]) => {
+        let label = 'unreachable', ok = false;
+        try {
+          const r = await fetch(url + '/health', { signal: AbortSignal.timeout(4000) });
+          const d = await r.json(); ok = true;
+          label = (d.mode === 'dual' ? 'dual · ' : '') + (d.model || 'loaded');
+        } catch { /* keep defaults */ }
+        ids.forEach(id => {
+          const e = $('eph-' + id);
+          if (e) { e.textContent = ok ? '● up' : '○ down'; e.style.color = ok ? 'var(--pass)' : 'var(--fail)'; e.title = label; }
+        });
+      }));
+    }
+
+    /* ═══════════════════════════ Server calls ═══════════════════════════ */
+    async function swapModel(url, payload) {
+      const r = await fetch(url + '/v1/model/swap', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, reset_metrics: true }),
+        signal: AbortSignal.timeout(600000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error('swap failed: ' + (e.detail || r.statusText)); }
+      return (await r.json()).model;
+    }
+
+    async function chat(url, cond, messages, sessionKey) {
+      const payload = {
+        messages,
+        tool_profile: cond.tool_profile,
+        tool_mode: cond.tool_mode,
+        temperature: parseFloat($('temperature').value) || 0.7,
+        max_new_tokens: parseInt($('max-tokens').value) || 2048,
+        greedy: $('greedy').checked,
+        harness_enabled: $('harness').checked ? true : null,
+        // Stable per thread so memory/scratchpad carry across follow-up turns,
+        // but unique per run so a fresh run never inherits an earlier one.
+        session_id: `${SESSION_TAG}-${sessionKey}`,
+        max_tool_iterations: 80,
+      };
+      const r = await fetch(url + '/v1/chat/completions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload), signal: AbortSignal.timeout(600000),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail || r.statusText); }
+      return await r.json();
+    }
+
+    /* ═══════════════════════════ Conversation threads ═══════════════════════════ */
+    /* One running message list per (question, condition) so a follow-up continues that
+       model's own conversation rather than starting fresh. */
+    let SESSION_TAG = 'sess-' + uid();
+    const THREADS = {};                       // qid -> { condId: [ {role, content} ] }
+    const threadFor = (qid, cid) => (THREADS[qid] && THREADS[qid][cid]) || [];
+    function setThread(qid, cid, msgs) {
+      if (!THREADS[qid]) THREADS[qid] = {};
+      THREADS[qid][cid] = msgs;
+    }
+
+    /* ═══════════════════════════ Results scaffolding ═══════════════════════════ */
+    function buildResults() {
+      const root = $('results'); root.innerHTML = '';
+      Object.keys(RESULTS).forEach(k => delete RESULTS[k]);
+      Object.keys(THREADS).forEach(k => delete THREADS[k]);
+      QUESTIONS.forEach((q, qi) => {
+        q.turns = [q.text];
+        const board = document.createElement('div');
+        board.className = 'board'; board.id = 'board-' + q.id;
+        board.innerHTML = `
+      <div class="qhead"><span class="qtag">Q${qi + 1}</span><span>${esc(q.text)}</span></div>
+      <div class="turns" id="turns-${q.id}"></div>
+      <div class="followup-bar" id="fu-${q.id}" style="display:none"></div>`;
+        root.appendChild(board);
+        addTurnGrid(q.id, 0, q.text);
+      });
+      RESULTS_BUILT = true;
+    }
+
+    /* One turn = an optional question header + a 5-column grid + its own judge bar. */
+    function addTurnGrid(qid, t, text) {
+      const host = $('turns-' + qid);
+      if (!host) return;
+      const cols = CONDITIONS.map((c, ci) => `
+    <div class="col pending" id="col-${qid}-${t}-${c.id}">
+      <div class="col-head">
+        <div class="cbar" style="background:${c.color}"></div>
+        <div class="clabel"><span class="cidx">C${ci}</span>${esc(c.label)}</div>
+        ${t === 0 ? `<div class="csub">${esc(c.sub)}</div>
+        <div class="cmodel" id="model-${qid}-${t}-${c.id}"></div>` : ''}
+      </div>
+      <div class="col-body" id="body-${qid}-${t}-${c.id}">
+        <div class="status queued"><span class="sp"></span>queued</div>
+      </div>
+    </div>`).join('');
+      const wrap = document.createElement('div');
+      wrap.className = 'turn';
+      wrap.innerHTML =
+        (t > 0 ? `<div class="turnhead"><span class="qtag">follow-up ${t}</span><span>${esc(text)}</span></div>` : '') +
+        `<div class="scroller"><div class="grid" style="grid-template-columns:repeat(${CONDITIONS.length},minmax(0,1fr))">${cols}</div></div>
+     <div class="judgebar" id="judge-${qid}-${t}" style="display:none"></div>`;
+      host.appendChild(wrap);
+    }
+
+    function setColStatus(qid, t, cid, cls, text) {
+      const body = $(`body-${qid}-${t}-${cid}`);
+      if (!body) return;
+      body.innerHTML = `<div class="status ${cls}">${cls === 'done' ? '✓' : cls === 'err' ? '✕' : '<span class="sp"></span>'}${esc(text)}</div>`;
+    }
+
+    function setRungState(cid, cls, text) {
+      const rung = $('rung-' + cid), st = $('rstate-' + cid);
+      if (rung) { rung.classList.remove('active', 'done', 'err'); if (cls) rung.classList.add(cls); }
+      if (st) st.textContent = text;
+    }
+
+    /* ═══════════════════════════ Render one answered column ═══════════════════════════ */
+    function renderColumn(qid, t, cond, data) {
+      const col = $(`col-${qid}-${t}-${cond.id}`);
+      const body = $(`body-${qid}-${t}-${cond.id}`);
+      const modelEl = $(`model-${qid}-${t}-${cond.id}`);
+      if (!body) return;
+      if (col) col.classList.remove('pending');
+
+      const think = (data.think_content || '').trim();
+      const trace = data.tool_trace || [];
+      const answerRaw = (data.answer_content || data.response || '').trim();
+      const m = data.metrics || {};
+      const parts = [];
+
+      if (think) {
+        parts.push(`
+      <details class="think block" open>
+        <summary><span class="caret">▸</span>Reasoning trace<span class="meta">${think.length} chars</span></summary>
+        <div class="body">${esc(think)}</div>
+      </details>`);
+      }
+
+      if (trace.length) {
+        const steps = trace.map(tc => {
+          const n = (tc.step ?? ((tc.iteration ?? 0) + 1));
+          const ok = tc.success !== false && tc.is_error !== true;
+          const reason = (tc.think_before_call || '').trim();
+          const plan = (tc.act || '').trim();
+          const input = tc.input ?? {};
+          const codeVal = (input && typeof input === 'object' && 'code' in input) ? input.code : null;
+          const inputHtml = codeVal != null
+            ? `<pre class="code">${esc(String(codeVal))}</pre>`
+            : `<pre class="code">${esc(JSON.stringify(input, null, 2))}</pre>`;
+          const out = String(tc.output_model || tc.output_full || tc.result || '');
+          return `
+        <div class="tstep">
+          <div class="th">
+            <span class="sn">step ${esc(String(n))}</span>
+            <span class="fn">${esc(tc.tool || '?')}()</span>
+            <span class="ok ${ok ? 'good' : 'bad'}">${ok ? 'ok' : 'err'}</span>
+            <span class="tt">${tc.gen_ms ?? 0}ms gen · ${tc.tool_ms ?? 0}ms exec</span>
+          </div>
+          ${reason ? `<div class="tseg"><span class="lab">reasoning before call</span><span class="reason">${esc(reason)}</span></div>` : ''}
+          ${plan ? `<div class="tseg"><span class="lab">plan</span><span class="reason">${esc(plan)}</span></div>` : ''}
+          <div class="tseg"><span class="lab">call · input</span>${inputHtml}</div>
+          ${out ? `<div class="tseg"><span class="lab">result <span style="text-transform:none;color:var(--faint)">(${out.length} chars)</span></span><div class="tout">${esc(out)}</div></div>` : ''}
+        </div>`;
+        }).join('');
+        parts.push(`
+      <details class="block" open style="border-color:color-mix(in srgb,var(--tool) 26%,var(--line))">
+        <summary style="color:var(--tool)"><span class="caret">▸</span>Tool calls<span class="meta">${trace.length} step${trace.length !== 1 ? 's' : ''}</span></summary>
+        <div class="tools-wrap" style="padding:9px">${steps}</div>
+      </details>`);
+      }
+
+      const { body: ansBody, followup } = splitFollowup(answerRaw);
+      parts.push(`<div class="answer">${ansBody
+        ? `<div class="ansbody">${fmt(ansBody)}</div>`
+        : `<div class="empty-ans">no answer block produced</div>`}
+    ${followup ? `<div class="followup"><span class="lab">closing question · ask</span>${esc(followup)}</div>` : ''}
+  </div>`);
+
+      const pills = [];
+      if (m.latency_s != null) pills.push(`<span class="pill">⏱ ${m.latency_s}s</span>`);
+      if (m.tokens_per_sec != null) pills.push(`<span class="pill">⚡ ${m.tokens_per_sec} tok/s</span>`);
+      if (m.tokens_generated != null) pills.push(`<span class="pill">${m.tokens_generated} tok</span>`);
+      const toolCalls = m.tool_calls || {};
+      Object.entries(toolCalls).forEach(([k, v]) => pills.push(`<span class="pill tool">🔧 ${esc(k)}×${v}</span>`));
+      if (Object.keys(toolCalls).length === 0) pills.push(`<span class="pill">no tools</span>`);
+      const viol = data.harness_violations || [];
+      if (viol.length) pills.push(`<span class="pill warn">⚠ ${viol.length} harness fix${viol.length !== 1 ? 'es' : ''}</span>`);
+      if (data.self_critique_applied) pills.push(`<span class="pill good">↻ self-revised</span>`);
+      if (data.dependency_disclosure) pills.push(`<span class="pill warn">⚑ dependency notice</span>`);
+      parts.push(`<div class="metrics">${pills.join('')}</div>`);
+
+      body.innerHTML = parts.join('');
+      if (modelEl && data.model_label) modelEl.textContent = data.model_label;
+    }
+
+    function renderColError(qid, t, cid, msg) {
+      const body = $(`body-${qid}-${t}-${cid}`);
+      const col = $(`col-${qid}-${t}-${cid}`);
+      if (col) col.classList.remove('pending');
+      if (body) body.innerHTML = `<div class="errbox">${esc(msg)}</div>`;
+    }
+
+    /* ═══════════════════════════ Orchestration ═══════════════════════════ */
+    /* Climbs the ladder once: for each condition, swap the model in if needed, then answer
+       every pending item with it. items: [{qid, t, text}]. */
+    async function runLadder(items) {
+      RUNNING = true;
+      $('run-btn').disabled = true; $('clear-btn').disabled = true;
+      $('run-badge').textContent = 'running'; $('run-badge').style.color = 'var(--accent)';
+
+      const useSwap = $('enable-swap').checked;
+      const loaded = {};        // endpoint -> swap signature currently loaded
+      const modelLabels = {};   // endpoint -> model label for the column header
+
+      try {
+        for (const cond of CONDITIONS) {
+          const url = endpointOf(cond);
+          setRungState(cond.id, 'active', 'starting');
+
+          if (useSwap && cond.swap) {
+            const sig = JSON.stringify(cond.swap);
+            if (loaded[url] !== sig) {
+              setRungState(cond.id, 'active', 'loading model…');
+              items.forEach(it => setColStatus(it.qid, it.t, cond.id, 'queued', 'loading model…'));
+              try {
+                modelLabels[url] = await swapModel(url, cond.swap);
+                loaded[url] = sig;
+              } catch (e) {
+                setRungState(cond.id, 'err', 'swap failed');
+                items.forEach(it => renderColError(it.qid, it.t, cond.id, String(e.message || e)));
+                continue;
+              }
+            }
+          } else if (!modelLabels[url]) {
+            try {
+              const h = await (await fetch(url + '/health', { signal: AbortSignal.timeout(4000) })).json();
+              modelLabels[url] = (h.mode === 'dual' ? 'dual · ' : '') + (h.model || '');
+            } catch { }
+          }
+
+          for (const it of items) {
+            setColStatus(it.qid, it.t, cond.id, 'gen', 'generating…');
+            setRungState(cond.id, 'active', 'generating…');
+            const sent = threadFor(it.qid, cond.id).concat([{ role: 'user', content: it.text }]);
+            try {
+              const data = await chat(url, cond, sent, `${it.qid}-${cond.id}`);
+              data.model_label = modelLabels[url] || '';
+              renderColumn(it.qid, it.t, cond, data);
+              if (!RESULTS[it.qid]) RESULTS[it.qid] = {};
+              if (!RESULTS[it.qid][it.t]) RESULTS[it.qid][it.t] = {};
+              RESULTS[it.qid][it.t][cond.id] = data;
+              // Continue from the server's own conversation when it returns one, so tool
+              // turns stay in context for the follow-up.
+              const next = (Array.isArray(data.conversation) && data.conversation.length)
+                ? data.conversation.filter(m => m.role !== 'system')
+                  .map(m => ({ role: m.role, content: String(m.content ?? '') }))
+                : sent.concat([{ role: 'assistant', content: data.response || '' }]);
+              setThread(it.qid, cond.id, next);
+            } catch (e) {
+              renderColError(it.qid, it.t, cond.id, String(e.message || e));
+              // Keep the thread turn-aligned even after a failure.
+              setThread(it.qid, cond.id, sent.concat([{ role: 'assistant', content: '' }]));
+            }
+          }
+          setRungState(cond.id, 'done', 'done ✓');
+        }
+        $('run-badge').textContent = 'complete'; $('run-badge').style.color = 'var(--pass)';
+      } finally {
+        RUNNING = false;
+        $('run-btn').disabled = false; $('clear-btn').disabled = false;
+      }
+    }
+
+    async function runComparison() {
+      if (RUNNING) return;
+      if ($('q-input').value.trim()) addQuestion();
+      if (!QUESTIONS.length) { alert('Add at least one question first.'); return; }
+
+      SESSION_TAG = 'sess-' + uid();
+      buildResults();
+      CONDITIONS.forEach(c => setRungState(c.id, '', $('enable-swap').checked && c.swap ? 'swap · idle' : 'idle'));
+
+      await runLadder(QUESTIONS.map(q => ({ qid: q.id, t: 0, text: q.text })));
+
+      QUESTIONS.forEach(q => { showJudgeBar(q.id, 0); showFollowUpBar(q.id); });
+      if ($('auto-judge').checked) {
+        for (const q of QUESTIONS) await runJudge(q.id, 0);
+      }
+    }
+
+    /* ═══════════════════════════ Follow-up turns ═══════════════════════════ */
+    function showFollowUpBar(qid) {
+      const bar = $('fu-' + qid);
+      if (!bar) return;
+      bar.style.display = 'flex';
+      bar.innerHTML = `
+    <input type="text" id="fu-input-${qid}" spellcheck="false"
+           placeholder="Ask a follow-up in the same conversation, answered by all five again…">
+    <button class="btn" id="fu-btn-${qid}" onclick="runFollowUp('${qid}')">Ask follow-up</button>`;
+      const inp = $('fu-input-' + qid);
+      if (inp) inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); runFollowUp(qid); }
+      });
+    }
+
+    async function runFollowUp(qid) {
+      if (RUNNING) return;
+      const q = QUESTIONS.find(x => x.id === qid);
+      const inp = $('fu-input-' + qid);
+      const text = (inp && inp.value.trim()) || '';
+      if (!q || !text) return;
+      inp.value = '';
+
+      const t = (q.turns || [q.text]).length;
+      q.turns = (q.turns || [q.text]).concat([text]);
+      addTurnGrid(qid, t, text);
+      $(`col-${qid}-${t}-${CONDITIONS[0].id}`)?.scrollIntoView({ block: 'nearest' });
+
+      await runLadder([{ qid, t, text }]);
+      showJudgeBar(qid, t);
+      if ($('auto-judge').checked) await runJudge(qid, t);
+    }
+
+    function clearResults() {
+      if (RUNNING) return;
+      $('results').innerHTML = ''; RESULTS_BUILT = false;
+      Object.keys(RESULTS).forEach(k => delete RESULTS[k]);
+      Object.keys(THREADS).forEach(k => delete THREADS[k]);
+      QUESTIONS.forEach(q => { q.turns = [q.text]; });
+      $('run-badge').textContent = 'idle'; $('run-badge').style.color = '';
+      CONDITIONS.forEach(c => setRungState(c.id, '', $('enable-swap').checked && c.swap ? 'swap · idle' : 'idle'));
+    }
+
+    /* ═══════════════════════════ Comparative judge ═══════════════════════════ */
+    /* Ranks one turn's answers head to head via demo_proxy.py POST /judge, which calls
+       compare_report.judge_compare - the identical prompt, rubric, anonymisation and
+       tie discipline used for the offline dissertation report. */
+
+    function showJudgeBar(qid, t) {
+      const bar = $(`judge-${qid}-${t}`);
+      if (!bar) return;
+      const n = Object.keys((RESULTS[qid] || {})[t] || {}).length;
+      bar.className = 'judgebar';
+      bar.style.display = 'flex';
+      bar.innerHTML = (n < 2)
+        ? `<span class="jnote">Need at least two answers to compare.</span>`
+        : `<button class="btn" onclick="runJudge('${qid}',${t})">Judge these answers</button>
+       <span class="jnote">Ranks the ${n} answers head to head, anonymised and in random order.</span>`;
+    }
+
+    async function runJudge(qid, t) {
+      const bar = $(`judge-${qid}-${t}`);
+      const q = QUESTIONS.find(x => x.id === qid);
+      if (!bar || !q) return;
+
+      const store = (RESULTS[qid] || {})[t] || {};
+      const cells = {};
+      CONDITIONS.forEach(c => {
+        const d = store[c.id];
+        if (!d) return;
+        cells[c.id] = {
+          answer: d.answer_content || '',
+          response: d.response || '',
+          think: d.think_content || '',
+          tool_trace: d.tool_trace || [],
+          tools: Object.keys((d.metrics || {}).tool_calls || {}),
+          tool_profile: c.tool_profile,
+          // A tools-off rung must not be faulted for never calling a tool.
+          tool_harness: c.tool_profile !== 'no_tools',
+        };
+      });
+      if (Object.keys(cells).length < 2) { showJudgeBar(qid, t); return; }
+
+      const asked = (q.turns || [q.text])[t] || q.text;
+      const JUDGE_URL = (new URL(location.href)).origin + '/judge';
+      bar.className = 'judgebar';
+      bar.innerHTML = `<span class="status"><span class="sp"></span>judging ${Object.keys(cells).length} answers…</span>`;
+      try {
+        const r = await fetch(JUDGE_URL, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: asked, cells, model: ($('judge-model').value || '').trim() }),
+          signal: AbortSignal.timeout(600000),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || r.statusText);
+        if (d.error) throw new Error(d.error);
+        renderVerdict(qid, t, d);
+      } catch (e) {
+        bar.className = 'judgebar';
+        bar.innerHTML = `<div class="errbox" style="flex:1">Judge failed: ${esc(e.message || e)}</div>
+      <button class="btn sm" onclick="runJudge('${qid}',${t})">Retry</button>`;
+      }
+    }
+
+    function gradeClass(g) {
+      if (['A+', 'A', 'B+'].includes(g)) return 'good';
+      if (['B', 'C+', 'C'].includes(g)) return 'mid';
+      return 'bad';
+    }
+
+    function renderVerdict(qid, t, v) {
+      const bar = $(`judge-${qid}-${t}`);
+      const ranking = v.ranking || [];
+      const ranks = v.ranks || {};
+      const grades = v.grades || {};
+      const labelOf = id => (CONDITIONS.find(c => c.id === id) || {}).label || id;
+
+      CONDITIONS.forEach(c => {
+        const col = $(`col-${qid}-${t}-${c.id}`);
+        if (!col) return;
+        col.classList.toggle('win', ranks[c.id] === 1);
+        const head = col.querySelector('.clabel');
+        if (!head) return;
+        const old = head.querySelector('.cgrade');
+        if (old) old.remove();
+        if (grades[c.id]) {
+          const chip = document.createElement('span');
+          chip.className = 'gradechip cgrade ' + gradeClass(grades[c.id]);
+          chip.textContent = grades[c.id];
+          head.appendChild(chip);
+        }
+      });
+
+      // Tied grades share a rank, so render them with "=" rather than ">".
+      const chain = ranking.map((id, i) =>
+        (i === 0 ? '' : (ranks[id] === ranks[ranking[i - 1]] ? ' = ' : ' > ')) + labelOf(id)).join('');
+
+      const assess = v.assessments || {};
+      const items = ranking.filter(id => assess[id]).map(id =>
+        `<li><strong>${esc(labelOf(id))}</strong>` +
+        (grades[id] ? `<span class="gradechip ${gradeClass(grades[id])}">${esc(grades[id])}</span>` : '') +
+        `: ${esc(assess[id])}</li>`).join('');
+
+      bar.className = 'verdict';
+      bar.style.display = 'block';
+      bar.innerHTML = `
+    <div class="vrank">${esc(chain)}</div>
+    ${v.rationale ? `<div class="vwhy">${esc(v.rationale)}</div>` : ''}
+    ${items ? `<details><summary style="cursor:pointer;color:var(--muted);font-size:11.5px">per-answer evidence</summary><ul>${items}</ul></details>` : ''}
+    <div class="vmeta" style="margin-top:7px">judge: ${esc(v.judge_model || '')} · anonymised, random order${v.rank_grade_disagreement ? ' · grades overrode the stated order' : ''}</div>
+    <div style="margin-top:9px"><button class="btn sm" onclick="runJudge('${qid}',${t})">Re-judge</button></div>`;
+    }
+
+    /* ═══════════════════════════ Init ═══════════════════════════ */
+    (async function init() {
+      await autoConfigure();
+      renderLadder();
+      renderEndpointRows();
+      renderPresets();
+      QUESTIONS.push({ id: uid(), text: PRESETS[0].text });   // seed the example question
+      renderQList();
+      $('q-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addQuestion(); }
+      });
+      checkAllHealth();
+    })();
+  </script>
+</body>
+
+</html>

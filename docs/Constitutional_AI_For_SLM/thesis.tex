@@ -1,0 +1,396 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%
+%%% File: utthesis2.doc, version 2.0jab, February 2002
+%%%
+%%% Based on: utthesis.doc, version 2.0, January 1995
+%%% =============================================
+%%% Copyright (c) 1995 by Dinesh Das.  All rights reserved.
+%%% This file is free and can be modified or distributed as long as
+%%% you meet the following conditions:
+%%%
+%%% (1) This copyright notice is kept intact on all modified copies.
+%%% (2) If you modify this file, you MUST NOT use the original file name.
+%%%
+%%% This file contains a template that can be used with the package
+%%% utthesis.sty and LaTeX2e to produce a thesis that meets the requirements
+%%% of the Graduate School of The University of Texas at Austin.
+%%%
+%%% All of the commands defined by utthesis.sty have default values (see
+%%% the file utthesis.sty for these values).  Thus, theoretically, you
+%%% don't need to define values for any of them; you can run this file
+%%% through LaTeX2e and produce an acceptable thesis, without any text.
+%%% However, you probably want to set at least some of the macros (like
+%%% \thesisauthor).  In that case, replace "..." with appropriate values,
+%%% and uncomment the line (by removing the leading %'s).
+%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%
+%%
+%% This file, and the corresponding tcdthesis.sty the accompanied it, have
+%% been modified for the M.Sc. styles used in Trinity College, Dublin
+%%
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[a4paper, 12pt, oneside]{report}         %% LaTeX2e document.
+\usepackage {tcdthesis}              %% Preamble.
+
+\mastersthesis                       %% Uncomment one of these; if you don't
+% \phdthesis                         %% use either, the default is \phdthesis.
+
+% \thesisdraft                       %% Uncomment this if you want a draft
+                                     %% version; this will print a timestamp
+                                     %% on each page of your thesis.
+
+\leftchapter                         %% Uncomment one of these if you want
+% \centerchapter                     %% left-justified, centered or
+% \rightchapter                      %% right-justified chapter headings.
+                                     %% Chapter headings includes the
+                                     %% Contents, Acknowledgments, Lists
+                                     %% of Tables and Figures and the Vita.
+                                     %% The default is \centerchapter.
+
+% \singlespace                       %% Uncomment one of these if you want
+\oneandhalfspace                     %% single-spacing, space-and-a-half
+% \doublespace                       %% or double-spacing; the default is
+                                     %% \oneandhalfspace, which is the
+                                     %% minimum spacing accepted by the
+                                     %% Graduate School.
+
+\renewcommand{\thesisauthor}{Ajinkya Taranekar}                %% Your official TCD name.
+\renewcommand{\thesismonth}{August}                   %% Your month of graduation.
+\renewcommand{\thesisyear}{2026}                      %% Your year of graduation.
+\renewcommand{\thesistitle}{Constitutional Distillation AI Framework for Trust and Personalised AI on Small Language Models}          %% The title of your thesis; use mixed-case.
+\renewcommand{\thesisauthorpreviousdegrees}{, BTech}    %% Your previous degrees, abbreviated; separate multiple degrees by commas.
+\renewcommand{\thesissupervisor}{Owen Conlan}            %% Your thesis supervisor; use mixed-case and don't use any titles or degrees.
+% \renewcommand{\thesiscosupervisor}{}                %% Your PhD. thesis co-supervisor; if any.
+
+% \renewcommand{\thesiscommitteemembera}{}
+% \renewcommand{\thesiscommitteememberb}{}
+% \renewcommand{\thesiscommitteememberc}{}
+% \renewcommand{\thesiscommitteememberd}{}
+% \renewcommand{\thesiscommitteemembere}{}
+% \renewcommand{\thesiscommitteememberf}{}
+% \renewcommand{\thesiscommitteememberg}{}
+% \renewcommand{\thesiscommitteememberh}{}
+% \renewcommand{\thesiscommitteememberi}{}
+
+
+\renewcommand{\thesisauthoraddress}{...}
+
+\renewcommand{\thesisdedication}{...}     %% Your dedication, if you have one; use "\\" for linebreaks.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%
+%%% The following commands are all optional, but useful if your requirements
+%%% are different from the default values in tcdthesis.sty.  To use them,
+%%% simply uncomment (remove the leading %) the line(s).
+
+\renewcommand{\thesisdegree}{Master of Science in Computer Science}
+                                     %% default is "DOCTOR OF PHILOSOPHY"
+                                     %% for \phdthesis or "MASTER OF ARTS"
+                                     %% for \mastersthesis.  Provide the
+                                     %% correct FULL OFFICIAL name of
+                                     %% the degree.
+\renewcommand{\thesisdegreestream}{ (Future Networked Systems)}
+                                     %% Default is empty. This is used on
+                                     %% the title page of the thesis.
+
+\renewcommand{\thesisdegreeabbreviation}{M.Sc.}
+                                     %% Use this if you also use the above
+                                     %% command; provide the OFFICIAL
+                                     %% abbreviation of your thesis degree.
+\renewcommand{\thesistype}{Dissertation}    %% Use this ONLY if your thesis type
+                                     %% is NOT "Thesis" for \phdthesis
+                                     %% or \mastersthesis.
+                                     %% Provide the OFFICIAL type of the
+                                     %% thesis; use mixed-case.
+
+%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+\usepackage{graphicx,xcolor}
+\usepackage{anysize}
+\usepackage{amsmath,amssymb,textcomp}
+%% Numeric citations. The template shipped with natbib+apalike (author-year),
+%% but the prose names authors in the sentence and then cites the key, which
+%% author-year would render as "Rainone et al. (Rainone et al., 2025)". The
+%% `cite' package with IEEEtran keeps every existing sentence correct and
+%% sorts/compresses runs of citation numbers.
+\usepackage{cite}
+\usepackage{caption}
+\usepackage[autostyle=true]{csquotes}
+\usepackage{booktabs}
+%% Ragged-right paragraph columns. A justified p{} column narrow enough to hold
+%% only a few words per line has too few break points, so TeX stretches the
+%% interword glue to reach the right edge and the cell prints with visible
+%% rivers. L{<width>} behaves like p{<width>} but leaves the right edge ragged;
+%% \arraybackslash restores \\ as the row separator, which \raggedright hides.
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc, fit, shapes.geometric}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{hyperref}
+
+%% Heading spacing. tcdthesis.sty gives every chapter head 50pt above the
+%% number, 20pt under it and 40pt below the title, which is 110pt of white per
+%% chapter across eleven chapter-level heads. The report class's section and
+%% subsection skips are similarly generous, and with roughly a hundred headings
+%% in the document that space adds up to several pages. These redefinitions
+%% tighten both without touching font size or the 1.5 line spacing, and they
+%% also make a short closing section more likely to fit on the page it belongs
+%% to rather than being stranded on one of its own.
+%% These are tcdthesis.sty's own definitions (lines 753-772) with the vertical
+%% skips reduced: 50pt -> 18pt above, 20pt -> 10pt under the number, 40pt ->
+%% 18pt below the title. \@chapteralignment is preserved, so \leftchapter still
+%% governs alignment and the heads look the same, only closer together.
+\makeatletter
+\def\@makechapterhead#1{%
+  \vspace*{18\p@}%
+  {\parindent \z@ \@chapteralignment \reset@font
+    \ifnum \c@secnumdepth >\m@ne
+      \huge\bfseries \@chapapp{} \thechapter
+      \par
+      \vskip 10\p@
+    \fi
+    \Huge \bfseries #1\par
+    \nobreak
+    \vskip 18\p@
+  }}
+\def\@makeschapterhead#1{%
+  \vspace*{18\p@}%
+  {\parindent \z@ \@chapteralignment
+    \reset@font
+    \Huge \bfseries  #1\par
+    \nobreak
+    \vskip 18\p@
+  }}
+%% Section skips, from report.cls, tightened. The starred fourth argument is
+%% negative to suppress indentation of the following paragraph, as the class
+%% does. Roughly a hundred headings carry this saving.
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-2.5ex \@plus -0.8ex \@minus -.2ex}%
+  {1.5ex \@plus .2ex}%
+  {\normalfont\Large\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-2.0ex \@plus -0.6ex \@minus -.2ex}%
+  {1.1ex \@plus .2ex}%
+  {\normalfont\large\bfseries}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+  {-1.7ex \@plus -0.5ex \@minus -.2ex}%
+  {0.9ex \@plus .2ex}%
+  {\normalfont\normalsize\bfseries}}
+\makeatother
+
+%% Sectioning depth: the Background section of Chapter 2 runs three levels
+%% deep, so number to \subsubsection but keep the table of contents at
+%% \subsection so that it stays readable.
+\setcounter{secnumdepth}{3}
+%% Contents lists chapters and sections only. At tocdepth 2 the subsection
+%% listing ran to four pages; subsections are still numbered in the text.
+\setcounter{tocdepth}{2}
+
+%% Float packing: allow a page to be mostly float before LaTeX gives up
+%% and starts a float-only page, and require a text page to carry a
+%% reasonable amount of text. These are what stop part-empty pages
+%% accumulating in a float-heavy document.
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.7}
+\renewcommand{\textfraction}{0.15}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
+
+\numberwithin{equation}{chapter}
+\numberwithin{algorithm}{chapter}
+
+\definecolor{tcd_blue}{RGB}{5, 105, 185}
+
+%% Verbatim artefact listings (prompts, transcripts). The literate mapping
+%% lets UTF-8 characters that appear in the saved artefacts typeset under
+%% the T1 encoding without editing the artefacts themselves.
+\lstdefinestyle{artefact}{basicstyle=\ttfamily\footnotesize, breaklines=true,
+  breakatwhitespace=true, columns=fullflexible, keepspaces=true, frame=single,
+  framerule=0.3pt, aboveskip=6pt, belowskip=6pt,
+  literate={—}{{--}}1 {–}{{--}}1 {→}{{$\rightarrow$}}1 {✓}{{$\checkmark$}}1
+           {✗}{{x}}1 {€}{{\texteuro}}1 {₹}{{Rs.}}3 {×}{{$\times$}}1
+           {²}{{$^{2}$}}1 {π}{{$\pi$}}1 {≈}{{$\approx$}}1 {É}{{\'E}}1}
+
+\hypersetup{colorlinks=true, allcolors=black,
+  pdftitle={Constitutional Distillation AI Framework for Trust and Personalised AI on Small Language Models},
+  pdfauthor={Ajinkya Taranekar},
+  pdfsubject={Master of Science in Computer Science},
+  pdfkeywords={Small Language Models, Constitutional AI, On-Device AI, Personalisation, Trustworthiness, Alignment Tax}}
+
+%%------------------------------------------------
+%% Listing macros
+%%------------------------------------------------
+%% Examples for the commands in the document below
+%%
+%% includecode:
+%% \includecode{caption for table of listings}{caption for reader}{filename}
+%% - includes a file with code and adds a caption that should describe the code in some detail and a shorter caption for the table of listings
+\newcommand{\includecode}[4]{\lstinputlisting[floatplacement=H, caption={[#1]#2}, captionpos=b, frame=single, label={#3}]{#4}}
+
+%%------------------------------------------------
+%% Image macros
+%%------------------------------------------------
+
+%% includescalefigure:
+%% \includescalefigure{label}{short caption}{long caption}{scale}{filename}
+%% - includes a figure with a given label, a short caption for the table of contents and a longer caption that describes the figure in some detail and a scale factor 'scale'
+\newcommand{\includescalefigure}[5]{
+\begin{figure}[htb]
+\centering
+\includegraphics[width=#4\linewidth]{#5}
+\captionsetup{width=.8\linewidth}
+\caption[#2]{#3}
+\label{#1}
+\end{figure}
+}
+
+%% includefigure:
+%% \includefigure{label}{short caption}{long caption}{filename}
+%% - includes a figure with a given label, a short caption for the table of contents and a longer caption that describes the figure in some detail
+\newcommand{\includefigure}[4]{
+\begin{figure}[htb]
+\centering
+\includegraphics{#4}
+\captionsetup{width=.8\linewidth}
+\caption[#2]{#3}
+\label{#1}
+\end{figure}
+}
+
+
+
+
+%% Title page with the Trinity crest.
+%%
+%% tcdthesis.sty offers \thesistitlepagewithcrest, but it is written against a
+%% different set of macros (\school, \authorname, \typeofthesis, \degree), it
+%% dates the page with \today rather than the graduation month, and it drops the
+%% supervisor line. Rather than lose that information, this redefines the plain
+%% \thesistitlepage (tcdthesis.sty lines 445-470) with the crest added at the
+%% top and the vertical spacing rebalanced to keep everything on one page.
+\makeatletter
+\renewcommand{\thesistitlepage}{
+    \thispagestyle{empty}
+    \begin{spacing}{2}
+    \begin{center}
+      %% TrinityCrest.png is a wide wordmark (1713x591, aspect 0.345), not a
+      %% square crest, so it is sized by width. At 0.55\textwidth it is 85mm
+      %% wide and only 29mm tall, which the 20mm reclaimed from the two
+      %% \vspace commands below very nearly pays for.
+      \includegraphics[width=0.55\textwidth]{TrinityCrest.png} \\[10mm]
+      \@thesistitle \\[8mm]
+      \@thesisstudent \\
+      \vspace{12mm}
+      \textbf{\thesistypetypesize A \thesistype} \\
+      Presented to the
+      \@universityname \\
+      in partial fulfilment
+      of the requirements
+      for the degree of \\[4mm]
+      \textbf{\thesisdegreetypesize \thesisdegree \thesisdegreestream} \\
+      \vspace{18mm}
+      Supervisor: \thesissupervisor \\
+      \thesismonth \ \thesisyear
+    \end{center}
+    \end{spacing}
+    \newpage
+    \clearpage
+    \pagenumbering{\@preamblepagenumbering}}
+\makeatother
+
+\begin{document}                                  %% BEGIN THE DOCUMENT
+
+\thesistitlepage                                  %% Generate the title page.
+
+\hypersetup{pageanchor=false}
+\thesisdeclarationpage                            %% Generate the declaration page.
+
+% \thesispermissionpage                             %% Generate the copyright permission page
+% \hypersetup{pageanchor=true}
+
+\chapter*{Use of Generative AI}
+\label{chap:genai}
+\addcontentsline{toc}{chapter}{Use of Generative AI}
+
+I acknowledge the use of Anthropic's Claude models, specifically Sonnet (v4.5 -- 5), Opus (v4.6 -- 5) and Fable~5 (Anthropic, \url{https://www.anthropic.com}), in this dissertation. I accessed them largely through Anthropic's Claude website and the Claude Code assistant in the terminal. Over the course of this project, the models were used to discover, review and connect research papers held in Obsidian. They also supported the ideation of the research direction, acting as a tool for understanding the existing state of the art and for correcting my understanding through the lens of First Principles, and they assisted in implementing the pipeline, running experiments and building the system around it. They were further used to proofread and copy-edit prose and to format \LaTeX{} tables and figures. The research design, implementation, experiments and analysis, together with the arguments and conclusions, are my own work, and every generative-AI output was reviewed, edited and verified before inclusion in the dissertation.
+
+\begin{thesisabstract}
+
+An AI assistant running on the user's own device keeps private data off the internet; however, running an assistant on a device requires smaller models, which sacrifice the capacity needed for safety, reasoning, and tool use. This dissertation investigates whether a framework can teach a constitution into a 0.6-billion-parameter model, a small language model from the Qwen3 Family.
+
+This dissertation experiments on five model conditions across three staged runs, which include baseline against a vanilla model, template-based supervised fine-tuning, then constitutional distillation from a frontier-scale teacher, then experimenting on a new Thinker-Executor architecture that splits the dependency across two models. All run on Qwen3--0.6B within a pipeline built around a twenty-five principle constitution, which is judged by a large language-model judge ranking all five answers to each question. The training corpus is synthetic, with its target answers generated by a larger model, as collecting such data is a separate research problem and the goal here is to create a framework.
+
+However, the training data decides the outcome, as seen during evaluation. By replacing a format-only corpus with a constitutional one, over identical weights and recipe, it boosts the head-to-head score by 0.230. That same model does no better on average than an untrained one given a careful prompt and real tools, at 0.589 against 0.583 score. But the average scores hide the area for strengths and limitations. The constitutional improvement also came at a cost. The training that improves compliance cripples the model's written reasoning, taking the empty-reasoning rate from 1.4\% to 91.3\% and the mean trace length from 1{,}309 to 150 characters. This is the small-model form of the \emph{alignment tax} and \emph{safety tax}. Splitting reasoning from execution wins some of it back, taking the empty-trace rate to 36.2\% and producing a clarifying question before answering, but it does not match the single model's compliance and is weakest over long conversations.
+
+The main contribution of this work is a model-agnostic framework for measuring and improving constitutional behaviour at small scale. At this scale, trustworthy behaviour appears to be acquired in layers, not all at once.
+
+
+\end{thesisabstract}
+
+% \thesisdedicationpage                            %% Generate the dedication page.
+
+\begin{thesisacknowledgments}
+
+I would like to provide my deepest gratitude to my supervisor, Professor Owen Conlan, who has guided me with patience, encouragement, and feedback throughout this dissertation. He brought various perspectives from multiple studies, which repeatedly sharpened both the research and its framing; the discussions I had with him from First Principles were particularly fruitful. Thank you, Professor, for this level of guidance; it is greatly appreciated.  I am also grateful to the School of Computer Science and Statistics at Trinity College Dublin for the resources and the environment that made this work possible. 
+
+I also want to thank my colleagues for the many discussions that shaped my thinking, and all the communities working on open language model development (Qwen, Unsloth, Hugging Face, and others), whose work made experimentation at this scale feasible on a single GPU. 
+
+Finally, and above all, I thank my parents for giving me the chance to undertake this master's, guiding me in every step, and making me step outside my comfort zone. My thanks also go to my newfound friends at Trinity College Dublin for their patience and engagement throughout the studies, providing healthy discussion and encouragement. This would not have been possible without everyone's collective effort in shaping me. Thank you, everyone!
+
+\end{thesisacknowledgments}                       %% allowed in LaTeX2e par-mode.
+
+
+\tableofcontents                                  %% Generate table of contents.
+\listoftables                                     %% Uncomment this to generate list of tables.
+\listoffigures                                    %% Uncomment this to generate list of figures.
+
+
+%%
+%% Include thesis chapters here...
+%%
+\include{Introduction}
+\include{StateOfTheArt}
+\include{Design}
+\include{Implementation}
+\include{Evaluation}
+\include{Conclusions}
+
+% \begin{thebibliography}{refs}                   %% Start your bibliography here; you can
+%% NOTE: tcdthesis.sty's thebibliography already issues
+%% \addcontentsline{toc}{chapter}{\bibname}, so adding it here listed
+%% "Bibliography" twice in the contents. Removed.
+\bibliographystyle{IEEEtran}
+{\small                                          %% 97 entries; \small
+                                                  %% saves ~2 pages and is
+                                                  %% standard for a numeric
+                                                  %% reference list
+\bibliography{refs}
+}                               %% also use the \bibliography command
+%\end{thebibliography}                            %% to generate your bibliography.
+
+
+\addcontentsline {toc}{chapter}{Appendices}       %% Force Appendices to appear in contents
+\appendix                                         %% Switch chapter numbering to appendix style
+\renewcommand{\thechapter}{A\arabic{chapter}}     %% Appendices are numbered A1, A2, ...
+\include{appendix1}
+
+
+
+
+\end{document}                                    %% END THE DOCUMENT

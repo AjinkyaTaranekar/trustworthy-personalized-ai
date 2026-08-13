@@ -1,0 +1,17 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Head-to-head leaderboard across 151 questions (metrics 0--1, higher is better).}
+  \label{tab:rank-overall}
+  \small
+  \begin{tabular}{lrrrlrrr}
+    \toprule
+    Condition & $n$ & wins & H2H score & 95\% CI & wtd.\ H2H & wtd.\ win share & grade pts \\
+    \midrule
+    vanilla\_base & 151 & 31.3 & 0.551 & [0.501, 0.602] & 0.527 & 0.153 & 0.539 \\
+    vanilla\_tools & 151 & 34.2 & 0.583 & [0.535, 0.631] & 0.600 & 0.215 & 0.575 \\
+    sft\_template & 151 & 13.3 & 0.358 & [0.310, 0.406] & 0.312 & 0.062 & 0.391 \\
+    sft\_constitution & 151 & 43.2 & 0.589 & [0.534, 0.642] & 0.596 & 0.285 & 0.563 \\
+    thinker\_executor & 151 & 29.0 & 0.419 & [0.361, 0.479] & 0.464 & 0.285 & 0.393 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

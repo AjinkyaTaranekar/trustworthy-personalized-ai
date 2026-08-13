@@ -1,0 +1,609 @@
+\chapter{State of the Art}
+\label{chap:state-of-the-art}
+
+This chapter establishes the technical foundations on which this dissertation is built. Section~\ref{sec:background} describes the extensive state-of-the-art research on language models. Section~\ref{sec:closely-related-work} then describes the four research literatures that inspired this dissertation, and Section~\ref{sec:related-work-summary-and-novelty-gap} shows the gaps or disconnection between the literature and how this dissertation closes it.
+
+\section{Background}
+\label{sec:background}
+\label{chap:background}
+
+This section builds the foundations of this dissertation by breaking the research question down using First Principles, focusing on the \emph{What}, the \emph{Why}, and the \emph{How} behind it. It starts with the fundamental question of what actually distinguishes an answer given by a human from one given by a machine (Section~\ref{sec:human-vs-ai}), which then leads to how a language model turns text into tokens, how those tokens become fluent output, and why that fluency cannot be taken for understanding (Section~\ref{sec:foundations}), covering tokens, embeddings, the transformer and its attention mechanism, the relationship between scale and capability, and how training data is prepared.
+
+Later, the study focuses on on-device AI and the privacy trade-off (Section~\ref{sec:on-device-ai-and-the-privacy-capability-trade-off}), Anthropic's Constitutional AI framework (Section~\ref{sec:constitutional-ai}), the established techniques for shrinking a capable model into a smaller one and adapting it to a set of principles by further training on pre-trained weights (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}), how behaviour is steered at inference time through prompts, tools, and state (Section~\ref{sec:inference-time-steering}), and how context is gathered and stored for personalisation (Section~\ref{sec:personalisation-and-user-modelling}).
+
+These foundations matter because the answer to why trustworthiness cannot be assumed lies in the architecture of current models, and each section below contributes to a design decision in the architecture shown in Figure~\ref{fig:architecture}.
+
+\subsection{What Distinguishes Human and Machine}
+\label{sec:human-vs-ai}
+
+An answer given by a person and one given by a language model like GPT, Claude, or Gemini are not the same, however alike the two may read; broken down based on first principles, they differ in how each entity comes to that answer, and several design decisions in this dissertation follow from this single distinction. A person understands the question \cite{tomasello2008origins}, thinks about what is relevant to the listener \cite{clark1996usinglanguage, sperberwilson1995relevance}, then either asks a question for clarification or draws an anecdote from their life experience \cite{barsalou2008grounded, bruner1990acts} to ground an answer, and they can recognise when they do not know the answer by stating ``I do not know'' \cite{flavell1979metacognition}, which is metacognition. 
+
+A language model, by contrast, works on statistics to predict the next token from what came before; such models are trained only to continue text plausibly \cite{vaswani2023attentionneed, brown2020languagemodelsfewshotlearners}. A model has no reliable way to determine its own uncertainty and presents a guess in the same confident register as a fact \cite{bender2021stochasticparrots}. This is the root cause of both hallucination \cite{ji2024surveyhallucinationnaturallanguage} and the difficulty in judging whether a question is unanswerable \cite{wen2025knowlimitssurveyabstention, kirichenko2025abstentionbenchreasoningllmsfail}. 
+
+A recent study by Liu et al.\ shows the same deficiency in explicitly metacognitive terms, observing that models hallucinate with high confidence, where they fail to recognise their own knowledge boundaries, and misrepresent their internal uncertainty. The study shows that by adding a metacognitive reward, oversampling the same responses multiple times credits the model for judging its own calibration accurately, which improves how faithfully it expresses what it does not know \cite{liu2026reinforcementlearningmetacognitivefeedback}. This dissertation therefore takes a methodological position rather than a philosophical one. It specifies how a trustworthy, personalised assistant should behave and measures whether the model behaves that way.
+
+\subsection{Foundations of Language Models}
+\label{sec:foundations}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\footnotesize, node distance=6mm,
+      stage/.style={draw, rounded corners, align=center, minimum height=1.25cm,
+        text width=2.3cm, fill=tcd_blue!7, inner sep=4pt, font=\scriptsize},
+      note/.style={align=center, font=\scriptsize\itshape, text width=2.5cm, text=black!55}]
+    \node[stage] (text) {\textbf{Text}\\``124213-4231 is''};
+    \node[stage, right=of text] (tok)  {\textbf{Tokens}\\sub-word units\\ \texttt{[16059, 20293, 12, 36645, 16, 382]}};
+    \node[stage, right=of tok]  (emb)  {\textbf{Embeddings}\\one learned\\vector per token};
+    \node[stage, right=of emb]  (attn) {\textbf{Transformer}\\attention mixes\\the vectors};
+    \node[stage, right=of attn] (pred) {\textbf{Next token}\\a score for every\\possible next word};
+    \draw[->, thick] (text) -- (tok);
+    \draw[->, thick] (tok)  -- (emb);
+    \draw[->, thick] (emb)  -- (attn);
+    \draw[->, thick] (attn) -- (pred);
+    \node[note, below=1mm of tok]  {digits are split, so place value is lost};
+    \node[note, below=1mm of attn] {cost grows but context window remains fixed and finite};
+    \node[note, above=1mm of pred] {highest-scoring token is then fed back in};
+    \draw[->, dashed, black!55] (pred.north) to[out=50, in=20] (text.north);
+  \end{tikzpicture}
+  \caption[How a language model turns text into the next word]{How a language model turns text into the next word, from tokens through embeddings and attention to the emitted token (Section~\ref{sec:foundations}).}
+  \label{fig:lm-pipeline}
+\end{figure}
+
+A language model is a computational model, a form of artificial intelligence, that predicts sequences of text based on statistics. Figure~\ref{fig:lm-pipeline} shows how a sentence is completed by predicting the next word.
+
+\subsubsection{Tokenisation, Decoding, and Determinism}
+\label{subsec:tokenisation-decoding}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[font=\footnotesize, node distance=0pt,
+      tok/.style={draw, rounded corners=1pt, fill=tcd_blue!8, minimum height=5.5mm,
+        inner xsep=3pt, font=\ttfamily\scriptsize},
+      new/.style={draw, rounded corners=1pt, fill=tcd_blue!30, minimum height=5.5mm,
+        inner xsep=3pt, font=\ttfamily\scriptsize},
+      step/.style={font=\scriptsize\itshape, anchor=west}]
+    % row 0
+    \node[step] at (-3.5,0) {start: characters};
+    \foreach \c [count=\i from 0] in {l,o,w,e,r} \node[tok] at (\i*0.62,0) {\c};
+    \foreach \c [count=\i from 0] in {l,o,w,e,s,t} \node[tok] at (4.0+\i*0.62,0) {\c};
+    % row 1
+    \node[step] at (-3.5,-1.0) {merge \texttt{l}+\texttt{o}};
+    \node[new] at (0.15,-1.0) {lo};
+    \foreach \c [count=\i from 0] in {w,e,r} \node[tok] at (0.9+\i*0.62,-1.0) {\c};
+    \node[new] at (4.15,-1.0) {lo};
+    \foreach \c [count=\i from 0] in {w,e,s,t} \node[tok] at (4.9+\i*0.62,-1.0) {\c};
+    % row 2
+    \node[step] at (-3.5,-2.0) {merge \texttt{lo}+\texttt{w}};
+    \node[new] at (0.3,-2.0) {low};
+    \foreach \c [count=\i from 0] in {e,r} \node[tok] at (1.15+\i*0.62,-2.0) {\c};
+    \node[new] at (4.3,-2.0) {low};
+    \foreach \c [count=\i from 0] in {e,s,t} \node[tok] at (5.15+\i*0.62,-2.0) {\c};
+    % row 3
+    \node[step] at (-3.5,-3.0) {final tokens};
+    \node[new] at (0.3,-3.0) {low};
+    \node[new] at (1.4,-3.0) {er};
+    \node[new] at (4.3,-3.0) {low};
+    \node[new] at (5.45,-3.0) {est};
+  \end{tikzpicture}
+  \caption{Byte-pair encoding building a vocabulary by repeatedly merging the most frequent adjacent pair.}
+  \label{fig:bpe}
+\end{figure}
+
+A language model breaks raw text into sub-word units called \emph{tokens}. These tokens have an integer identifier, which is mapped to a fixed dictionary called the \emph{vocabulary} of that model. The tokenisation process is done by the Byte Pair Encoding algorithm, which starts from single characters and repeatedly merges consecutive letters. The most frequent adjacent pair becomes a token \cite{sennrich2016neuralmachinetranslationrare} as shown in Figure~\ref{fig:bpe}. Common words get mapped to one token, rarer words are split into fragments.
+
+A consequence of this algorithm is a serious problem with numbers, which are segmented by the same frequency rule, so a figure such as 1234567890 reaches the model as an arbitrary series of fragments and the place value of each digit is lost. A model therefore has no reliable representation of magnitude, which is why arithmetic is delegated to a calculator tool in this work instead of model computing in the weights.
+
+\subsubsection{Word Embeddings and Representations}
+\label{subsec:word-embeddings}
+
+During tokenisation, the position and ordering are discarded, due to which a token identifier carries no meaning in itself, so each token is mapped to a list of numbers called an \emph{embedding}, which is a point in a high-dimensional space, so that words used in similar ways sit close together, with closeness measured as the cosine of the angle between two vectors. Directions in this space carry meanings as well as positions \cite{mikolov2013efficientestimationwordrepresentations}. Figure~\ref{fig:word-embeddings} shows this in three readable dimensions, where, suppose the sweet fruits group is in one direction, the sour ones in another, and the words with common meanings lies on that plane.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+      x={(-0.50cm,-0.42cm)}, % sweet axis, towards the lower left
+      y={( 1.02cm,-0.15cm)}, % sour axis, towards the right
+      z={( 0.00cm, 0.98cm)}, % juicy axis, straight up
+      >={Stealth[length=2.2mm,width=1.6mm]},
+      font=\small,
+      axis/.style={->, thin, black},
+      tick/.style={thin, black!70},
+      sweet/.style={->, semithick, green!60!black},
+      sour/.style={->, semithick, blue},
+      both/.style={->, semithick, magenta},
+    ]
+
+    % ---- axes -----------------------------------------------------------
+    \draw[axis] (0,0,0) -- (4.8,0,0) node[below left=0mm and 1mm] {sweet};
+    \draw[axis] (0,0,0) -- (0,4.8,0) node[right] {sour};
+    \draw[axis] (0,0,0) -- (0,0,4.8) node[above] {juicy};
+
+    % ---- unit marks -----------------------------------------------------
+    \foreach \k in {1,2,3,4}{%
+      \draw[tick] (\k,-0.14,0) -- (\k,0.14,0) node[above=0pt] {\k};
+      \draw[tick] (-0.14,\k,0) -- (0.14,\k,0) node[above=0pt] {\k};
+      \draw[tick] (0.14,0,\k) -- (-0.14,0,\k) node[left=0pt]  {\k};
+    }
+
+    % ---- sweet, not sour -------------------------------------------------
+    \draw[sweet] (0,0,0) -- (2,0,4) node[left] {mango (2,0,4)};
+    \draw[sweet] (0,0,0) -- (3,0,3) node[left] {peach (3,0,3)};
+    \draw[sweet] (0,0,0) -- (3,0,2) node[left] {banana (3,0,2)};
+
+    % ---- sour, not sweet -------------------------------------------------
+    \draw[sour] (0,0,0) -- (0,2,4) node[right] {lime (0,2,4)};
+    \draw[sour] (0,0,0) -- (0,3,3) node[right] {grapefruit (0,3,3)};
+    \draw[sour] (0,0,0) -- (0,4,2) node[right] {tamarind (0,4,2)};
+
+    % ---- a little of each -----------------------------------------------
+    \draw[both] (0,0,0) -- (1,1,1) node[above right=0.5mm and -6mm] {apple (1,1,1)};
+  \end{tikzpicture}
+  \caption[A three-feature embedding space, with each word placed by how sweet, sour and juicy it is]{A three-feature embedding space, with each word placed by how \emph{sweet}, \emph{sour} and \emph{juicy} it is. The sweet fruits (green) separate from the sharp ones (blue) without either group being named anywhere in the coordinates, and \emph{apple} (magenta) sits between them because it carries a little of all three. A real embedding has hundreds of dimensions.}
+  \label{fig:word-embeddings}
+\end{figure}
+
+
+These embeddings give one fixed point per word, however this is not sufficient for language, where meaning actually depends on context. Attention addresses this by reshaping each word's vector layer by layer according to the words around it, so the same word can be represented differently in different sentences \cite{devlin2019bertpretrainingdeepbidirectional}. Word order must also be supplied deliberately, because attention compares words as an unordered set. The models used here do so with a technique called rotary position embeddings (RoPE), which encode the distance between words with their absolute positions \cite{su2023roformerenhancedtransformerrotary}. Figure~\ref{fig:context-and-order} shows both problems in two pairs of sentences, where the same word carrying two different meanings, and the same words in two different orders changes the scenario.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\footnotesize,
+      tok/.style={draw, rounded corners=2pt, minimum height=5.5mm,
+        minimum width=1.25cm, inner sep=2pt, fill=tcd_blue!7, font=\scriptsize},
+      watch/.style={tok, fill=magenta!12},
+      ctx/.style={tok, fill=green!14},
+      ironman/.style={tok, fill=red!14},
+      thanos/.style={tok, fill=violet!20},
+      note/.style={align=left, font=\scriptsize\itshape, text=black!55},
+      head/.style={font=\scriptsize\bfseries, anchor=west}]
+
+    %% ---- (a) one word, two meanings -------------------------------------
+    \node[head] at (0,2.00) {(a) the same word, two meanings};
+
+    \node[tok]   at (0.85, 1.35) {he};
+    \node[ctx]   at (2.25, 1.35) {lives};
+    \node[tok]   at (3.65, 1.35) {near};
+    \node[tok]   at (5.05, 1.35) {river};
+    \node[watch] at (6.45, 1.35) {bank};
+
+    \node[tok]   at (0.85, 0.55) {he};
+    \node[ctx]   at (2.25, 0.55) {borrowed};
+    \node[tok]   at (3.65, 0.55) {from};
+    \node[tok]   at (5.05, 0.55) {the};
+    \node[watch] at (6.45, 0.55) {bank};
+
+    \node[note, anchor=west, text width=4.6cm] at (7.45,0.95)
+      {\emph{bank} has one embedding, so only the words around it can separate the
+       river from the money};
+
+    %% ---- (b) same words, two orders -------------------------------------
+    \node[head] at (0,-0.25) {(b) the same words, two meanings};
+
+    \node[thanos]  at (0.85,-0.90) {Thanos};
+    \node[tok]     at (2.25,-0.90) {defeated};
+    \node[ironman] at (3.65,-0.90) {Iron};
+    \node[ironman] at (5.05,-0.90) {Man};
+
+    \node[ironman] at (0.85,-1.70) {Iron};
+    \node[ironman] at (2.25,-1.70) {Man};
+    \node[tok]     at (3.65,-1.70) {defeated};
+    \node[thanos]  at (5.05,-1.70) {Thanos};
+
+    \node[note, anchor=west, text width=4.6cm] at (7.45,-1.30)
+      {the same four vectors in both rows, so their order is the only thing that
+       separates a victory from a defeat};
+  \end{tikzpicture}
+  \caption[The same word in two contexts, and the same words in two orders]{The same word in two contexts, and the same words in two orders. Neither difference is carried by the embeddings themselves.}
+  \label{fig:context-and-order}
+\end{figure}
+
+\subsubsection{The Transformer, Attention, and the Context Window}
+\label{subsec:transformer-attention}
+
+The transformer model was introduced in 2017, which is the base architecture used by every modern language model \cite{vaswani2023attentionneed}. Its central component is the attention mechanism. For each word the model computes a query, and every other word computes a key and a value. Where a query and a key match strongly, the model takes in that word's value. This makes the representation of a word depend on the specific words around it, so the same word is represented differently in different sentences by different meanings. Computing the match between every position and every other word means that both computation and memory grow as $O(T^{2})$ in the sequence length $T$, which means doubling the length of the text roughly quadruples the work for attention to work. Hence, a model's attention span is limited and finite, the amount of text a model can process at once, is called \emph{context window}. 
+
+However, this results in two issues, the quality of a model's answers degrades as a conversation grows long, and the full conversation cannot be supplied again on every turn. This is why the system built here stores a short structured record of what the user said and what work is in progress, the 5W+H scratchpad of Section~\ref{sec:inference-time-steering}. Moreover, the models used in this dissertation reads strictly from left to right. They predict the next word based on the previous statement, append it, and repeat the process, which means they cannot revisit an earlier part of an answer once it has been written. Models such as BERT instead read in both directions at once and are stronger at tasks such as filling in a missing word \cite{devlin2019bertpretrainingdeepbidirectional}, but they do not generate text in the way required here. Qwen3 is a left-to-right model with a dedicated region for chain-of-thought reasoning \cite{yang2025qwen3technicalreport}.
+
+\subsubsection{How Language Models Are Trained: Web-Scale Pretraining and World Data}
+\label{subsec:training-and-world-data}
+
+To train a language model, the next word is masked across a large corpus of text so that the model can predict the next plausible word. If it guesses wrong its weights are adjusted, nothing here needs to be labelled by hand, because the next word is already in the text. That corpus is a snapshot of public written content, from web pages, forums, digitised books and reference material. Training on it alone produces the ability to perform tasks the model was never explicitly trained for. This was first reported for GPT-3 and termed as emergence \cite{brown2020languagemodelsfewshotlearners}, though why it happens is not fully understood. After pretraining a model continues text fluently but does not follow instructions, so it is shown instruction-and-answer pairs and tuned towards preferred answers \cite{wei2022finetunedlanguagemodelszeroshot}. Hence the term GPT, for Generative Pre-Trained Transformer.
+
+Preparing that raw data is itself a discipline and a challenge \cite{liang2026nextgenerationllmtrainingdatacentric}. Web data, of which the CommonCrawl corpus is the largest public example, which is cleaned and filtered \cite{commoncrawl, raffel2023exploringlimitstransferlearning, penedo2024finewebdatasetsdecantingweb}, near-identical documents are removed so the model does not waste effort memorising them \cite{lee2022deduplicatingtrainingdatamakes}. Moreover, the blend of sources is tuned, because the proportions change what the model becomes good at \cite{xie2023doremioptimizingdatamixtures}. Gunasekar et al.\ find that a smaller set of clean, textbook-quality text repeatedly beats a larger noisy one \cite{gunasekar2023textbooksneed} (Section~\ref{subsec:training-data-quality-vs-quantity}). However, as the world data is written by and about real people, the data can also introduce unreliability (Section~\ref{subsec:why-trustworthiness}) and motivate the privacy argument for keeping computation on the device (Section~\ref{sec:on-device-ai-and-the-privacy-capability-trade-off}).
+
+\subsubsection{Scale, Capability, and Emergent Brittleness}
+\label{subsec:scale-capability}
+
+A model's \emph{parameters} are the adjustable numbers it learns during training, and models differ enormously in how many they have. This dissertation uses Qwen3 with about 0.6 billion, against the hundreds of billions or a trillion model parameter system that runs in a frontier lab. The study from Kaplan et al.\ measures what that difference buys \cite{kaplan2020scalinglawsneurallanguage}. The scaling laws show that a model's error falls as a \emph{power law} in each of three budgets, those being the number of parameters, the volume of training data, and the compute spent training. 
+
+The same laws can also be read backwards, by instead of asking what a model gains as it grows, this dissertation asks what it loses first as it shrinks. Rainone et al.\ find that \emph{reliability} is lost first, as carrying a chain of reasoning thorough, using a tool the same way every time, and following an instruction \cite{rainone2025replacingthinkingtoolusage} can each differ every turn.
+
+\subsubsection{Making Models Small: Quantisation and Parameter-Efficient Adaptation}
+\label{subsec:making-models-small}
+
+To fit a model on a device like a phone or IoT device, a model can either be trained from scratch, as MobiLlama does \cite{thawakar2024mobillamaaccuratelightweightfully}; be quantised, storing its numbers in fewer bits, four instead of sixteen, which shrinks its memory footprint; or be adapted with a small add-on, which is what LoRA does \cite{hu2021loralowrankadaptationlarge}. Each method comes with a cost: training a model is hard, quantisation sacrifices precision, and an add-on can only bend the model so far. This dissertation uses LoRA for training and quantisation for deployment, both of which are described in Section~\ref{subsec:low-rank-adaptation-lora}.
+
+\subsubsection{Why Trustworthiness Cannot Be Assumed}
+\label{subsec:why-trustworthiness}
+
+A model is trained to produce plausible text but never taught why one thing follows another, and that gap is where trust problems begin. It states falsehoods in the same confident register as facts \cite{ji2024surveyhallucinationnaturallanguage}, and fluency gives the reader no surface clue to tell the two apart. And because the training data is drawn from the \emph{Internet}, which is written by and about real people, a model can memorise and repeat private content \cite{carlini2021extractingtrainingdatalarge, shokri2017membershipinferenceattacksmachine}, which makes the model itself a privacy risk. Trustworthiness is therefore treated here as something engineered and measured against a few named and checkable requirements rather than assumed \cite{huang2024trustllmtrustworthinesslargelanguage, euhleg2019}.
+
+\subsection{On-Device AI and the Privacy--Capability Trade-off}
+\label{sec:on-device-ai-and-the-privacy-capability-trade-off}
+
+The central tension is between privacy and capability. A cloud-hosted assistant is capable but sends user data off the device to large data centres where the model is served. A model running on the device keeps the data on the device but must be much smaller, and a smaller model is less capable. Working in this space means asking which of the capabilities lost by shrinking are recoverable, either by training the model (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}) or by structuring the runtime around it (Section~\ref{sec:inference-time-steering}). The legal end of the trade-off is fixed in the next subsection; the capability end is surveyed in Section~\ref{sec:sota-on-device}.
+
+\subsubsection{GDPR and the Case for Local Inference}
+\label{subsec:gdpr-and-the-case-for-local-inference}
+
+Holding user data brings the legal layer into the design. The user model stores a personal profile, which is sensitive personal data. GDPR defines personal data in Article~4, limits its use in Article~5 and places special protection around sensitive categories in Article~9, while the EU AI Act places assistants in its high-risk class \cite{europeanparliament2024regulationeu20241689}. The risk is not only transmission but model leakage: a membership-inference attack can check whether a record was in a model's training data \cite{shokri2017membershipinferenceattacksmachine}. Consent forms and data-processing agreements reduce the risk without removing it, and federated learning moves the problem rather than removing it, and does not erase user content as Article~17 requires \cite{nguyen2026computationcommunicationefficientfederated, staufer2025llmsforgetquantifyingpersonal} (Appendix~\ref{chap:gdpr-articles}).
+
+\subsection{Constitutional AI}
+\label{sec:constitutional-ai}
+
+There are two broad ways of shaping a model's output after pretraining. Reinforcement Learning from Human Feedback (RLHF) shows the model its own answers, which people have rated, trains a second reward model to copy those ratings, and moves the model towards high-scoring answers. Constitutional AI replaces the human ratings with an explicit written list of values, a constitution, that the model is trained and checked against \cite{bai2022constitutionalaiharmlessnessai}. The difference that matters here is scrutability, as the values taught sit in a document a person can read and argue with, instead of behind hidden weights or labels.
+
+Anthropic adopted a written constitution to address four problems with preference-label training: the cost and human burden of having people label harmful outputs, the difficulty of correcting a model that exceeds its raters in some area, a tendency for harmlessness training to produce flat refusals instead of engagement, and the fact that the resulting values were locked inside preference labels and could not be read back or amended \cite{bai2022constitutionalaiharmlessnessai}. 
+
+However, the current method assumes a model capable enough to find and fix its own mistakes, which a 0.6B model cannot do and an 8B model already struggles with \cite{zhang2025constitutioncollapseexploringconstitutional}. Two steps in Figure~\ref{fig:cai-stages} are therefore out of reach here: the self-critique and revision driving the supervised stage, and the reinforcement-learning stage, unstable below a billion parameters \cite{wang2025ragenunderstandingselfevolutionllm}. What remains is the constitution itself and the fine-tuning step, so this dissertation moves the critique off the small model, bakes compliance into the weights (Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}) and grounds the model at run time through a deterministic serving layer (Section~\ref{sec:inference-time-steering}).
+
+\subsubsection{Anthropic's Constitutional AI Framework}
+\label{subsec:anthropics-constitutional-ai-framework}
+
+The Constitutional AI Framework runs in two stages, shown in Figure~\ref{fig:cai-stages} \cite{bai2022constitutionalaiharmlessnessai}. In the first stage, a prompt is given to the model and it writes an answer; the model is then asked to \emph{critique} that answer against the written constitution set out in Anthropic's guidelines (``does this break any principle, and how?''), after which it is asked to \emph{revise} it into a compliant version. The revised answers are collected to fine-tune the model, making compliant answers its default. In the second stage, reinforcement learning is introduced, where the model produces pairs of answers, another AI model picks the better one by consulting the constitution, and those AI-generated preferences train a reward model that the policy is then optimised against.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\scriptsize,
+      st/.style={draw, rounded corners, fill=black!5, align=center, text width=2.05cm,
+        minimum height=1.15cm, inner sep=3pt},
+      con/.style={draw, rounded corners, fill=tcd_blue!18, align=center, text width=2.2cm,
+        minimum height=0.85cm, inner sep=3pt},
+      cut/.style={draw, rounded corners, fill=red!7, align=center, text width=2.05cm,
+        minimum height=1.15cm, inner sep=3pt},
+      lbl/.style={font=\scriptsize\itshape, align=center}]
+    % constitution
+    \node[con] (con) at (5.55,1.75) {\textbf{Constitution}\\[1pt] written principles};
+    % SL stage
+    \node[lbl, anchor=west, font=\scriptsize\bfseries] at (-1.35,0.75) {Stage 1: supervised (SL-CAI)};
+    \node[st]  (s1) at (0,0)    {sample a\\ harmful\\ response};
+    \node[cut] (s2) at (2.55,0) {model\\ \textbf{critiques}\\ its own answer};
+    \node[cut] (s3) at (5.1,0)  {model\\ \textbf{revises}\\ the answer};
+    \node[st]  (s4) at (7.65,0) {fine-tune on\\ the revisions};
+    \foreach \x/\y in {s1/s2, s2/s3, s3/s4} \draw[->, thick] (\x) -- (\y);
+    % RL stage
+    \node[lbl, anchor=west, font=\scriptsize\bfseries] at (-1.35,-1.35) {Stage 2: reinforcement learning (RLAIF)};
+    \node[cut] (r1) at (0,-2.35)    {sample a pair\\ of responses};
+    \node[cut] (r2) at (2.55,-2.35) {an AI ranks\\ the pair};
+    \node[cut] (r3) at (5.1,-2.35)  {train a\\ preference\\ model};
+    \node[cut] (r4) at (7.65,-2.35) {RL against\\ that model};
+    \foreach \x/\y in {r1/r2, r2/r3, r3/r4} \draw[->, thick] (\x) -- (\y);
+    \draw[->, thick] (s4.south) -- ++(0,-0.45) -| (r1.north);
+    % constitution feeds the two critique points
+    \draw[->, thick, tcd_blue!75!black] (con) -- (s2.north);
+    \draw[->, thick, tcd_blue!75!black] (con) to[out=-20, in=90] (r2.north);
+    % what this dissertation cannot use
+    \node[draw, dashed, rounded corners, thick, red!55!black,
+          fit=(s2)(s3), inner sep=4pt] (box1) {};
+    \node[draw, dashed, rounded corners, thick, red!55!black,
+          fit=(r1)(r4), inner sep=4pt] (box2) {};
+    \node[lbl, text width=4.1cm, anchor=north west, red!55!black] at (9.0,0.55)
+      {\textbf{not available at 0.6B}\\ self-critique does not transfer downward};
+    \node[lbl, text width=4.1cm, anchor=north west, red!55!black] at (9.0,-1.85)
+      {\textbf{excluded}\\ RL is unstable below 1B};
+    \node[lbl, text width=13.2cm, anchor=north west] at (-1.35,-3.4)
+      {This dissertation keeps the constitution and the fine-tuning step, but replaces the shaded stages: the critique is performed by a frontier teacher when the data is generated, and by deterministic rules at run time.};
+  \end{tikzpicture}
+  \caption[The two stages of Anthropic's Constitutional AI, redrawn from Bai et al]{The two stages of Anthropic's Constitutional AI, redrawn from Bai et al.\ \cite{bai2022constitutionalaiharmlessnessai}, with the steps unavailable at 0.6B marked.}
+  \label{fig:cai-stages}
+\end{figure}
+
+A further finding is that asking the model to reason step by step during the critique stage improves both performance and transparency, which is an early sign of the reasoning-and-compliance coupling that this dissertation later measures as the safety tax at the 0.6B scale. The models are harmless but non-evasive, they still engage with harmful requests by explaining objections instead of issuing bare refusals, a behaviour the constitution of Chapter~\ref{chap:methodology} asks of small models as well.
+
+\subsection{Supervised Fine-Tuning and Parameter-Efficient Adaptation}
+\label{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}
+
+To bake the behaviour into the weights, \emph{supervised fine-tuning} is used, where the already-pretrained model is trained further on a small, carefully chosen set of examples, so its weights shift towards the behaviour those examples show. This is chosen because it needs comparatively few examples, trains stably, and, paired with the low-rank trick, adapts the model without overwriting what it already knows \cite{ding2025improvedsupervisedfinetuninglarge}.
+
+Another approach is \emph{reinforcement learning}, which is deliberately placed outside the scope of this dissertation. Methods such as GRPO improve a model by sampling its own outputs and rewarding the good ones, but with current model architectures they are empirically unstable below one billion parameters. The study done by RAGEN reports multi-turn collapse on a 0.5B model \cite{wang2025ragenunderstandingselfevolutionllm}, and Wei et al.\ trained Beyond ReAct's planner successfully under supervised fine-tuning at 0.6B, 1.7B, 4B and 8B but had to exclude the 0.6B variant from the GRPO stage because it could not be stabilised \cite{wei2025reactplannercentricframeworkcomplex}. 
+
+Supervised fine-tuning only imitates behaviour its examples show, whereas reinforcement learning could reward outcomes the examples never demonstrated, so revisiting it as small-model RL matures is a natural extension \cite{shao2024deepseekmathpushinglimitsmathematical, yu2025dapoopensourcellmreinforcement}. Rewards matters as much as the algorithm, which was seen in the case of Liu et al.\ that scaling the reward by a model's own calibration accuracy improves faithful uncertainty expression for  metacognition based response, though their smallest model is Qwen3-1.7B \cite{liu2026reinforcementlearningmetacognitivefeedback}.
+
+\subsubsection{Supervised Fine-Tuning for Behaviour Alignment}
+\label{subsec:supervised-fine-tuning-for-behaviour-alignment}
+
+To align the model's behaviour, the mechanism is simple by training the model on examples which shows constitutional compliance, and the model shifts weights towards producing compliant answers by default. This is the same mechanism as instruction-tuning, which teaches a base model to follow requests by showing it many instruction-and-response pairs, as in the case of FLAN, Alpaca, and OpenHermes \cite{wei2022finetunedlanguagemodelszeroshot, taori2023alpaca, teknium2024openhermes}. 
+
+The word \emph{distillation} carries two meanings. Knowledge distillation trains a small student to copy a large teacher's outputs. This dissertation follows behaviour distillation, where a curated set of examples carries the target behaviour and the constitution enters the weights through the examples themselves. However, limitation to this approach is if a model that has learned a fixed distribution it does not have guaranteed defence against prompts outside it, which is the out-of-distribution surface the fourth hypothesis maps, and why a runtime layer is still needed on top.
+
+Thus, the constitution mechanism needs to be embedded into the weights. Wei et al.\ showed instruction-tuning a 137-billion-parameter model on a broad task collection lifted its zero-shot performance above GPT-3 on 20 of 25 datasets, but found the recipe reverses below roughly eight billion parameters, degrading instead of generalisation \cite{wei2022finetunedlanguagemodelszeroshot}, which is the precise risk a 0.6B target must answer and which Chapter~\ref{chap:experiments-results} tests. Taori et al.\ showed how far the cost floor had fallen, fine-tuning a 7B model on 52,000 pairs into a usable instruction-follower \cite{taori2023alpaca}.
+
+\subsubsection{Low-Rank Adaptation (LoRA)}
+\label{subsec:low-rank-adaptation-lora}
+
+Because the model's behaviour is held in its \emph{weights}, fine-tuning all of them at once is both expensive and risky, since it can overwrite the general competence the model already has. LoRA avoids this by freezing the original weights and training a small low-rank correction that is added to them, so the number of trained parameters falls by orders of magnitude while the pre-trained knowledge is preserved. On GPT-3 175B, Hu et al.\ report cutting trainable parameters by a factor of roughly 10{,}000 and training memory by about three times, while matching or beating full fine-tuning quality \cite{hu2021loralowrankadaptationlarge}.
+
+Another state-of-the-art approach is to use QLoRA, a quantised version of LoRA, which trains adapters on top of a four-bit base and fine-tunes a 65-billion-parameter model on a single GPU without losing task performance \cite{dettmers2023qloraefficientfinetuningquantized}. Sixteen-bit LoRA is used here instead, because quantisation error costs a small model proportionally more than a large one. A 65B model has a hundred times more weights across which to absorb the same per-weight error. Quantising during training would therefore reduce the very capability this study measures. Four-bit quantisation is kept for deployment only. The exact settings are given with the training configuration in Chapter~\ref{chap:implementation}.
+
+\subsubsection{Training Data Quality vs. Quantity}
+\label{subsec:training-data-quality-vs-quantity}
+
+The general assumption is that more training data is always better, actually does not hold for shaping behaviour and alignment. Zhou et al.\ made this point with LIMA, where a 65-billion-parameter LLaMA model fine-tuned on 1,000 carefully curated prompt-response pairs produced responses equivalent to or better than GPT-4's in 43\% of side-by-side comparisons \cite{zhou2023limaalignment}. A thousand good examples taught the model the style and shape of good behaviour, though LIMA's optimism rests on a 65B base. What matters is not the size of the set but its coverage, whether all principles are represented and represented well.
+
+\subsection{Inference-Time Steering and Grounding}
+\label{sec:inference-time-steering}
+
+Compliance can also be regulated apart from the model weights, at inference time, when the model answers a user. At this point, the method called harness engineering wraps ordinary deterministic software around the model, supplying instructions, tools, and state it cannot hold on its own. 
+
+What inference-time steering can achieve is established by three results. Chain-of-thought prompting, which requires the model to write its working before the answer, lifted PaLM~540B from 17.9\% to 56.9\% on GSM8K \cite{wei2023chainofthoughtpromptingelicitsreasoning}. ReAct interleaved reasoning with actions so the model could check facts against a live API mid-answer, beating its baselines by 34\% and 10\% absolute on ALFWorld and WebShop while reducing hallucination \cite{yao2023reactsynergizingreasoningacting}. Reflexion fed verbal self-critique into the next attempt, raising GPT-4's pass@1 on HumanEval from roughly 80\% to 91\% \cite{shinn2023reflexionlanguageagentsverbal}. These draw more out of an already capable model, whereas the serving layer here must supply structure a small model cannot hold on its own.
+
+\subsubsection{System Prompts and Instruction Injection}
+\label{subsec:system-prompts-and-instruction-injection}
+
+The simplest way to steer a model is with the system prompt, a standing instruction placed before every conversation, such as ``you are a careful assistant who reasons step by step using First Principles.'' This sets the intended behaviour, but it does not bind the model; the model is free to ignore the instruction.
+
+This weakness is not theoretical. Perez and Ribeiro demonstrated two attack families against production GPT-3 endpoints using handcrafted text, known as goal hijacking, where an ``ignore previous instructions'' payload redirects the model, and prompt leaking, where the model is talked into revealing its own system prompt \cite{perez2022ignorepreviouspromptattack}. Zou et al.\ showed the attacks need not even be handcrafted, since automatically optimised adversarial suffixes trained on open models transfer to commercial chatbots \cite{zou2023universaltransferableadversarialattacks}. If instructions can be overridden this reliably on frontier models, a small model's grip on its system prompt deserves no benefit of the doubt. A good system prompt is necessary and never sufficient, and that gap between a tendency and a guarantee is why deterministic checking sits alongside it.
+
+The system prompt used here fixes the role, the required output structure and the tool policy for the session, in roughly this shape:
+
+\begin{lstlisting}[style=artefact]
+You are a helpful, honest assistant. Think first inside <think>...</think>,
+then give the user-visible reply inside <answer>...</answer>.
+Tools available this session: python_execute, web_search, read_url,
+get_datetime, scratchpad, user_memory.
+Never claim to have used a tool you did not call. Never state a live figure
+you did not retrieve.
+\end{lstlisting}
+
+What matters about this prompt here is that it never contains the constitution, because the point of the distillation in Chapter~\ref{chap:implementation} is that the principles live in the weights not in the context. How the same prompt string is shared between training and serving is specified in Section~\ref{subsec:mr-system-prompts}, and every prompt used in this study is reproduced exactly as used in Appendix~\ref{chap:system-prompts}.
+
+\subsubsection{Guardrails and Deterministic Validation}
+\label{subsec:guardrails-validation}
+
+Another approach is a guardrail, it is a deterministic code that validates the answer against a written policy and retries on failure with a corrective note naming the broken rule. This is Anthropic's critique-and-revise loop \cite{bai2022constitutionalaiharmlessnessai} scaled down, with code supplying the reliable self-critique a small model lacks; general-purpose libraries industrialise the pattern \cite{rebedea2023nemoguardrailstoolkitcontrollable, guardrailsai}. 
+
+A guardrail in this style is a rule, a verdict and a corrective instruction, written so that no model judgement is involved in deciding whether it fired. The deterministic checks of this dissertation are built in exactly that shape, one per principle:
+
+\begin{lstlisting}[style=artefact]
+principle:  P5 -- real-time honesty
+check:      the answer states a live figure  AND  no web_search was executed
+verdict:    FAIL
+corrective: "You gave a current market figure without retrieving it. State
+             that live data is unavailable this session, and redirect the
+             user to an authoritative source instead."
+\end{lstlisting}
+
+The value of writing the check this way is that it returns the same verdict on the same answer every time, so it can serve as an anchor beside a language-model judge whose verdicts are flexible but not perfectly repeatable. This dissertation uses such checks as its judge-free measurement instrument (Section~\ref{subsec:rule-based-probe-frameworks-vs-llm-as-judge}) instead of as a runtime retry layer, and the retry layer that would close the loop at serving time is set out as future work in Section~\ref{subsec:conclusion-future-validate-retry}.
+
+\subsection{Personalisation and User Modelling}
+\label{sec:personalisation-and-user-modelling}
+
+Consider a request for a quick workout put to a language model, now this can mean different things to a young child, a marathon runner, or an older person. The request is simple, but the answer would vary depending on who is asking and when. Delivering that needs a \emph{user model}, a structured, persistent record of what the system knows about the person using it, and because that record is personal data it should ideally stay on the user's device for the privacy reasons set out earlier. However, when a new user arrives, the system knows nothing, and there are two ways to deal with the cold-start problem: give general suggestions, or gather context as the conversation goes, which is what this system does through 5W+H probing \cite{akbar2024hitlpipa}.
+
+The production memory systems that make personalisation work and the measured cost of doing it carelessly are surveyed in Section~\ref{sec:sota-personalisation}. The danger established by this survey is over-personalisation \cite{spadea2025avoidingoverpersonalizationruleguidedknowledge, hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}, where a system becomes an echo chamber or quietly builds a profile the user never sees. The design lesson is that memory should be injected selectively and within bounds, the 5W+H card feeds the model a small, structured slice of the user model in place of an open-ended memory dump.
+
+\subsubsection{Psychological Foundations}
+\label{subsec:psychological-foundations}
+
+The dissertation's two central words, \emph{trustworthy} and \emph{empathetic}, are borrowed from psychology and used behaviourally. The study focuses on the observable behaviour, not an inner state \cite{skinner1953sciencehumanbehavior}. Trust takes its structure from Mayer, Davis and Schoorman, who split a willingness to be vulnerable into ability, benevolence and integrity \cite{mayer1995integrativetrust}; the constitution maps onto that triad closely, with the tool and reasoning principles serving ability, the well-being and personalisation principles benevolence, and holding principles under pressure being integrity by definition. Empathy is treated the same way, as a multidimensional construct measured through its expression in language \cite{davis1983empathyiri, sharma2020computationalapproachunderstandingempathy}. Grounding these in named constructs means the evaluation measures something defined outside this work.
+
+\subsubsection{The 5W+H Framework for Context Gathering}
+\label{subsec:the-5w-h-framework-for-context-gathering}
+
+To solve the cold-start problem the context is gathered using the 5W+H framework, a set of journalism questions (Who, What, When, Where, Why, and How) adapted for dialogue (Table~\ref{tab:5wh}). The six questions are close to exhaustive yet barely overlap, so a handful of fields can capture most of what matters about a request, and each maps directly onto a belief category in the user model, so the frame is both a prompting device and the \emph{shape} of what gets stored, in the spirit of Ramos et al.'s scrutable natural-language user profiles \cite{ramos2024transparentscrutablerecommendationsusing}: what the model asks and what it remembers share one structure.
+
+\begin{table}[H]
+  \centering
+  \caption{The 5W+H frame and what each dimension captures about the user.}
+  \label{tab:5wh}
+  \begin{tabular}{ll}
+    \hline
+    Dimension & What it captures \\
+    \hline
+    Who & user identity, roles and relationships \\
+    What & user goals and current tasks \\
+    When & timing, deadlines and routines \\
+    Where & situational and physical context \\
+    Why & motivation behind a request \\
+    How & preferred style and manner of assistance \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Choosing a fixed frame over free-form memory is a deliberate trade-off taken, as the 5W+H frame is bounded and auditable, with every stored item having a clear home and mapping onto the graph described next. 
+
+A model normally produces an answer in one pass, predicting words one after another with no separate place to hold intermediate work. Wei et al.'s chain-of-thought prompting changes this by requiring the model to write its intermediate steps before committing to an answer, which gives those steps a location in the output where they can be inspected \cite{wei2023chainofthoughtpromptingelicitsreasoning}. 
+
+\subsubsection{Belief Persistence and the User Model Graph}
+\label{subsec:belief-persistence-and-the-user-model-graph}
+
+Storing and retrieving user beliefs is a design choice. A flat key-value store cannot express how one belief bears on another, so a \emph{graph} is used instead, with beliefs as nodes and relations as edges, which can record that a goal \emph{depends on} a particular constraint \cite{wang2026memmachinegroundtruthpreservingmemorypersonalized, yang2026graphbasedagentmemorytaxonomy}. It can be organised around five categories, goals, tasks, skills, styles and contexts, and one edge type is special: a \texttt{USER\_CORRECTED} edge lets the user overwrite what the system believes without the original belief being deleted, so the history of corrections stays auditable (Figure~\ref{fig:user-model-graph}).
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[font=\scriptsize, >=Stealth, node distance=8mm,
+      goal/.style={draw, rounded corners, fill=tcd_blue!18, align=center, inner sep=4pt, text width=2.5cm},
+      ctx/.style={draw, rounded corners, fill=black!6, align=center, inner sep=4pt, text width=2.4cm},
+      skill/.style={draw, rounded corners, fill=black!6, align=center, inner sep=4pt, text width=2.2cm},
+      style/.style={draw, rounded corners, fill=black!6, align=center, inner sep=4pt, text width=2.2cm},
+      old/.style={draw, rounded corners, dashed, fill=black!3, align=center, inner sep=4pt,
+        text width=2.2cm, text=black!55},
+      rel/.style={font=\scriptsize\itshape, inner sep=1.5pt}]
+    \node[goal]  (g)  at (0,0)      {\textbf{GOAL}\\ learn machine learning};
+    \node[ctx]   (c)  at (4.6,0.9)  {\textbf{CONTEXT}\\ evenings only, 3h/week};
+    \node[skill] (s)  at (4.6,-0.9) {\textbf{SKILL}\\ Python: intermediate};
+    \node[style] (st) at (0,-2.4)   {\textbf{STYLE}\\ prefers worked examples};
+    \node[old]   (o)  at (4.6,-2.6) {\textbf{SKILL}\\ Python: beginner};
+    \draw[->] (g) -- node[rel, above, sloped]{depends on} (c);
+    \draw[->] (g) -- node[rel, below, sloped]{requires} (s);
+    \draw[->] (g) -- node[rel, left]{answered in} (st);
+    \draw[->, thick] (o) -- node[rel, right, align=left]{\texttt{USER\_CORRECTED}} (s);
+    \node[font=\scriptsize\itshape, align=left, text width=12.5cm, anchor=north] at (2.3,-3.6)
+      {Each node is a belief in one of the five 5W+H-derived categories. The superseded belief is kept, not deleted, so a user can see and audit what the system changed its mind about.};
+  \end{tikzpicture}
+  \caption[A small user-model graph, with beliefs as nodes and a retained correction edge]{A small user-model graph, with beliefs as nodes and a retained correction edge.}
+  \label{fig:user-model-graph}
+\end{figure}
+
+\subsection{What the Foundations Show and How This Work Answers}
+\label{subsec:foundation-payoff}
+
+Each foundation set out above showed something about what a small model can be relied on to do, and each of those lessons changed a decision taken later. Table~\ref{tab:foundation-payoff} puts the two beside each other: what the foundation shows on the left, and what this work does about it on the right.
+
+\begin{table}[H]
+  \centering\small
+  \caption[Each foundation, what it shows about a small model, and how this work answers it]{Each foundation, what it shows about a small model, and how this work answers it.}
+  \label{tab:foundation-payoff}
+  \begin{tabular}{@{}p{3.5cm}p{5.3cm}p{6.4cm}@{}}
+    \toprule
+    Foundation & What it shows & How this work answers it \\
+    \midrule
+    Tokenisation & digits are split into fragments and place value is lost
+      & arithmetic is delegated to a Python tool and never computed in the weights (P4, P12) \\
+    \addlinespace
+    Attention cost $O(T^{2})$ & the context window is fixed and finite
+      & the 5W+H card injected at inference is bounded in size rather than an open memory dump (Section~\ref{sec:sota-personalisation}) \\
+    \addlinespace
+    Scale and brittleness & reliability fails before knowledge does
+      & the checks measure behaviour on fixed tests rather than factual recall (Section~\ref{subsec:mr-suites-metrics}) \\
+    \addlinespace
+    Self-critique collapse below 8B & the student cannot reliably critique its own output
+      & the critique is supplied by a frontier teacher at data-generation time (Section~\ref{subsec:mr-dataset}) \\
+    \addlinespace
+    RL instability below 1B & reinforcement learning cannot be stabilised at 0.6B
+      & scope is fixed to supervised fine-tuning (Section~\ref{sec:scope-and-assumptions}) \\
+    \addlinespace
+    LIMA and data quality & coverage matters more than corpus volume
+      & corpus size is fixed at roughly 2{,}900 examples as a deliberate choice, not a resource limit \\
+    \addlinespace
+    Prompt injection transfers & a system prompt steers but cannot bind
+      & deterministic checks are reported beside the judge rather than trusting instructions alone (Section~\ref{subsec:rule-based-probe-frameworks-vs-llm-as-judge}) \\
+    \addlinespace
+    Memory hijacking & retrieved memory can outweigh the user's own query
+      & personalisation is injected as a fixed-shape slice, never as a similarity search \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+\section{Closely-Related Work}
+\label{sec:closely-related-work}
+
+This section presents the four research literatures active in this space, broken down into four questions: how much a phone-sized model can do, how far constitutional alignment has been shown as models shrink, how planning and execution have been divided across separate models, and how a personal memory can be added without eroding capability. 
+
+\subsection{On-Device Small Language Models Today}
+\label{sec:sota-on-device}
+
+The largest mobile platforms have committed to on-device processing, framed by the European Data Protection Supervisor as handling personal data without transmitting it beyond the device \cite{edps2025ondeviceai}. Apple ships a three-billion-parameter Foundation Model and Google a phone-class Gemma~4, but both require flagship hardware, leaving low-end and older handsets unserved \cite{tummalapalli2026llminferenceedgemobile}. Models below a billion parameters can run on those handsets but sit below the size range where almost all constitutional-AI research has been done \cite{yang2025qwen3technicalreport, thawakar2024mobillamaaccuratelightweightfully}. What fails first at this scale is reliability not the knowledge (Section~\ref{subsec:scale-capability}), and the checks used here measure behaviour instead of recall, so the weaknesses they expose are properties of behaviour and not of a knowledge test.
+
+\subsection{Constitutional Alignment at Reducing Scale}
+\label{sec:sota-cai-scale}
+
+So far, constitutional compliance has been tested only on comparatively large models, around eight billion parameters and above. A recent study, ``Constitution or Collapse'', reports that an eight-billion Llama~3, more than thirteen times the size of the model used in this dissertation, struggles to hold full compliance \cite{zhang2025constitutioncollapseexploringconstitutional}. Zhang's Llama~3-8B replication is instructive because each result carries a lesson for going smaller \cite{zhang2025constitutioncollapseexploringconstitutional}. Replacing Anthropic's reinforcement-learning stage with the cheaper Direct Preference Optimisation (DPO), Zhang cut the attack success rate on HeX-PHI by 40.8\%, from 71\% to 42\%, so the constitutional signal does transfer down to 8B. It cost 9.8\% of helpfulness on MT-Bench, an average falling from 6.05 to 5.46, and Zhang concludes that self-improvement is an emergent capability that does not generalise downward. Chac\'on Menke and Tan find that the usefulness of self-critique in small reasoning models varies sharply between designs, so it is not dependable even across models of similar size \cite{menke2025effectiveconstitutionalaismall}.
+
+\begin{table}[t]
+  \centering
+  \caption{Constitutional AI results by model scale.}
+  \label{tab:cai-at-scale}
+  \begin{tabular}{p{5.4cm}p{1.5cm}p{8.5cm}}
+    \hline
+    Study & Scale & Headline outcome \\
+    \hline
+    Anthropic CAI \cite{bai2022constitutionalaiharmlessnessai} & $\sim$52B &
+      Pareto improvement, more harmless \emph{and} more helpful than RLHF
+      (crowdworker Elo), harmless but non-evasive style \\
+    Constitution or Collapse \cite{zhang2025constitutioncollapseexploringconstitutional} & 8B &
+      Attack success rate $71\% \to 42\%$ ($-40.8\%$, HeX-PHI), at $-9.8\%$
+      helpfulness (MT-Bench $6.05 \to 5.46$), model collapse from noisy
+      self-revisions \\
+    Small-model self-critique \cite{menke2025effectiveconstitutionalaismall} & small &
+      usefulness of self-critique swings sharply between designs of similar size \\
+    \textbf{This dissertation} & \textbf{0.6B} & measured in
+      Chapter~\ref{chap:experiments-results}, and no prior constitutional
+      measurement exists at this scale \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:cai-at-scale} places these results on a single scale axis, and reading down its rows makes the gap this dissertation addresses concrete. The published evidence descends from roughly fifty billion parameters to eight, and the cost of alignment rises as it descends. 
+
+\subsection{Planner--Executor and Multi-Agent Decomposition}
+\label{sec:sota-planner-executor}
+
+The planner--executor pattern divides a task between one model that decides what to do and a second that carries it out. Wei et al.'s Beyond ReAct trains a Planner to emit a complete plan, a directed acyclic graph of tool calls, before execution begins, which avoids the local optimisation traps that arise when each step is chosen only from the state the previous one left; with a Qwen3-8B Planner driving a GPT-4o Executor it reaches 59.8\% end-to-end success on StableToolBench, 11.6\% above a GPT-4 ReAct baseline \cite{wei2025reactplannercentricframeworkcomplex}. Molinari and Ciravegna apply the same separation to enterprise tasks \cite{molinari2025reasonplanreactreasonerplannersupervisingreact}, and Zywot et al.\ ask whether several small agents can outperform one large one \cite{zywot2026smallagentscollaboratebeat}. 
+
+That work bears on this one in two ways. Beyond ReAct's Planner was trained at exactly the scales this dissertation studies, 0.6B to 8B, and the smallest of those motivates the supervised-only decision of Section~\ref{sec:supervised-fine-tuning-and-parameter-efficient-adaptation}. Its executor, however, is large and cloud-hosted, which breaks the on-device privacy argument. The contribution here is to remove the large component, making both models 0.6B and both constitutionally trained. Two 0.6B models total 1.2B, but running them sequentially limits peak memory to that of one, at the cost of coordination overhead and the risk that an error in the Thinker's plan propagates into the Executor's actions (Figure~\ref{fig:planner-executor-lineage}).
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[>=Stealth, font=\footnotesize,
+      model/.style={draw, rounded corners, fill=black!4, align=center,
+        minimum height=1.15cm, text width=2.5cm, font=\scriptsize},
+      cloud/.style={draw, rounded corners, fill=black!15, align=center,
+        minimum height=1.15cm, text width=2.5cm, font=\scriptsize},
+      bnd/.style={draw, dashed, rounded corners, inner sep=7pt}]
+    \node[model] (p1) at (0,0) {small planner\\(on-device)};
+    \node[cloud, right=2.2cm of p1] (p2) {large executor\\(cloud-hosted)};
+    \draw[->, thick] (p1) -- node[above, font=\scriptsize\itshape]{plan} (p2);
+    \node[bnd, fit=(p1), label={[font=\scriptsize\itshape]below:device}] {};
+    \node[bnd, fit=(p2), label={[font=\scriptsize\itshape]below:cloud: data leaves the device}] {};
+    \node[anchor=west, font=\scriptsize\bfseries] at (-1.6,1.1) {Prior planner--executor systems \cite{wei2025reactplannercentricframeworkcomplex, molinari2025reasonplanreactreasonerplannersupervisingreact}};
+    \node[model] (t1) at (0,-3.1) {0.6B Thinker\\(on-device)};
+    \node[model, right=2.2cm of t1] (t2) {0.6B Executor\\(on-device)};
+    \draw[->, thick] (t1) -- node[above, font=\scriptsize\itshape]{plan} (t2);
+    \node[bnd, fit=(t1)(t2), label={[font=\scriptsize\itshape]below:one on-device boundary; run sequentially}] {};
+    \node[anchor=west, font=\scriptsize\bfseries] at (-1.6,-2.0) {This work};
+  \end{tikzpicture}
+  \caption[Planner--executor lineage]{Planner--executor lineage: prior systems keep the executor in the cloud, whereas this work places both roles on the device.}
+  \label{fig:planner-executor-lineage}
+\end{figure}
+
+\subsection{Personalisation and Memory Systems}
+\label{sec:sota-personalisation}
+
+A personalisation memory is a store of remembered facts that the model consults on every turn in order to know its user. Chhikara et al.'s Mem0 and Wang et al.'s MemMachine demonstrated this at scale, with the memory stored in storage outside the weights \cite{chhikara2025mem0buildingproductionreadyai, wang2026memmachinegroundtruthpreservingmemorypersonalized}.
+
+Using OP-Bench, 1,700 human-verified instances across 20 users built from long-horizon dialogues, Hu et al.\ evaluated six memory-augmentation methods across four models and found every one degraded answer quality relative to the same model run memory-free, by between 26.2\% and 61.1\%, with the more sophisticated systems consistently worse than simple retrieval \cite{hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}. The mechanism is memory hijacking, where retrieved memories receive more than twice the attention weight of the user's query even when irrelevant. This dissertation addresses the same danger by design (Figure~\ref{fig:memory-architecture}): it proposes instead of retrieving freely from an open store, the orchestrator reads the user-model graph of Section~\ref{subsec:belief-persistence-and-the-user-model-graph} and injects a single bounded 5W+H card. 
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[font=\scriptsize, >=Stealth,
+      box/.style={draw, rounded corners, fill=black!5, align=center, inner sep=5pt, text width=2.5cm},
+      mdl/.style={draw, rounded corners, fill=tcd_blue!20, align=center, inner sep=5pt, text width=2.5cm},
+      lbl/.style={font=\scriptsize\itshape, align=center}]
+    \node[box] (graph) at (0,0)    {User-model graph\\[2pt]\scriptsize on-device; goals, tasks, skills, styles, contexts};
+    \node[box] (card)  at (4.2,0)  {5W+H card\\[2pt]\scriptsize bounded, fixed-shape slice};
+    \node[mdl] (llm)   at (8.4,0)  {Small language model\\[2pt]\scriptsize 0.6B};
+    \node[box] (corr)  at (4.2,-2.3) {User correction\\[2pt]\scriptsize \texttt{USER\_CORRECTED} edge};
+    \draw[->, thick] (graph) -- node[lbl, above]{select} (card);
+    \draw[->, thick] (card)  -- node[lbl, above]{inject} (llm);
+    \draw[->, thick] (llm.south) |- node[lbl, above right]{writes back} (corr.east);
+    \draw[->, thick] (corr) -- node[lbl, right]{amends} (graph);
+  \end{tikzpicture}
+  \caption{The user-model graph reaches the model only as a fixed-shape 5W+H card.}
+  \label{fig:memory-architecture}
+\end{figure}
+
+\section{Related Work Summary and Novelty Gap}
+\label{sec:related-work-summary-and-novelty-gap}
+
+Prior work fills parts of the picture and leaves others untouched (Table~\ref{tab:novelty}). Constitutional training has been tested at eight billion parameters and above, where it already costs helpfulness and risks collapse \cite{bai2022constitutionalaiharmlessnessai, zhang2025constitutioncollapseexploringconstitutional}. Planner--executor designs deliver real gains but keep a large cloud executor and could not stabilise reinforcement learning at 0.6B \cite{wei2025reactplannercentricframeworkcomplex}. Small-agent collaboration covers two-model setups but not constitutional compliance \cite{zywot2026smallagentscollaboratebeat}. And the personalisation literature warns that memory added carelessly makes models measurably worse \cite{hu2026opbenchbenchmarkingoverpersonalizationmemoryaugmented}. No single piece of work brings all four together.
+
+\begin{table}[H]
+  \centering
+  \caption{Novelty matrix (${}^{*}$ pairs a small planner with a large cloud executor).}
+  \label{tab:novelty}
+  \begin{tabular}{lcccc}
+    \hline
+     & Constitutional & Tool-grounded & Small model & Two 0.6B \\
+    Work & training & serving layer & scale & models \\
+    \hline
+    Bai et al., CAI \cite{bai2022constitutionalaiharmlessnessai} & yes & -- & -- & -- \\
+    Constitution or Collapse \cite{zhang2025constitutioncollapseexploringconstitutional} & yes & -- & -- & -- \\
+    Beyond ReAct \cite{wei2025reactplannercentricframeworkcomplex} & -- & yes & -- & partial${}^{*}$ \\
+    Small agents \cite{zywot2026smallagentscollaboratebeat} & -- & -- & yes & yes \\
+    \textbf{This dissertation} & \textbf{yes} & \textbf{yes} & \textbf{yes} & \textbf{yes} \\
+    \hline
+  \end{tabular}
+\end{table}
+
